@@ -2,7 +2,9 @@
 
 ## Status
 
-Deployed (DEV/QA)
+Deployed (DEV/QA; Phase 2 admission webhook not built)
+
+> **Status note (2026-10-26).** The validation engine, validators, CLI, drift detector, Lambda handler, remediation engine, router (included in `src/api/main.py`), and `frontend/src/components/EnvValidator/` (routed in `App.jsx`) exist, with CloudFormation in `env-validator-*.yaml`. The ValidatingAdmissionWebhook (`webhook_handler.py`, `deploy/kubernetes/env-validator/`) and Slack/Teams integration are not built, and the dashboard summary cards are hardcoded (`EnvValidatorDashboard.jsx:316-322`).
 
 ## Date
 

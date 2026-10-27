@@ -1,9 +1,20 @@
 # ADR-043: Repository Onboarding UI Wizard
 
-**Status:** Deployed
+**Status:** Deployed (wizard and API; ingestion trigger not wired)
 **Date:** 2025-12-17
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-005 (HITL Sandbox Architecture), ADR-030 (Chat Assistant Architecture), ADR-039 (Self-Service Test Environments)
+
+> **Status note (2026-10-26) -- wizard does not start ingestion.** The OAuth
+> and repository APIs (mounted in `src/api/main.py`), the DynamoDB-backed
+> services, `repository-tables.yaml` and the wizard steps exist with tests.
+> `RepositoryOnboardService.start_ingestion` creates job records and marks the
+> repository `syncing` but does not call `GitIngestionService`
+> (`src/services/repository_onboard_service.py:541` is a TODO), so no graph or
+> vector indexing follows the wizard. `IngestionProgress.jsx`,
+> `useIngestionStatus.js`, `repository-secrets.yaml`,
+> `repository-monitoring.yaml`, `repository-alerts.yaml` and
+> `tests/e2e/test_repository_onboarding.py` do not exist.
 
 ---
 

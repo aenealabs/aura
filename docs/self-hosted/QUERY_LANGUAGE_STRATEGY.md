@@ -13,6 +13,24 @@
 
 The existing GraphDatabaseService abstraction layer enables a clean implementation strategy where Gremlin remains the SaaS query language (AWS Neptune) while Cypher is used natively for self-hosted Neo4j deployments.
 
+### Implementation Status (October 2026)
+
+- **Cypher adapter: implemented.** The adapter landed as a single file,
+  `src/services/providers/self_hosted/neo4j_graph_adapter.py` (`Neo4jGraphAdapter`),
+  rather than the two files under `src/services/providers/neo4j/` proposed in the
+  plan below. It uses the official `neo4j` driver and native Cypher
+  (`MATCH ... RETURN`, variable-length `RELATES_TO*1..N` traversal), and
+  `CloudServiceFactory.create_graph_service()` returns it when the provider is
+  `SELF_HOSTED`. Unit tests (`tests/test_self_hosted_providers.py`) use a mocked
+  driver; integration tests against a live Neo4j instance and the performance
+  benchmarks in Phase 3 have not been run.
+- **Not yet on the main data path.** Repository ingestion (`GitIngestionService`)
+  and agent context retrieval call `NeptuneGraphService` directly rather than the
+  `GraphDatabaseService` abstraction, so a self-hosted deployment does not yet
+  write its code graph to Neo4j. Routing those paths through the factory is
+  outstanding.
+- **Migration Toolkit: planned.**
+
 ---
 
 ## Context

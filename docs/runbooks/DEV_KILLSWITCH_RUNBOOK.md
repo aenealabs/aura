@@ -9,7 +9,7 @@
 
 ## Overview
 
-The DEV kill-switch is a Python script that safely shuts down and restores the DEV environment's always-on AWS services. Unlike the QA kill-switch (which manages 9 stacks), the DEV kill-switch manages 80 stacks across all deployment layers (Scanning Engine, Security, Sandbox, Serverless, Observability, Application, Network Services, Compute, Data, and Foundation VPC Endpoints).
+The DEV kill-switch is a Python script that safely shuts down and restores the DEV environment's always-on AWS services. Unlike the QA kill-switch (which manages 9 stacks), the DEV kill-switch manages 78 stacks across all deployment layers (80 before the marketing and docs-portal stacks were retired on 2026-10-26) (Scanning Engine, Security, Sandbox, Serverless, Observability, Application, Network Services, Compute, Data, and Foundation VPC Endpoints).
 
 The kill-switch uses a **hybrid restore approach**: 9 core infrastructure stacks (VPC Endpoints, Neptune, OpenSearch, ElastiCache, EKS, node groups, and dnsmasq) are deployed directly via CloudFormation, while upper-layer stacks (Application, Observability, Serverless, Sandbox, Security, Scanning Engine) are restored by triggering their respective CodeBuild projects to maintain the single source of truth for deployments.
 
@@ -21,7 +21,7 @@ Foundation stacks (VPC, networking, security groups, IAM, KMS, S3, DynamoDB, ECR
 
 ## Cost Breakdown
 
-### Stacks Managed by the Kill-Switch (80 stacks)
+### Stacks Managed by the Kill-Switch (78 stacks)
 
 | Phase | Layer | Stack Count | Key Services | Relative Cost |
 |-------|-------|-------------|-------------|--------------|
@@ -30,17 +30,17 @@ Foundation stacks (VPC, networking, security groups, IAM, KMS, S3, DynamoDB, ECR
 | 4 | Sandbox | 13 | Test environment (scheduler, budgets, monitoring, marketplace, namespace, approval, catalog, IAM, state), HITL workflow, SSR training, sandbox | Moderate |
 | 5 | Serverless | 18 | Constitutional AI, GPU scheduler, env-drift Lambda, deployment pipeline, scheduling, checkpoint WebSocket, runbook agent, DNS blocklist, orchestrator, agent queues, A2A, HITL callback/scheduler, threat intel, incident investigation, incident response, chat assistant | Moderate |
 | 6 | Observability | 8 | DEV cost scheduler, GPU monitoring, alignment alerts, OTel collector, real-time monitoring, org cost monitoring, cost alerts, monitoring | Low |
-| 7 | Application | 10 | IRSA (API, memory, GPU, env-validator, cluster-autoscaler), Bedrock infrastructure, Bedrock guardrails, marketing, docs portal, ALB controller | Moderate |
+| 7 | Application | 8 | IRSA (API, memory, GPU, env-validator, cluster-autoscaler), Bedrock infrastructure, Bedrock guardrails, ALB controller | Moderate |
 | 8 | Network Services | 1 | dnsmasq ECS Fargate (VPC-wide DNS) | Low |
 | 9 | Compute (Nodes) | 4 | EKS general nodes (Spot), memory nodes, GPU nodes, neural memory GPU | Moderate |
 | 10 | Compute (Control Plane) | 1 | EKS control plane | High |
 | 11 | Data Stores | 3 | Neptune db.t3.medium, OpenSearch t3.small, ElastiCache t3.micro | Highest |
 | 12 | Foundation (Endpoints) | 1 | VPC Endpoints (8 interface endpoints) | Moderate |
-| | | **80** | | **Significant** |
+| | | **78** | | **Significant** |
 
 **Note:** The full estimated savings of significant monthly includes additional cost reductions from idle compute charges, data transfer fees, and associated CloudWatch/logging costs for services not individually tracked in the cost map above. The significant monthly savings figure represents total cost avoidance when the environment is fully shut down.
 
-### Stacks That Remain Running (~58 protected stacks)
+### Stacks That Remain Running (42 protected stacks)
 
 | Category | Stacks | Monthly Cost | Reason |
 |----------|--------|-------------|--------|
@@ -62,7 +62,7 @@ After the kill-switch shuts down the 80 managed stacks, several cost sources per
 
 ### Why Additional Cleanup Is Needed
 
-The kill-switch protects ~58 foundation stacks that provide the base infrastructure for restore. However, some of these protected stacks and orphaned resources continue to incur significant charges:
+The kill-switch protects 42 foundation stacks that provide the base infrastructure for restore. However, some of these protected stacks and orphaned resources continue to incur significant charges:
 
 | Source | Impact | Root Cause |
 |--------|--------|------------|
@@ -76,16 +76,16 @@ The kill-switch protects ~58 foundation stacks that provide the base infrastruct
 
 ```bash
 # Dry-run: show what would be cleaned up
-AWS_PROFILE=aura-admin python scripts/dev_killswitch.py cleanup
+AWS_PROFILE=aura-breakglass-dev python scripts/dev_killswitch.py cleanup
 
 # Execute cleanup (ELBs, Config, CloudWatch log retention)
-AWS_PROFILE=aura-admin python scripts/dev_killswitch.py cleanup --execute
+AWS_PROFILE=aura-breakglass-dev python scripts/dev_killswitch.py cleanup --execute
 
 # Execute cleanup (skip confirmation prompt)
-AWS_PROFILE=aura-admin python scripts/dev_killswitch.py cleanup --execute --force
+AWS_PROFILE=aura-breakglass-dev python scripts/dev_killswitch.py cleanup --execute --force
 
 # Execute cleanup INCLUDING KMS key deletion (see warning below)
-AWS_PROFILE=aura-admin python scripts/dev_killswitch.py cleanup --execute --schedule-kms-deletion
+AWS_PROFILE=aura-breakglass-dev python scripts/dev_killswitch.py cleanup --execute --schedule-kms-deletion
 ```
 
 ### What Each Step Does
@@ -136,7 +136,7 @@ After running `cleanup`, the restore process (`dev_killswitch.py restore --execu
 
 - **AWS CLI v2** configured with DEV account credentials
 - **Python 3.11+** with `boto3` installed
-- **AWS Profile:** Must have sufficient IAM permissions to delete and create CloudFormation stacks
+- **AWS Profile:** the `AuraBreakGlass` IAM Identity Center permission set for the DEV account (AURA-CTL-005). Teardown deletes every stack, which the scoped `AuraDeployer` set cannot do.
 - **No active CodeBuild builds** targeting DEV (the script checks for this)
 
 ---
@@ -146,7 +146,7 @@ After running `cleanup`, the restore process (`dev_killswitch.py restore --execu
 ### Check DEV Environment Status
 
 ```bash
-AWS_PROFILE=aura-admin python scripts/dev_killswitch.py status
+AWS_PROFILE=aura-breakglass-dev python scripts/dev_killswitch.py status
 ```
 
 Displays the CloudFormation stack status for all 80 managed stacks, EventBridge schedule state, estimated monthly cost of running stacks, and kill-switch state file contents.
@@ -155,16 +155,16 @@ Displays the CloudFormation stack status for all 80 managed stacks, EventBridge 
 
 ```bash
 # Dry-run: shows the plan without making changes
-AWS_PROFILE=aura-admin python scripts/dev_killswitch.py shutdown
+AWS_PROFILE=aura-breakglass-dev python scripts/dev_killswitch.py shutdown
 
 # Execute shutdown (interactive confirmation required)
-AWS_PROFILE=aura-admin python scripts/dev_killswitch.py shutdown --execute
+AWS_PROFILE=aura-breakglass-dev python scripts/dev_killswitch.py shutdown --execute
 
 # Execute shutdown (skip confirmation prompt)
-AWS_PROFILE=aura-admin python scripts/dev_killswitch.py shutdown --execute --force
+AWS_PROFILE=aura-breakglass-dev python scripts/dev_killswitch.py shutdown --execute --force
 
 # Execute shutdown without Neptune snapshot
-AWS_PROFILE=aura-admin python scripts/dev_killswitch.py shutdown --execute --skip-snapshot
+AWS_PROFILE=aura-breakglass-dev python scripts/dev_killswitch.py shutdown --execute --skip-snapshot
 ```
 
 **What happens during shutdown:**
@@ -178,7 +178,7 @@ AWS_PROFILE=aura-admin python scripts/dev_killswitch.py shutdown --execute --ski
    - Phase 4: Sandbox / Test Environments (13 stacks)
    - Phase 5: Serverless (18 stacks)
    - Phase 6: Observability (8 stacks)
-   - Phase 7: Application Services (10 stacks)
+   - Phase 7: Application Services (8 stacks)
    - Phase 8: Network Services (1 stack - dnsmasq)
    - Phase 9: Compute Node Groups (4 stacks)
    - Phase 10: EKS Control Plane (1 stack)
@@ -194,13 +194,13 @@ AWS_PROFILE=aura-admin python scripts/dev_killswitch.py shutdown --execute --ski
 
 ```bash
 # Dry-run: shows the restore plan
-AWS_PROFILE=aura-admin python scripts/dev_killswitch.py restore
+AWS_PROFILE=aura-breakglass-dev python scripts/dev_killswitch.py restore
 
 # Execute restore
-AWS_PROFILE=aura-admin python scripts/dev_killswitch.py restore --execute
+AWS_PROFILE=aura-breakglass-dev python scripts/dev_killswitch.py restore --execute
 
 # Execute restore (skip confirmation prompt)
-AWS_PROFILE=aura-admin python scripts/dev_killswitch.py restore --execute --force
+AWS_PROFILE=aura-breakglass-dev python scripts/dev_killswitch.py restore --execute --force
 ```
 
 **What happens during restore:**
@@ -251,7 +251,7 @@ Until these checks pass, treat DEV as in the **restoring** state rather than **r
 |---------|---------------|
 | Environment lock | Hardcoded to `dev` in `ALLOWED_ENVIRONMENTS` frozenset |
 | Account validation | Validates AWS account ID via `AURA_DEV_ACCOUNT_ID` env var |
-| Protected stacks | ~58 stacks in `PROTECTED_STACKS` frozenset are never deleted |
+| Protected stacks | 42 stacks in the `PROTECTED_STACKS` frozenset are never deleted |
 | Dry-run default | All operations are dry-run unless `--execute` is specified |
 | Confirmation prompt | Must type `DESTROY DEV` (shutdown) or `RESTORE DEV` (restore) |
 | Stack name validation | Verifies all stack names contain `-dev` substring |
@@ -292,7 +292,7 @@ aws autoscaling resume-processes \
   --auto-scaling-group-name <ASG_NAME>
 
 # Retry the kill-switch
-AWS_PROFILE=aura-admin python scripts/dev_killswitch.py shutdown --execute --force
+AWS_PROFILE=aura-breakglass-dev python scripts/dev_killswitch.py shutdown --execute --force
 ```
 
 ### Cross-Stack Security Group References
@@ -401,18 +401,18 @@ aws cloudformation deploy \
 
 **Symptom:** Shutdown completes but state shows `partial` instead of `shutdown`.
 
-**Cause:** One or more stacks failed to delete during the shutdown sequence. The kill-switch counts deleted stacks and only sets status to `shutdown` when all 80 stacks are confirmed deleted.
+**Cause:** One or more stacks failed to delete during the shutdown sequence. The kill-switch counts deleted stacks and only sets status to `shutdown` when all 78 stacks are confirmed deleted.
 
 **Fix:**
 ```bash
 # Check which stacks are still running
-AWS_PROFILE=aura-admin python scripts/dev_killswitch.py status
+AWS_PROFILE=aura-breakglass-dev python scripts/dev_killswitch.py status
 
 # Manually delete remaining stacks
 aws cloudformation delete-stack --stack-name <REMAINING_STACK>
 
 # Re-run shutdown to clean up and update state
-AWS_PROFILE=aura-admin python scripts/dev_killswitch.py shutdown --execute --force --skip-snapshot
+AWS_PROFILE=aura-breakglass-dev python scripts/dev_killswitch.py shutdown --execute --force --skip-snapshot
 ```
 
 ### Missing Foundation Parameters During Restore
@@ -440,7 +440,7 @@ The kill-switch **replaces** the DEV cost scheduler (`dev-cost-scheduler.yaml`) 
 
 | Capability | DEV Cost Scheduler | Kill-Switch |
 |------------|-------------------|-------------|
-| **Scope** | EKS node groups only (general, memory, GPU) | All always-on services (80 stacks) |
+| **Scope** | EKS node groups only (general, memory, GPU) | All always-on services (78 stacks) |
 | **Savings** | estimated monthly (node scaling to 0) | significant monthly (full shutdown) |
 | **Automation** | EventBridge scheduled (nightly at 1:00 UTC, restore Mon-Fri 12:00 UTC) | Manual execution |
 | **Restore time** | 3-5 minutes (nodes rejoin) | 90-120 minutes (core infra + CodeBuild) |

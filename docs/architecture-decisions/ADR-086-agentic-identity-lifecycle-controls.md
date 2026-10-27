@@ -2,7 +2,9 @@
 
 ## Status
 
-Deployed
+Implemented (library, all three phases); not integrated -- credential adapters, KMS signing and runtime wiring not yet built
+
+> **Status note (2026-10-26).** The Phase 1-3 deliverable modules exist (`runtime_security/discovery/lifecycle_state_machine.py`, `credential_enumerators/` with 15 enumerators, `decommission_verifier.py`, `ghost_agent_scanner.py`, `attestation.py`, `capability_governance/self_modification_sentinel.py`, `delegation_envelope.py`, `delegation_channels/verifiers.py`) with 262 tests across their 8 test files. No backing client implements the enumerator interfaces (for example `list_roles_for_agent`), so every enumerator reports "unchecked" outside tests; `DelegationVerifier` (`delegation_envelope.py:176`) signs with HMAC-SHA256 (hardcoded default key when none is injected) and an in-memory revocation set, not KMS plus DynamoDB; the `SELF_GOVERNANCE_EDGE` Neptune edge does not exist. No agent, A2A gateway or interceptor path calls these services, and `AgentLifecycleWidget.jsx` fetches `/api/v1/agents/lifecycle/summary`, which no backend route serves.
 
 ## Date
 

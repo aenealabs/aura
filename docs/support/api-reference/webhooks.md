@@ -10,6 +10,10 @@
 
 Webhooks enable real-time event notifications from Project Aura to your systems. When events occur (such as vulnerability detection or patch approval), Aura sends HTTP POST requests to your configured endpoints with event details.
 
+> **Status: Planned.** Outbound customer webhooks are not implemented in the current codebase. There is no `/v1/webhooks` management API, no event dispatcher that sends `vulnerability.*`, `patch.*`, `scan.*`, `approval.*`, `repository.*`, or `system.*` events to customer endpoints, no `X-Aura-Signature` signing, and no retry or delivery-history store. This page describes the intended design. Notification today goes out as email and SNS from the HITL workflow (see the [Notification Integration Guide](../../guides/NOTIFICATION_INTEGRATION_GUIDE.md)).
+>
+> **Inbound (implemented):** Aura receives GitHub push and pull-request webhooks at `POST /webhook/github` (HMAC-SHA256 `X-Hub-Signature-256` validation, background incremental ingestion) and exposes `GET`/`DELETE /webhook/queue`; see `src/api/main.py` and `src/api/webhook_handler.py`. These are separate from the outbound webhooks described below.
+
 ---
 
 ## Quick Start
@@ -706,7 +710,7 @@ Debug mode logs full request/response details for 24 hours.
 
 - [API Reference Index](./index.md)
 - [REST API Reference](./rest-api.md)
-- [GraphQL API](./graphql-api.md)
+- [GraphQL API](./graphql-api.md) (Planned)
 - [Troubleshooting](../troubleshooting/common-issues.md)
 
 ---

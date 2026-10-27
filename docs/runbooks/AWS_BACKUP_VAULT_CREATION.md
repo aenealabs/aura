@@ -108,7 +108,7 @@ Edit `deploy/cloudformation/codebuild-observability.yaml` to add the missing per
 ### Step 2: Update the CodeBuild Stack
 
 ```bash
-export AWS_PROFILE=aura-admin
+export AWS_PROFILE=aura-breakglass-dev
 
 aws cloudformation update-stack \
   --stack-name aura-codebuild-observability-dev \

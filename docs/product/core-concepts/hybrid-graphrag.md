@@ -1,7 +1,7 @@
 # Hybrid GraphRAG Architecture
 
 **Version:** 1.0
-**Last Updated:** January 2026
+**Last Updated:** October 2026
 
 ---
 
@@ -65,43 +65,50 @@ onboarded. See `src/services/three_way_retrieval_service.py`.
 
 ## Architecture Components
 
-Aura's Hybrid GraphRAG consists of three main components.
+Aura's Hybrid GraphRAG consists of the components below.
+
+> **Implementation status (October 2026).** The Neptune Gremlin client and the
+> OpenSearch k-NN client are real code paths (`src/services/neptune_graph_service.py`,
+> `src/services/opensearch_vector_service.py`). Both fall back silently to
+> in-memory mock mode when `NEPTUNE_ENDPOINT` / `OPENSEARCH_ENDPOINT` are unset or
+> the connection fails, and the Neptune readiness probe still reports ready in
+> mock mode. The retrieval path used by the production agent
+> workflow (`ContextRetrievalService` in `src/agents/agent_orchestrator.py`)
+> runs one graph traversal and one k-NN search and concatenates the results;
+> it does not run BM25 or RRF. The three-way RRF service described in
+> section 3 is implemented and unit-tested but is not yet called by any API
+> route or agent workflow.
 
 ### 1. Neptune Graph Database
 
 AWS Neptune stores structural code relationships as a property graph.
 
-**Node Types:**
+**Vertices:** Code entities are written as a single `CodeEntity` vertex label.
+The entity kind (`class`, `function`, `method`, `import`, `variable`) is stored
+in the `type` property, alongside `entity_id`, `name`, `file_path`,
+`line_number`, optional `fqn`, and `parent`. Infrastructure, config, KMS-alias,
+feature-flag, service-boundary, and data-flow vertices use their own labels.
 
-| Node Type | Description | Properties |
-|-----------|-------------|------------|
-| `File` | Source code file | path, language, last_modified |
-| `Function` | Function or method | name, signature, line_start, line_end |
-| `Class` | Class definition | name, docstring, decorators |
-| `Variable` | Variable definition | name, type, scope |
-| `Import` | Import statement | module, alias |
+**Edge labels** (`src/services/graph/edge_labels.py`):
 
-**Edge Types:**
+| Edge Label | Description |
+|------------|-------------|
+| `CONTAINS` / `HAS_<TYPE>` | Parent entity contains a child definition |
+| `CALLS` | Deterministically resolved call (symbol-resolver tiers 1-2) |
+| `CALLS_INFERRED` | Call resolved by the tier-3 LLM resolver (lower trust tier); not produced by API-triggered ingestion today because that service is constructed without a Bedrock client |
+| `IMPORTS` | Import dependency |
+| `INHERITS` | Class inheritance |
+| `READS_CONFIG`, `DEPENDS_ON_ENV`, `USES_KMS_KEY`, `FEATURE_GATED_BY` | Config and infrastructure dependencies (clearance-filtered at query time) |
 
-| Edge Type | From | To | Description |
-|-----------|------|-----|-------------|
-| `CONTAINS` | File | Function/Class | File contains definition |
-| `CALLS` | Function | Function | Function calls another |
-| `IMPORTS` | File | File/Module | Import dependency |
-| `EXTENDS` | Class | Class | Inheritance relationship |
-| `REFERENCES` | Function | Variable | Variable usage |
-| `DEPENDS_ON` | File | Package | External dependency |
+There is no `REFERENCES` (variable-usage) edge today.
 
 **Example Gremlin Query:**
 
 ```groovy
-// Find all functions that call a vulnerable function
-g.V().has('Function', 'name', 'insecure_hash')
+// Find all callers of a vulnerable function
+g.V().has('CodeEntity', 'name', 'insecure_hash')
   .in('CALLS')
-  .project('caller', 'file', 'line')
-    .by('name')
-    .by(out('CONTAINED_IN').values('path'))
-    .by('line_start')
+  .valueMap('name', 'file_path', 'line_number')
 ```
 
 ### 2. OpenSearch Vector Store
@@ -114,20 +121,20 @@ AWS OpenSearch stores code embeddings for semantic search.
 {
   "mappings": {
     "properties": {
-      "content": { "type": "text" },
+      "text": { "type": "text", "analyzer": "standard" },
       "embedding": {
         "type": "knn_vector",
-        "dimension": 1536,
+        "dimension": 1024,
         "method": {
           "name": "hnsw",
+          "space_type": "cosinesimil",
           "engine": "nmslib",
           "parameters": { "m": 16, "ef_construction": 512 }
         }
       },
-      "file_path": { "type": "keyword" },
-      "function_names": { "type": "keyword" },
-      "language": { "type": "keyword" },
-      "last_modified": { "type": "date" }
+      "metadata": { "type": "object" },
+      "timestamp": { "type": "date" },
+      "provenance": { "type": "object" }
     }
   }
 }
@@ -135,16 +142,20 @@ AWS OpenSearch stores code embeddings for semantic search.
 
 **Embedding Generation:**
 
-Code is chunked and embedded using models optimized for code understanding:
+During repository ingestion (`GitIngestionService`), each supported file is embedded as a whole:
 
-1. **Chunking**: Code split at function/class boundaries
-2. **Context enrichment**: Docstrings and comments included
-3. **Embedding**: Convert to 1536-dimensional vectors
-4. **Indexing**: Store in OpenSearch with metadata
+1. **Content limit**: The first 20 KB of each file is used (files are not yet split at function/class boundaries)
+2. **Injection scan**: Content is scanned for prompt-injection payloads in comments and docstrings before embedding
+3. **Embedding**: Amazon Titan Text Embeddings v2 via Bedrock (`amazon.titan-embed-text-v2:0`), 1024-dimensional vectors
+4. **Indexing**: Stored in the `aura-code-embeddings` OpenSearch index with file metadata; stored text is truncated to 5,000 characters
+
+Function-level chunking is planned.
 
 ### 3. Three-Way Retrieval Service
 
-The retrieval service orchestrates queries across all three sources and fuses results.
+`src/services/three_way_retrieval_service.py` orchestrates queries across all three sources and fuses results.
+
+**Status:** Implemented and unit-tested; not yet wired into an API route or agent workflow. Steps 1-4 below describe this service. Its default BM25 query targets an `aura-code-index` index with `content`, `file_path`, and `function_names` fields, while ingestion writes to `aura-code-embeddings` with a `text` field; the index schemas must be reconciled before the service is wired in.
 
 **Three Retrieval Methods:**
 
@@ -161,7 +172,7 @@ A persistence layer on top of Neptune that turns per-function taint summaries (s
 **What this enables for your team:**
 
 - **Incremental scans that get faster as your repo grows.** When the scanner re-runs after a small pull request, summaries for unchanged files are reused from the prior scan. A 10K-file repo with 10 changed files reuses ~9,990 summaries instead of recomputing them. Target win: 10x to 100x latency reduction on small-diff scans versus full-rescan.
-- **Cross-file dataflow at scale across all 8 supported languages.** Python, JavaScript, TypeScript, Go, Java, Rust, C, and C++ all participate in the same source-to-sink graph. A taint flowing from a request handler in one file to a SQL query in another file is followed deterministically, not heuristically.
+- **Cross-file dataflow at scale across all 8 vulnerability-scanner languages.** Python, JavaScript, TypeScript, Go, Java, Rust, C, and C++ all participate in the same source-to-sink graph. A taint flowing from a request handler in one file to a SQL query in another file is followed deterministically, not heuristically.
 - **Audit-defensible "which summary produced this finding?"** Every persisted summary is signed with a tenant-scoped KMS asymmetric key (RSASSA_PSS_SHA_256), and the signed payload is transport-bound to the scan ID, commit SHA, and a session nonce. Replay or substitution attempts fail signature verification. Compromised-signer revocation is consulted on every read.
 - **Tiered isolation that matches your regulatory posture.**
   - **T1 (commercial SaaS):** shared cluster with a tenant-predicate-enforcing Gremlin client; per-tenant data keys envelope-encrypted under a shared CMK.
@@ -175,7 +186,7 @@ For operations details and the named CloudWatch alarms covering this layer, see 
 
 ## How Hybrid Retrieval Works
 
-When you ask Aura a question or trigger a vulnerability analysis, the retrieval process follows these steps.
+The steps below describe the three-way retrieval design (`ThreeWayRetrievalService` plus `QueryAnalyzer`). The agent workflow that runs today uses the simpler graph-plus-vector path noted at the top of this page.
 
 ### Step 1: Query Analysis
 
@@ -276,7 +287,7 @@ Top results are enriched with additional context:
 
 ## Graph Query Patterns
 
-Aura supports several graph query patterns for structural analysis.
+The patterns below are illustrative Gremlin for the structural questions Aura targets. The service code issues `repeat(bothE(<labels>).otherV().simplePath()).times(<depth>)` traversals over `CodeEntity` vertices, with the edge-label set chosen per query type (call graph, dependencies, inheritance, references, related) in `src/services/context_retrieval_service.py`.
 
 ### CALL_GRAPH
 
@@ -351,16 +362,16 @@ g.V().has('Function', 'name', 'target_function')
 
 ## Performance Characteristics
 
-Aura's Hybrid GraphRAG is optimized for enterprise-scale codebases.
+The figures in this section are design targets. No retrieval latency benchmark results are checked into the repository.
 
 ### Latency Targets
 
-| Operation | Target | Actual (p95) |
-|-----------|--------|--------------|
-| Single source retrieval | < 100ms | ~45ms |
-| Three-way fusion | < 150ms | ~85ms |
-| Graph traversal (2 hops) | < 200ms | ~120ms |
-| Full context retrieval | < 500ms | ~350ms |
+| Operation | Target | Measured (p95) |
+|-----------|--------|----------------|
+| Single source retrieval | < 100ms | Not yet measured |
+| Three-way fusion | < 150ms | Not yet measured |
+| Graph traversal (2 hops) | < 200ms | Not yet measured |
+| Full context retrieval | < 500ms | Not yet measured |
 
 ### Scaling Characteristics
 
@@ -373,17 +384,21 @@ Aura's Hybrid GraphRAG is optimized for enterprise-scale codebases.
 
 ### Index Update Frequency
 
-| Event | Update Type | Latency |
-|-------|-------------|---------|
-| File saved | Incremental | < 5 seconds |
-| PR merged | Batch update | < 60 seconds |
-| Full rescan | Complete rebuild | 1-4 hours (background) |
+| Event | Update Type | Latency target |
+|-------|-------------|----------------|
+| Push to a tracked branch (GitHub webhook) | Incremental (`ingest_changes`) | < 60 seconds |
+| Full ingestion (`POST /api/v1/ingest`) | Complete rebuild | 1-4 hours (background) |
+
+File-save-triggered indexing is not implemented.
 
 ---
 
 ## Configuration Options
 
-Administrators can tune retrieval behavior through configuration.
+> **Planned.** These settings exist today only as constructor/dataclass
+> defaults in code (`RetrievalConfig` in `three_way_retrieval_service.py`, `GitIngestionService`). There is
+> no administrator-facing configuration API or file for them yet. Ingested file
+> types are currently fixed in code.
 
 ### Retrieval Weights
 
@@ -443,7 +458,7 @@ Set boundaries on query behavior:
 
 > **Hybrid retrieval captures both structure and meaning.** Graph databases provide precise relationships; vector search provides semantic similarity.
 
-> **Three-way fusion outperforms dual approaches.** Adding BM25 sparse search to dense vectors and graph traversal improves accuracy by 22-25%.
+> **Three-way fusion is the target design.** Published research reports a 22-25% MRR improvement from adding BM25 sparse search to dense vectors and graph traversal; Aura has not yet measured this on its own retrieval path.
 
 > **Sparse boost is critical.** The 1.2x weight for BM25 results helps capture exact identifier matches that vector search might miss.
 

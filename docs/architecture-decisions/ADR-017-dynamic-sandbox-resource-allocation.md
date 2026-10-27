@@ -1,8 +1,10 @@
 # ADR-017: Dynamic Sandbox Resource Allocation by Specialized Agents
 
-**Status:** Deployed
+**Status:** Deployed (infrastructure only; per-agent dynamic sizing not implemented)
 **Date:** 2025-12-02
 **Decision Makers:** Project Aura Team
+
+> **Status note (2026-10-26).** `deploy/cloudformation/sandbox.yaml` now defines a static `SandboxTestRunnerTaskDefinition` (1024 CPU / 2048 MB, line 495), so the "No static Task Definitions" decision is not what the template deploys. No code registers task definitions or passes per-agent `cpu`/`memory` overrides: `FargateSandboxOrchestrator.create_sandbox` in `src/services/sandbox_network_service.py` (lines 700-770) overrides environment variables only, and the `SandboxConfig`/`request_sandbox` agent interface below is still future work. That method also targets task family `sandbox-patch-test-{env}` and container `sandbox-runtime` (lines 646 and 735), which exist only in `deploy/cloudformation/archive/ecs-sandbox-cluster.yaml`, not in the current `sandbox.yaml` (family `${ProjectName}-sandbox-test-runner-${Environment}`, container `sandbox-test-runner`).
 
 ## Context
 

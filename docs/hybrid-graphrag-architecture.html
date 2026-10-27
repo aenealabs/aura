@@ -99,16 +99,16 @@
 <div class="header">
   <h1>Hybrid GraphRAG Architecture</h1>
   <div class="subtitle">Project Aura &mdash; Neptune Graph + OpenSearch Vector Hybrid Retrieval</div>
-  <div class="meta">Aenea Labs &middot; ADR-034 Context Engineering &middot; Issue #151 &middot; 8 Core Services &middot; 367 Tests &middot; February 2026</div>
+  <div class="meta">Aenea Labs &middot; ADR-034 Context Engineering &middot; Issue #151 &middot; 8 Core Services &middot; 523 Tests &middot; October 2026</div>
 </div>
 
 <div class="stats-bar">
   <div class="stat"><div class="number">8</div><div class="label">Core Services</div></div>
-  <div class="stat"><div class="number green">367</div><div class="label">Tests</div></div>
+  <div class="stat"><div class="number green">523</div><div class="label">Tests</div></div>
   <div class="stat"><div class="number purple">3</div><div class="label">Retrieval Methods</div></div>
   <div class="stat"><div class="number teal">5</div><div class="label">Graph Query Types</div></div>
   <div class="stat"><div class="number orange">6</div><div class="label">Context Layers</div></div>
-  <div class="stat"><div class="number">5,040+</div><div class="label">Lines of Code</div></div>
+  <div class="stat"><div class="number">5,221</div><div class="label">Lines of Code</div></div>
 </div>
 
 <div class="nav-bar">
@@ -134,21 +134,21 @@
   <p class="desc">Hybrid GraphRAG is Aura's retrieval architecture that combines graph databases with vector search to provide comprehensive code understanding for autonomous vulnerability detection and remediation.</p>
 
   <div class="callout">
-    <strong>What is Hybrid GraphRAG?</strong> &mdash; Traditional RAG (Retrieval-Augmented Generation) uses vector similarity search alone. Aura's Hybrid GraphRAG adds structural code analysis through graph databases and keyword matching through BM25, enabling queries like "find all functions that call this vulnerable method" alongside semantic queries like "find similar authentication code."
+    <strong>What is Hybrid GraphRAG?</strong> &mdash; Traditional RAG (Retrieval-Augmented Generation) uses vector similarity search alone. Aura's Hybrid GraphRAG adds structural code analysis through graph databases (and, in the three-way design, keyword matching through BM25), enabling queries like "find all functions that call this vulnerable method" alongside semantic queries like "find similar authentication code."
   </div>
 
   <div class="card-grid">
     <div class="card card-accent" style="border-left-color:var(--brand)">
       <div class="card-title">Dense Retrieval (Vector k-NN)</div>
-      <div class="card-body">Semantic similarity via embedding comparison using <strong>OpenSearch k-NN</strong> with 1536-dimensional vectors. Captures meaning and finds code pattern similarities across the codebase.</div>
+      <div class="card-body">Semantic similarity via embedding comparison using <strong>OpenSearch k-NN</strong> with 1024-dimensional Amazon Titan Text Embeddings v2 vectors (one embedding per ingested file today). Captures meaning and finds code pattern similarities across the codebase.</div>
     </div>
     <div class="card card-accent" style="border-left-color:var(--success)">
       <div class="card-title">Sparse Retrieval (BM25)</div>
-      <div class="card-body">Keyword matching via traditional text search with <strong>field-specific boosting</strong>: function_names (3x), file_path (2x), content (1x). Critical for exact identifier matches.</div>
+      <div class="card-body">Keyword matching via traditional text search with <strong>field-specific boosting</strong>: function_names (3x), file_path (2x), content (1x). Critical for exact identifier matches. Implemented in the three-way retrieval service; not yet called by the agent workflow.</div>
     </div>
     <div class="card card-accent" style="border-left-color:var(--purple)">
       <div class="card-title">Graph Retrieval (Gremlin)</div>
-      <div class="card-body">Structural relationship traversal via <strong>AWS Neptune</strong> property graph. Navigates call graphs, dependencies, inheritance, and references with up to 3-hop traversal.</div>
+      <div class="card-body">Structural relationship traversal via <strong>AWS Neptune</strong> property graph. Navigates call graphs, imports, and inheritance; the agent workflow uses 2-hop traversal.</div>
     </div>
   </div>
 </section>
@@ -184,14 +184,14 @@
   </div>
 
   <div class="callout success">
-    <strong>Research-Validated:</strong> Aura's three-way hybrid approach achieves <strong>22-25% improvement</strong> in mean reciprocal rank (MRR) compared to single-method approaches. Adding BM25 sparse search to dense vectors and graph traversal captures exact identifier matches that vector search alone misses.
+    <strong>Research basis:</strong> Published research on three-way hybrid retrieval reports a <strong>22-25% improvement</strong> in mean reciprocal rank (MRR) compared to single-method approaches; ADR-034 adopts this as the design rationale. Aura has not yet measured this on its own retrieval path. Adding BM25 sparse search to dense vectors and graph traversal captures exact identifier matches that vector search alone misses.
   </div>
 </section>
 
 <!-- 3. Core Services -->
 <section id="services">
-  <h2>3. Core Services (8 Services, 5,040+ Lines)</h2>
-  <p class="desc">The Hybrid GraphRAG implementation consists of 8 core services deployed as part of ADR-034 Context Engineering, plus supporting infrastructure services.</p>
+  <h2>3. Core Services (8 Services, 5,221 Lines)</h2>
+  <p class="desc">The Hybrid GraphRAG implementation consists of 8 core services written as part of ADR-034 Context Engineering, plus supporting infrastructure services. Status reflects whether the service is called from an API route, agent workflow, or worker. The production agent workflow uses a simpler graph-plus-vector retriever (<code>ContextRetrievalService</code> in <code>src/agents/agent_orchestrator.py</code>) that runs one Neptune traversal and one OpenSearch k-NN search and concatenates the results without BM25 or RRF.</p>
 
   <div class="table-wrapper">
     <table>
@@ -199,58 +199,58 @@
       <tr>
         <td>Context Retrieval Service</td>
         <td>context_retrieval_service.py</td>
-        <td>940</td>
-        <td>Main orchestrator combining Neptune + OpenSearch + filesystem</td>
-        <td><span class="badge badge-deployed">Deployed</span></td>
+        <td>1,121</td>
+        <td>Agentic multi-strategy retrieval (LLM query plan, parallel graph / vector / filesystem / git search, additive composite scoring)</td>
+        <td>Implemented; injected only by optional SSR / meta-orchestrator callers</td>
       </tr>
       <tr>
         <td>Three-Way Retrieval Service</td>
         <td>three_way_retrieval_service.py</td>
         <td>527</td>
         <td>RRF fusion engine (dense k-NN + sparse BM25 + graph)</td>
-        <td><span class="badge badge-deployed">Deployed</span></td>
+        <td>Implemented, not wired</td>
       </tr>
       <tr>
         <td>HopRAG Service</td>
         <td>hoprag_service.py</td>
         <td>712</td>
         <td>Multi-hop query optimization with pseudo-query edges</td>
-        <td><span class="badge badge-deployed">Deployed</span></td>
+        <td>Implemented, not wired</td>
       </tr>
       <tr>
         <td>Context Scoring Service</td>
         <td>context_scoring_service.py</td>
         <td>427</td>
         <td>Relevance-based pruning (prevents context rot)</td>
-        <td><span class="badge badge-deployed">Deployed</span></td>
+        <td>Implemented, not wired</td>
       </tr>
       <tr>
         <td>Community Summarization</td>
         <td>community_summarization_service.py</td>
         <td>725</td>
-        <td>Leiden clustering + hierarchical LLM summaries</td>
-        <td><span class="badge badge-deployed">Deployed</span></td>
+        <td>Leiden clustering (connected-components fallback) + hierarchical LLM summaries</td>
+        <td>Implemented, not wired</td>
       </tr>
       <tr>
         <td>Hierarchical Tool Registry</td>
         <td>hierarchical_tool_registry.py</td>
         <td>642</td>
-        <td>3-tier tool presentation (~20 atomic tools)</td>
-        <td><span class="badge badge-deployed">Deployed</span></td>
+        <td>3-tier tool presentation</td>
+        <td>Implemented; used only by Context Stack Manager</td>
       </tr>
       <tr>
         <td>Context Stack Manager</td>
         <td>context_stack_manager.py</td>
         <td>593</td>
         <td>6-layer explicit context stack management</td>
-        <td><span class="badge badge-deployed">Deployed</span></td>
+        <td>Implemented; used only by MCP Context Manager</td>
       </tr>
       <tr>
         <td>MCP Context Manager</td>
         <td>mcp_context_manager.py</td>
         <td>474</td>
         <td>Multi-agent context isolation via Model Context Protocol</td>
-        <td><span class="badge badge-deployed">Deployed</span></td>
+        <td>Implemented, not wired</td>
       </tr>
     </table>
   </div>
@@ -262,20 +262,20 @@
       <tr>
         <td>Neptune Graph Service</td>
         <td>neptune_graph_service.py</td>
-        <td>1,551</td>
-        <td>AWS Neptune Gremlin client (connection pooling, retry logic)</td>
+        <td>1,924</td>
+        <td>AWS Neptune Gremlin client (gremlin-python connection pool; falls back to in-memory mock mode when the endpoint is unset or unreachable; IAM SigV4 request signing is not yet implemented)</td>
       </tr>
       <tr>
         <td>GraphRAG Security Service</td>
         <td>security/graphrag_security_service.py</td>
         <td>807</td>
-        <td>Context poisoning defense, entity signatures, anomaly detection</td>
+        <td>Context poisoning defense, entity signatures, anomaly detection (implemented and tested; not yet called from the retrieval or ingestion path)</td>
       </tr>
       <tr>
         <td>OpenSearch Vector Service</td>
         <td>opensearch_vector_service.py</td>
         <td>&mdash;</td>
-        <td>Vector indexing, k-NN search, BM25 keyword search</td>
+        <td>Vector indexing and k-NN search (HNSW, cosine, SigV4-signed client; falls back to in-memory mock mode when the endpoint is unset). BM25 queries are issued by the three-way retrieval service, not this client.</td>
       </tr>
     </table>
   </div>
@@ -284,7 +284,7 @@
 <!-- 4. Three-Way Retrieval -->
 <section id="three-way">
   <h2>4. Three-Way Retrieval &amp; RRF Fusion</h2>
-  <p class="desc">When a query is issued, all three retrieval methods execute concurrently and results are fused using Reciprocal Rank Fusion (RRF).</p>
+  <p class="desc">In <code>three_way_retrieval_service.py</code>, all three retrieval methods execute concurrently and results are fused using Reciprocal Rank Fusion (RRF). This service is implemented and unit-tested but not yet wired into an API route or agent workflow, and its default BM25 index (<code>aura-code-index</code>, fields <code>content</code> / <code>function_names</code>) does not match the index that ingestion writes (<code>aura-code-embeddings</code>, field <code>text</code>).</p>
 
   <h3>Retrieval Flow</h3>
   <div class="flow-diagram"><span class="comment">Query: "Find code that validates user authentication tokens"</span>
@@ -334,7 +334,7 @@
   </div>
 
   <div class="callout warn">
-    <strong>Sparse Boost (1.2) is critical.</strong> BM25 excels at finding exact function names and identifiers that vector search might miss. This weight was empirically tuned from retrieval evaluation benchmarks.
+    <strong>Sparse Boost (1.2) is critical.</strong> BM25 excels at finding exact function names and identifiers that vector search might miss. The 1.2 value is taken from published research; no Aura-specific retrieval evaluation benchmark is checked into the repository.
   </div>
 
   <h3>Enriched Result Example</h3>
@@ -361,17 +361,16 @@
 <!-- 5. Graph Data Model -->
 <section id="graph-model">
   <h2>5. Neptune Graph Data Model</h2>
-  <p class="desc">AWS Neptune stores structural code relationships as a property graph, enabling precise traversal of call chains, dependencies, and inheritance hierarchies.</p>
+  <p class="desc">AWS Neptune stores structural code relationships as a property graph, enabling precise traversal of call chains, dependencies, and inheritance hierarchies. Code entities are written as a single <code>CodeEntity</code> vertex label with the entity kind in the <code>type</code> property; the tables below list those kinds and the edge labels defined in <code>src/services/graph/edge_labels.py</code>.</p>
 
   <h3>Node Types</h3>
   <div class="table-wrapper">
     <table>
       <tr><th>Node Type</th><th>Description</th><th>Key Properties</th></tr>
-      <tr><td>File</td><td>Source code file</td><td>path, language, last_modified</td></tr>
-      <tr><td>Function</td><td>Function or method definition</td><td>name, signature, line_start, line_end</td></tr>
-      <tr><td>Class</td><td>Class definition</td><td>name, docstring, decorators</td></tr>
-      <tr><td>Variable</td><td>Variable definition</td><td>name, type, scope</td></tr>
-      <tr><td>Import</td><td>Import statement</td><td>module, alias</td></tr>
+      <tr><td>CodeEntity (type=class)</td><td>Class definition</td><td>entity_id, name, file_path, line_number, fqn</td></tr>
+      <tr><td>CodeEntity (type=function / method)</td><td>Function or method definition</td><td>entity_id, name, file_path, line_number, parent, fqn</td></tr>
+      <tr><td>CodeEntity (type=variable)</td><td>Variable definition</td><td>entity_id, name, file_path, line_number</td></tr>
+      <tr><td>CodeEntity (type=import)</td><td>Import statement</td><td>entity_id, name, file_path, module_path</td></tr>
     </table>
   </div>
 
@@ -379,13 +378,13 @@
   <div class="table-wrapper">
     <table>
       <tr><th>Edge Type</th><th>From</th><th>To</th><th>Description</th></tr>
-      <tr><td>CONTAINS</td><td>File</td><td>Function / Class</td><td>File contains definition</td></tr>
-      <tr><td>CALLS</td><td>Function</td><td>Function</td><td>Function invocation</td></tr>
-      <tr><td>IMPORTS</td><td>File</td><td>File / Module</td><td>Import dependency</td></tr>
-      <tr><td>EXTENDS</td><td>Class</td><td>Class</td><td>Inheritance relationship</td></tr>
-      <tr><td>REFERENCES</td><td>Function</td><td>Variable</td><td>Variable usage</td></tr>
-      <tr><td>DEPENDS_ON</td><td>File</td><td>Package</td><td>External dependency</td></tr>
-      <tr><td>RELATED_BY_QUERY</td><td>Node</td><td>Node</td><td>HopRAG pseudo-query edges</td></tr>
+      <tr><td>CONTAINS / HAS_&lt;TYPE&gt;</td><td>Parent entity</td><td>Child entity</td><td>Containment</td></tr>
+      <tr><td>CALLS</td><td>Function</td><td>Function</td><td>Deterministically resolved call (symbol-resolver tiers 1-2)</td></tr>
+      <tr><td>CALLS_INFERRED</td><td>Function</td><td>Function</td><td>Call resolved by the tier-3 LLM resolver (lower trust tier); not produced by API-triggered ingestion today because that service is constructed without a Bedrock client</td></tr>
+      <tr><td>IMPORTS</td><td>Module</td><td>Module</td><td>Import dependency</td></tr>
+      <tr><td>INHERITS</td><td>Class</td><td>Class</td><td>Inheritance relationship</td></tr>
+      <tr><td>READS_CONFIG / DEPENDS_ON_ENV / USES_KMS_KEY / FEATURE_GATED_BY</td><td>Code entity</td><td>Config / infrastructure vertex</td><td>Config and infrastructure dependencies (clearance-filtered at query time)</td></tr>
+      <tr><td>(pseudo_query property)</td><td>Node</td><td>Node</td><td>HopRAG annotates existing edges with a <code>pseudo_query</code> property; it does not create a separate edge label</td></tr>
     </table>
   </div>
 
@@ -393,20 +392,19 @@
   <div class="code-block">{
   <span class="str">"mappings"</span>: {
     <span class="str">"properties"</span>: {
-      <span class="str">"content"</span>:        { <span class="str">"type"</span>: <span class="str">"text"</span> },
+      <span class="str">"text"</span>:           { <span class="str">"type"</span>: <span class="str">"text"</span> },
       <span class="str">"embedding"</span>: {
         <span class="str">"type"</span>: <span class="str">"knn_vector"</span>,
-        <span class="str">"dimension"</span>: <span class="hl">1536</span>,
+        <span class="str">"dimension"</span>: <span class="hl">1024</span>,
         <span class="str">"method"</span>: {
           <span class="str">"name"</span>: <span class="str">"hnsw"</span>,
           <span class="str">"engine"</span>: <span class="str">"nmslib"</span>,
           <span class="str">"parameters"</span>: { <span class="str">"m"</span>: 16, <span class="str">"ef_construction"</span>: 512 }
         }
       },
-      <span class="str">"file_path"</span>:       { <span class="str">"type"</span>: <span class="str">"keyword"</span> },
-      <span class="str">"function_names"</span>:  { <span class="str">"type"</span>: <span class="str">"keyword"</span> },
-      <span class="str">"language"</span>:        { <span class="str">"type"</span>: <span class="str">"keyword"</span> },
-      <span class="str">"last_modified"</span>:   { <span class="str">"type"</span>: <span class="str">"date"</span> }
+      <span class="str">"metadata"</span>:        { <span class="str">"type"</span>: <span class="str">"object"</span> },
+      <span class="str">"timestamp"</span>:       { <span class="str">"type"</span>: <span class="str">"date"</span> },
+      <span class="str">"provenance"</span>:      { <span class="str">"type"</span>: <span class="str">"object"</span> }
     }
   }
 }</div>
@@ -415,7 +413,7 @@
 <!-- 6. Graph Query Patterns -->
 <section id="graph-queries">
   <h2>6. Graph Query Patterns (5 Types)</h2>
-  <p class="desc">Aura implements five structured graph query patterns for security-focused structural code analysis, defined in the GraphQueryType enum.</p>
+  <p class="desc">Aura defines five structured graph query types for security-focused structural code analysis in the GraphQueryType enum (<code>src/services/context_retrieval_service.py</code>). Each type selects an edge-label filter (CALL_GRAPH: CALLS; DEPENDENCIES: IMPORTS; INHERITANCE: INHERITS; REFERENCES and RELATED: all labels) for a bounded <code>repeat(bothE(...).otherV().simplePath())</code> traversal. There is no variable-reference edge yet, so REFERENCES returns general neighbors. The Gremlin examples below are illustrative.</p>
 
   <div class="code-block"><span class="kw">class</span> <span class="svc">GraphQueryType</span>(Enum):
     CALL_GRAPH   = <span class="str">"call_graph"</span>     <span class="comment"># Functions that call / are called by target</span>
@@ -504,7 +502,7 @@ g.V().has(<span class="str">'Function'</span>, <span class="str">'name'</span>, 
 <!-- 7. Context Stack -->
 <section id="context-stack">
   <h2>7. Context Engineering Stack (6 Layers)</h2>
-  <p class="desc">The Context Stack Manager implements explicit layered context management, ensuring optimal token allocation across different context types.</p>
+  <p class="desc">The Context Stack Manager implements explicit layered context management, ensuring optimal token allocation across different context types. It is implemented and unit-tested, but no agent workflow builds prompts through it yet.</p>
 
   <div class="layer-card l1">
     <h4>Layer 1: System Instructions (2K tokens)</h4>
@@ -520,7 +518,7 @@ g.V().has(<span class="str">'Function'</span>, <span class="str">'name'</span>, 
   </div>
   <div class="layer-card l4">
     <h4>Layer 4: Tool Definitions (3K tokens)</h4>
-    <div class="layer-body">Hierarchical tool registry with ~20 atomic tools organized in 3 tiers for efficient selection.</div>
+    <div class="layer-body">Hierarchical tool registry with atomic tools organized in 3 tiers for efficient selection.</div>
   </div>
   <div class="layer-card l5">
     <h4>Layer 5: Conversation History (20K tokens)</h4>
@@ -532,19 +530,19 @@ g.V().has(<span class="str">'Function'</span>, <span class="str">'name'</span>, 
   </div>
 
   <div class="callout purple">
-    <strong>Total Context Budget: ~100K tokens.</strong> Research finding: effective context window is &lt;256K tokens. The 6-layer stack ensures optimal allocation with Layer 3 (Hybrid GraphRAG) receiving 50% of the budget for maximum retrieval depth.
+    <strong>Total Context Budget: 100K tokens (100,000 default).</strong> Research finding: effective context window is &lt;256K tokens. The 6-layer stack ensures optimal allocation with Layer 3 (Hybrid GraphRAG) receiving 50% of the budget for maximum retrieval depth.
   </div>
 </section>
 
 <!-- 8. HopRAG -->
 <section id="hoprag">
   <h2>8. HopRAG Multi-Hop Retrieval</h2>
-  <p class="desc">HopRAG extends the base retrieval system with multi-hop graph traversal guided by semantic similarity, enabling complex reasoning chains across the codebase.</p>
+  <p class="desc">HopRAG extends the base retrieval system with multi-hop graph traversal guided by semantic similarity, enabling complex reasoning chains across the codebase. Implemented and unit-tested; not yet called by any API route or agent workflow. It expects an async <code>execute(query)</code> Neptune client, which <code>NeptuneGraphService</code> does not expose, so an adapter is needed before wiring.</p>
 
   <div class="card-grid">
     <div class="card">
       <div class="card-title">Pseudo-Query Edge Generation</div>
-      <div class="card-body">LLM-powered generation of hypothetical query edges that link semantically related nodes even without explicit structural connections. Stored as <strong>RELATED_BY_QUERY</strong> edges in Neptune.</div>
+      <div class="card-body">LLM-powered generation of hypothetical query edges that link semantically related nodes even without explicit structural connections. Stored as a <strong>pseudo_query</strong> property on existing Neptune edges.</div>
     </div>
     <div class="card">
       <div class="card-title">Retrieve-Reason-Prune Pipeline</div>
@@ -556,12 +554,12 @@ g.V().has(<span class="str">'Function'</span>, <span class="str">'name'</span>, 
     </div>
     <div class="card">
       <div class="card-title">Embedding Cache</div>
-      <div class="card-body">LRU cache of <strong>1,000 items</strong> for frequently accessed embeddings. Reduces recomputation during multi-hop traversal and improves query latency.</div>
+      <div class="card-body">Bounded cache of <strong>1,000 items</strong> (oldest entry evicted first) for frequently accessed embeddings. Reduces recomputation during multi-hop traversal and improves query latency.</div>
     </div>
   </div>
 
   <div class="callout success">
-    <strong>HopRAG Performance (arXiv:2502.12442):</strong> +65.07% retrieval F1 improvement and +76.78% answer accuracy on complex multi-hop queries compared to single-hop retrieval.
+    <strong>HopRAG research results (arXiv:2502.12442):</strong> the paper reports +65.07% retrieval F1 and +76.78% answer accuracy on complex multi-hop queries compared to single-hop retrieval. These are published research figures, not Aura measurements.
   </div>
 </section>
 
@@ -578,14 +576,15 @@ g.V().has(<span class="str">'Function'</span>, <span class="str">'name'</span>, 
         &bull; Entity signature verification<br>
         &bull; Anomaly detection on graph mutations<br>
         &bull; Rate limiting on graph writes<br>
-        &bull; Audit logging for all modifications
+        &bull; Audit logging for all modifications<br>
+        Not yet invoked from the ingestion or retrieval path.
       </div>
     </div>
     <div class="card card-accent" style="border-left-color:var(--high)">
       <div class="card-title">Context Provenance (ADR-067) <span class="badge badge-core">Core</span></div>
       <div class="card-body">
         Index-time provenance tracking with trust scoring:<br>
-        &bull; Every retrieved document includes provenance metadata<br>
+        &bull; Ingestion records provenance when <code>AURA_CONTEXT_PROVENANCE_ENABLED</code> is set; the agentic retriever verifies items when a verifier is injected<br>
         &bull; Anomaly detection flags suspicious context<br>
         &bull; Quarantine system for untrusted results<br>
         &bull; 275 tests validating integrity
@@ -595,8 +594,8 @@ g.V().has(<span class="str">'Function'</span>, <span class="str">'name'</span>, 
       <div class="card-title">Input Sanitization (RLM) <span class="badge badge-security">Security</span></div>
       <div class="card-body">
         Prompt injection prevention in retrieval inputs:<br>
-        &bull; RLM InputSanitizer validates all queries<br>
-        &bull; REPLSecurityGuard validates code in context<br>
+        &bull; RLM InputSanitizer and REPLSecurityGuard validate inputs to the RLM recursive context engine<br>
+        &bull; Ingestion scans file content for prompt-injection payloads before embedding<br>
         &bull; 119 tests in the RLM package
       </div>
     </div>
@@ -606,7 +605,8 @@ g.V().has(<span class="str">'Function'</span>, <span class="str">'name'</span>, 
         Multi-agent context isolation via Model Context Protocol:<br>
         &bull; Agents cannot access each other's context<br>
         &bull; Prevents cross-contamination in multi-agent workflows<br>
-        &bull; Enforced at the protocol level
+        &bull; Enforced at the protocol level<br>
+        Implemented in <code>mcp_context_manager.py</code>; not yet wired into an agent workflow.
       </div>
     </div>
   </div>
@@ -615,16 +615,16 @@ g.V().has(<span class="str">'Function'</span>, <span class="str">'name'</span>, 
 <!-- 10. Performance -->
 <section id="performance">
   <h2>10. Performance Characteristics</h2>
-  <p class="desc">Optimized for enterprise-scale codebases with sub-second retrieval latency.</p>
+  <p class="desc">Design targets for enterprise-scale codebases. No retrieval latency benchmark results are checked into the repository, so measured values are not yet available.</p>
 
   <h3>Latency Targets</h3>
   <div class="table-wrapper">
     <table>
       <tr><th>Operation</th><th>Target</th><th>Actual (p95)</th><th>Status</th></tr>
-      <tr><td>Single source retrieval</td><td>&lt; 100ms</td><td>~45ms</td><td><span class="badge badge-deployed">Met</span></td></tr>
-      <tr><td>Three-way RRF fusion</td><td>&lt; 150ms</td><td>~85ms</td><td><span class="badge badge-deployed">Met</span></td></tr>
-      <tr><td>Graph traversal (2 hops)</td><td>&lt; 200ms</td><td>~120ms</td><td><span class="badge badge-deployed">Met</span></td></tr>
-      <tr><td>Full context retrieval</td><td>&lt; 500ms</td><td>~350ms</td><td><span class="badge badge-deployed">Met</span></td></tr>
+      <tr><td>Single source retrieval</td><td>&lt; 100ms</td><td>Not yet measured</td><td>Target</td></tr>
+      <tr><td>Three-way RRF fusion</td><td>&lt; 150ms</td><td>Not yet measured</td><td>Target</td></tr>
+      <tr><td>Graph traversal (2 hops)</td><td>&lt; 200ms</td><td>Not yet measured</td><td>Target</td></tr>
+      <tr><td>Full context retrieval</td><td>&lt; 500ms</td><td>Not yet measured</td><td>Target</td></tr>
     </table>
   </div>
 
@@ -642,14 +642,14 @@ g.V().has(<span class="str">'Function'</span>, <span class="str">'name'</span>, 
   <h3>Index Update Frequency</h3>
   <div class="table-wrapper">
     <table>
-      <tr><th>Event</th><th>Update Type</th><th>Latency</th></tr>
-      <tr><td>File saved</td><td>Incremental</td><td>&lt; 5 seconds</td></tr>
-      <tr><td>PR merged</td><td>Batch update</td><td>&lt; 60 seconds</td></tr>
-      <tr><td>Full rescan</td><td>Complete rebuild</td><td>1-4 hours (background)</td></tr>
+      <tr><th>Event</th><th>Update Type</th><th>Latency target</th></tr>
+      <tr><td>Push to a tracked branch (GitHub webhook)</td><td>Incremental (<code>ingest_changes</code>)</td><td>&lt; 60 seconds</td></tr>
+      <tr><td>Full ingestion (<code>POST /api/v1/ingest</code>)</td><td>Complete rebuild</td><td>1-4 hours (background)</td></tr>
+      <tr><td>File saved</td><td>Not implemented</td><td>&mdash;</td></tr>
     </table>
   </div>
 
-  <h3>Research-Validated Metrics</h3>
+  <h3>Published Research Metrics (not Aura measurements)</h3>
   <div class="table-wrapper">
     <table>
       <tr><th>Metric</th><th>Value</th><th>Source</th></tr>
@@ -665,7 +665,7 @@ g.V().has(<span class="str">'Function'</span>, <span class="str">'name'</span>, 
 <!-- 11. Configuration -->
 <section id="configuration">
   <h2>11. Configuration Options</h2>
-  <p class="desc">Administrators can tune retrieval behavior through configuration to optimize for different codebase characteristics.</p>
+  <p class="desc"><strong>Planned.</strong> These values exist today only as code defaults (<code>RetrievalConfig</code> in <code>three_way_retrieval_service.py</code>; the fixed extension list in <code>GitIngestionService</code>). There is no administrator-facing configuration API or file for them yet.</p>
 
   <h3>Retrieval Weights</h3>
   <div class="code-block"><span class="comment">// Adjust relative importance of each retrieval method</span>
@@ -706,7 +706,7 @@ g.V().has(<span class="str">'Function'</span>, <span class="str">'name'</span>, 
 
 <!-- 12. Test Coverage -->
 <section id="tests">
-  <h2>12. Test Coverage (367 Tests)</h2>
+  <h2>12. Test Coverage (523 Tests)</h2>
   <p class="desc">Comprehensive test suite covering all retrieval paths, fusion logic, scoring algorithms, and security defenses.</p>
 
   <div class="table-wrapper">
@@ -720,15 +720,15 @@ g.V().has(<span class="str">'Function'</span>, <span class="str">'name'</span>, 
       <tr><td>test_hoprag_service.py</td><td>29</td><td>Multi-hop traversal, pseudo-query edges, pruning</td></tr>
       <tr><td>test_community_summarization_service.py</td><td>26</td><td>Leiden clustering, hierarchical LLM summaries</td></tr>
       <tr><td colspan="3" style="background:#F1F5F9;font-weight:700">Supporting Tests</td></tr>
-      <tr><td>test_graphrag_security_service.py</td><td>+</td><td>Context poisoning defense, entity signatures</td></tr>
-      <tr><td>test_neptune_graph_service.py</td><td>+</td><td>Gremlin client, connection pooling, retries</td></tr>
-      <tr><td>test_mcp_context_manager.py</td><td>+</td><td>Multi-agent context isolation</td></tr>
-      <tr><td colspan="2" style="font-weight:700">Total: 367</td><td style="font-weight:700">293 core + 74 supporting</td></tr>
+      <tr><td>services/security/test_graphrag_security_service.py</td><td>36</td><td>Context poisoning defense, entity signatures</td></tr>
+      <tr><td>test_neptune_graph_service.py</td><td>162</td><td>Gremlin client, connection pooling, retries</td></tr>
+      <tr><td>test_mcp_context_manager.py</td><td>32</td><td>Multi-agent context isolation</td></tr>
+      <tr><td colspan="2" style="font-weight:700">Total: 523</td><td style="font-weight:700">293 core + 230 supporting (test functions counted October 2026)</td></tr>
     </table>
   </div>
 
   <div class="callout success">
-    <strong>All 367 tests passing.</strong> Coverage spans the full retrieval pipeline: query analysis, parallel retrieval, RRF fusion, result enrichment, context scoring, stack management, multi-hop traversal, and security validation.
+    <strong>Unit-test scope.</strong> These tests exercise each service with mocked Neptune, OpenSearch, and LLM clients. They cover query analysis, parallel retrieval, RRF fusion, result enrichment, context scoring, stack management, multi-hop traversal, and security validation, but do not exercise a live Neptune or OpenSearch cluster.
   </div>
 </section>
 

@@ -98,7 +98,7 @@ Read on-demand only. The full path map lives in `docs/DOCUMENTATION_INDEX.md`; t
   - Agent confusion and tool use abuse
   - GraphRAG context poisoning
   - Sandbox escape (container breakout, network isolation bypass)
-- **Authentication:** Argon2id password hashing, JWT with proper validation
+- **Authentication:** Amazon Cognito manages user credentials (Aura stores no passwords); JWT (Cognito RS256/JWKS) with proper validation. If Aura ever stores passwords itself (e.g. self-hosted local auth), use Argon2id
 - **Authorization:** RBAC with principle of least privilege
 - **Container Base Images:** Private ECR only (see Container Security below)
 
@@ -138,11 +138,11 @@ See `docs/deployment/DEPLOYMENT_GUIDE.md` for full container build workflow.
 ### Key Technology Stack
 
 - **Backend:** Python 3.11+, FastAPI
-- **LLM Integration:** OpenAI GPT-4, Anthropic Claude (via Bedrock)
+- **LLM Integration:** Anthropic Claude via AWS Bedrock in all agent flows. OpenAI, Azure OpenAI and Gemini provider classes exist in `src/services/providers/` but are not wired into agent paths
 - **Graph Database:** AWS Neptune (Gremlin)
 - **Vector Database:** AWS OpenSearch
 - **Container Orchestration:** AWS EKS (Kubernetes) with EC2 Managed Node Groups
-- **Infrastructure:** CloudFormation, Terraform (planned)
+- **Infrastructure:** CloudFormation; Terraform limited to one AWS-only file (`deploy/terraform/main.tf`), broader Terraform planned
 - **Compute:** EKS on EC2 (GovCloud compatible), ECS on Fargate (for dnsmasq VPC-wide service)
 - **DNS/Service Discovery:** dnsmasq (3-tier architecture)
 - **Frontend:** React 19, JavaScript (no TypeScript), Tailwind CSS, Vite. (Earlier roadmap entries that referenced TypeScript + Next.js are obsolete; see `frontend/package.json` for canonical versions.)
@@ -158,7 +158,8 @@ See `docs/deployment/DEPLOYMENT_GUIDE.md` for full container build workflow.
 ### Current Status
 
 - **Company:** Aenea Labs | **Domain:** aenealabs.com (Route 53)
-- **Single source of truth:** `docs/PROJECT_STATUS.md` -- overall completion %, deferred-work registry pointer, LoC + test-suite counts (with reproduction commands), ADR statuses, infrastructure phase deployments, and dated audit notes. Read it on demand rather than mirroring its contents here; this CLAUDE.md held a duplicate ADR-by-ADR list that drifted out of sync between updates.
+- **Implementation reality:** many capabilities are built and tested as libraries but not invoked by any entry point, and dev-mock fallbacks default to on. Check `docs/PROJECT_STATUS.md` (2026-10-26 audit) before describing a capability as working.
+- **Single source of truth:** `docs/PROJECT_STATUS.md` -- verified per-capability status, deferred-work registry pointer, LoC + test-suite counts (with reproduction commands), ADR statuses, infrastructure phase deployments, and dated audit notes. Read it on demand rather than mirroring its contents here; this CLAUDE.md held a duplicate ADR-by-ADR list that drifted out of sync between updates.
 - **Compliance posture:** NIST 800-53 aligned technical controls. FedRAMP / CMMC certifications not yet pursued.
 - **Deferred-work registry:** `docs/DEFERRED_WORK_REGISTRY.md` (reviewed quarterly) -- canonical list of cost-gated / vendor-gated / review-capacity-gated work tracked outside open issues.
 
@@ -219,13 +220,13 @@ Valid tier values are `1` (Kubernetes), `2` (Fargate), or `all`. See `deploy/scr
 
 ## Security & Code Review
 
-### **Security Compliance Status (Dec 16, 2025)**
+### **Security Compliance Status (Oct 26, 2026)**
 
-**Infrastructure Security:** 100% GovCloud-ready (19/19 deployed services compatible)
-**Security Services:** 100% Deployed (5 Python services, 328 tests)
-**Compliance Posture:** NIST 800-53 aligned technical controls deployed.
+**Infrastructure Security:** 19/19 deployed services GovCloud-compatible (no GovCloud deployment yet)
+**Security Services:** 5 Python services built and tested (285 tests); not yet wired onto API routes
+**Compliance Posture:** NIST 800-53 aligned technical controls; several are implemented as libraries not yet on a running path (see `docs/PROJECT_STATUS.md`, 2026-10-26 audit).
 
-**Security Services & Infrastructure:** See `docs/security/SECURITY_SERVICES_OVERVIEW.md` for deployed services (5 Python services, 328 tests), CloudFormation resources, and infrastructure controls.
+**Security Services & Infrastructure:** See `docs/security/SECURITY_SERVICES_OVERVIEW.md` for the security services (5 Python services, 285 tests) and their wiring status, CloudFormation resources, and infrastructure controls.
 
 **Organizational Controls:** See internal documentation for status of organizational security controls (AT, IR, PS, RA, CA domains).
 
@@ -395,7 +396,7 @@ Configured in `.claude/settings.json`:
 
 Safe for isolated parallel worktree work:
 - **Independent service packages:** `rlm/`, `jepa/`, `constraint_geometry/`, `gpu_scheduler/`, `env_validator/`, `airgap/`, `vulnerability_scanner/`
-- **CloudFormation templates:** All 155 templates are independently validatable
+- **CloudFormation templates:** All 181 templates (excluding `archive/`) are independently validatable
 - **Test files:** Independent per-service test files
 
 **NOT safe for parallel work (shared dependencies):** Most single-file services under `src/services/` share `bedrock_llm_service`, `neptune_graph_service`, `opensearch_vector_service`.

@@ -1,6 +1,9 @@
 # ADR-051: Recursive Context Scaling and Embedding Prediction Architecture
 
-**Status:** Deployed
+**Status:** Implemented (library only; not integrated or deployed)
+
+> **Status note (2026-10-26).** The RLM package (`src/services/rlm/`) and JEPA module (`src/services/jepa/embedding_predictor.py`) exist with 167 tests (35+38+46+48 in `tests/test_rlm_*.py` and `tests/test_jepa_embedding_predictor.py`). Nothing in `src/` instantiates `RecursiveContextEngine` or `EmbeddingPredictor`; only `InputSanitizer` is imported, by `src/services/hoprag_service.py`, which is itself not imported by any `src/` module. The JEPA transformer layers are pure NumPy with random Xavier initialization and no trained weights (`embedding_predictor.py:303-308`), and the cited `rlm-jepa-infrastructure.yaml`, `rlm-sandbox-runtime.yaml`, `jepa-endpoint.yaml`, `losses.py`, `helpers.py`, and `unified_context_service.py` do not exist. Two defects would surface once it is wired: the REPL compiles generated code in `eval` mode (`src/services/rlm/recursive_context_engine.py:537`), so multi-statement programs fail to compile, and `recursive_call` (line 647) calls `asyncio.get_event_loop()` from the executor thread, where no event loop exists, so recursion returns an error string. Treat the package as a prototype.
+
 **Date:** 2026-01-04
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-024 (Titan Neural Memory), ADR-029 (Agent Optimization), ADR-034 (Context Engineering), ADR-050 (Self-Play SWE-RL)

@@ -126,7 +126,7 @@
     <div class="header-meta">
       <span>Project Aura &mdash; Aenea Labs</span>
       <span>Version 1.0</span>
-      <span>Last Updated: February 2026</span>
+      <span>Last Updated: October 2026</span>
     </div>
   </div>
 </header>
@@ -142,7 +142,7 @@
       <div class="stat-card"><div class="sv">8</div><div class="sl">Threat Categories</div></div>
       <div class="stat-card"><div class="sv">39+</div><div class="sl">Input Sanitization Patterns</div></div>
       <div class="stat-card"><div class="sv">9</div><div class="sl">Escape Techniques Monitored</div></div>
-      <div class="stat-card"><div class="sv">3,000+</div><div class="sl">Guardrail Tests</div></div>
+      <div class="stat-card"><div class="sv">5,284</div><div class="sl">Guardrail Tests</div></div>
     </div>
 
     <nav class="toc">
@@ -169,9 +169,16 @@
     <section class="section" id="sec-pipeline">
       <div class="sh"><div class="si si-red">&#x1F6E1;</div><h2>1. Guardrail Pipeline Overview</h2></div>
       <p class="intro">
-        Guardrails are not a single layer &mdash; they form a defense-in-depth pipeline that wraps every
-        agent interaction from input to output to execution. Probabilistic layers (input/critique)
-        combine with deterministic layers (constraint coherence) for comprehensive coverage.
+        Guardrails are not a single layer &mdash; the diagram below is the target defense-in-depth pipeline
+        from input to output to execution. Probabilistic layers (input/critique) combine with deterministic
+        layers (constraint coherence). <strong>Current wiring (October 2026):</strong> the layers that run inline
+        today are the LLM prompt sanitizer and Amazon Bedrock Guardrails on every Bedrock call
+        (<code>bedrock_llm_service.py</code>), the A2AS input assessment at orchestrator entry
+        (<code>agent_orchestrator.py</code>), semantic-guardrail Layers 1&ndash;2 on ingested repository content
+        (<code>git_ingestion_service.py</code>), and context provenance verification during retrieval. Constitutional AI,
+        Capability Governance enforcement, the full 6-layer semantic engine, the Constraint Geometry Engine on agent
+        output, ABAC, and the Cedar engine are implemented and tested as libraries but are not yet called from the
+        production agent or API paths.
       </p>
       <div class="diagram">
         <div class="dt">Agent Guardrail Pipeline</div>
@@ -228,9 +235,12 @@
     <section class="section" id="sec-semantic">
       <div class="sh"><div class="si si-red">&#x1F50D;</div><h2>2. Semantic Guardrails Engine (ADR-065)</h2></div>
       <p class="intro">
-        Six progressively deeper detection layers process every input with strict latency budgets.
+        Six progressively deeper detection layers with strict latency budgets.
         The engine detects 8 threat categories and produces one of 4 actions.
-        Performance targets: P50 &lt;150ms, P95 &lt;300ms, P99 &lt;500ms. 793 tests.
+        Performance targets: P50 &lt;150ms, P95 &lt;300ms, P99 &lt;500ms. 811 tests.
+        Status: the engine is not yet called on the LLM request path; Layers 1&ndash;2 run inline on ingested
+        repository content. Layers 3&ndash;5 fall back to in-process mocks unless real clients are injected,
+        and no production code injects them yet.
       </p>
 
       <div class="layer-card">
@@ -245,22 +255,22 @@
       </div>
       <div class="layer-card">
         <h3>Layer 3: Embedding Similarity Detection</h3>
-        <p>OpenSearch k-NN search (10 neighbors, min score 0.5) against threat corpus index. High-confidence threshold: 0.85 similarity. Query caching with 5-minute TTL.</p>
+        <p>OpenSearch k-NN search (10 neighbors, min score 0.5) against threat corpus index. High-confidence threshold: 0.85 similarity. Query caching with 5-minute TTL. Status: without injected embedding and vector clients the detector uses a 15-entry in-process mock corpus; the <code>aura-threat-embeddings</code> corpus loader is planned.</p>
         <div class="perf">embedding_detector.py &middot; Target: 50ms</div>
       </div>
       <div class="layer-card">
         <h3>Layer 4: LLM Intent Classification</h3>
-        <p>Multi-model classification (Haiku fast / Sonnet balanced / Opus accurate). Classes: Legitimate, Override, Exfiltration, Role confusion, False positive. Semantic cache integration (95% similarity threshold).</p>
+        <p>Multi-model classification (Haiku fast / Sonnet balanced / Opus accurate). Classes: Legitimate, Override, Exfiltration, Role confusion, False positive. Semantic cache integration (95% similarity threshold). Status: without an injected LLM client the classifier uses keyword-based mock classification.</p>
         <div class="perf">intent_classifier.py &middot; Target: 150ms</div>
       </div>
       <div class="layer-card">
         <h3>Layer 5: Multi-Turn Session Tracking</h3>
-        <p>DynamoDB-backed session state with exponential decay scoring (0.9 factor per turn). HITL escalation at cumulative score 2.5. Max 50 turns tracked per session. 24-hour TTL.</p>
+        <p>Session state with exponential decay scoring (0.9 factor per turn). HITL escalation at cumulative score 2.5. Max 50 turns tracked per session. 24-hour TTL. DynamoDB persistence when a client is injected; in-memory otherwise (current default).</p>
         <div class="perf">multi_turn_tracker.py &middot; Target: 20ms</div>
       </div>
       <div class="layer-card">
         <h3>Layer 6: Decision Engine</h3>
-        <p>Aggregates all layer results into a final action: ALLOW, SANITIZE, BLOCK, or ESCALATE_HITL. Block on any CRITICAL threat or multiple HIGH threats. Full audit logging to DynamoDB queue.</p>
+        <p>Aggregates all layer results into a final action: ALLOW, SANITIZE, BLOCK, or ESCALATE_HITL. Block on any CRITICAL threat or multiple HIGH threats. Assessments are written to the application audit log.</p>
         <div class="perf">decision_engine.py &middot; Target: 5ms</div>
       </div>
 
@@ -283,30 +293,32 @@
     <section class="section" id="sec-constitutional">
       <div class="sh"><div class="si si-purple">&#x2696;</div><h2>3. Constitutional AI (ADR-063)</h2></div>
       <p class="intro">
-        Every agent output passes through a critique-revision pipeline evaluating adherence to
-        16 constitutional principles across 6 categories. Fast-path bypass skips full evaluation
-        for obviously safe outputs. 463 tests.
+        A critique-revision pipeline evaluates agent output against 16 constitutional principles
+        across 7 categories (<code>constitution.yaml</code>). Fast-path bypass skips full evaluation
+        for obviously safe outputs. 535 tests. Status: agents opt in through <code>ConstitutionalMixin</code>,
+        which no production agent class uses yet; today the pipeline runs in the nightly evaluation Lambda
+        and in tests, not inline on agent output.
       </p>
       <div class="tw">
         <table>
           <thead><tr><th>#</th><th>Principle</th><th>Severity</th><th>Category</th></tr></thead>
           <tbody>
             <tr><td>1</td><td>Security-First Code Generation</td><td><span class="badge b4">CRITICAL</span></td><td>SAFETY</td></tr>
-            <tr><td>2</td><td>NIST 800-53 Compliance</td><td><span class="badge b4">CRITICAL</span></td><td>COMPLIANCE</td></tr>
-            <tr><td>3</td><td>SOX Regulatory Requirements</td><td><span class="badge b4">CRITICAL</span></td><td>COMPLIANCE</td></tr>
-            <tr><td>4</td><td>Zero Trust Architecture</td><td><span class="badge b4">CRITICAL</span></td><td>SAFETY</td></tr>
-            <tr><td>5</td><td>Least Privilege Access</td><td><span class="badge b3">HIGH</span></td><td>SAFETY</td></tr>
-            <tr><td>6</td><td>Defense in Depth</td><td><span class="badge b3">HIGH</span></td><td>SAFETY</td></tr>
-            <tr><td>7</td><td>Encryption Mandatory</td><td><span class="badge b3">HIGH</span></td><td>SAFETY</td></tr>
-            <tr><td>8</td><td>Audit Trail Complete</td><td><span class="badge b3">HIGH</span></td><td>COMPLIANCE</td></tr>
-            <tr><td>9</td><td>Transparency Always</td><td><span class="badge b3">HIGH</span></td><td>TRANSPARENCY</td></tr>
-            <tr><td>10</td><td>No Deception</td><td><span class="badge b3">HIGH</span></td><td>ANTI_SYCOPHANCY</td></tr>
-            <tr><td>11</td><td>Honest Disagreement</td><td><span class="badge b2">MEDIUM</span></td><td>ANTI_SYCOPHANCY</td></tr>
-            <tr><td>12</td><td>Calibrated Confidence</td><td><span class="badge b2">MEDIUM</span></td><td>ANTI_SYCOPHANCY</td></tr>
-            <tr><td>13</td><td>Code Quality Standards</td><td><span class="badge b2">MEDIUM</span></td><td>CODE_QUALITY</td></tr>
-            <tr><td>14</td><td>Maintainability First</td><td><span class="badge b2">MEDIUM</span></td><td>CODE_QUALITY</td></tr>
-            <tr><td>15</td><td>Clear Documentation</td><td><span class="badge b2">MEDIUM</span></td><td>TRANSPARENCY</td></tr>
-            <tr><td>16</td><td>Helpful Assistance</td><td><span class="badge b1">LOW</span></td><td>HELPFULNESS</td></tr>
+            <tr><td>2</td><td>Data Protection and Privacy</td><td><span class="badge b4">CRITICAL</span></td><td>SAFETY</td></tr>
+            <tr><td>3</td><td>Sandbox Environment Isolation</td><td><span class="badge b4">CRITICAL</span></td><td>SAFETY</td></tr>
+            <tr><td>4</td><td>Regulatory Compliance (CMMC/SOX/NIST)</td><td><span class="badge b3">HIGH</span></td><td>COMPLIANCE</td></tr>
+            <tr><td>5</td><td>Comprehensive Audit Trail</td><td><span class="badge b3">HIGH</span></td><td>COMPLIANCE</td></tr>
+            <tr><td>6</td><td>Honest Capability Representation</td><td><span class="badge b3">HIGH</span></td><td>TRANSPARENCY</td></tr>
+            <tr><td>7</td><td>Transparent Reasoning Process</td><td><span class="badge b2">MEDIUM</span></td><td>TRANSPARENCY</td></tr>
+            <tr><td>8</td><td>Genuinely Helpful Assistance</td><td><span class="badge b2">MEDIUM</span></td><td>HELPFULNESS</td></tr>
+            <tr><td>9</td><td>Comprehensive Error Handling</td><td><span class="badge b2">MEDIUM</span></td><td>HELPFULNESS</td></tr>
+            <tr><td>10</td><td>Code Maintainability</td><td><span class="badge b1">LOW</span></td><td>HELPFULNESS</td></tr>
+            <tr><td>11</td><td>Honest Disagreement</td><td><span class="badge b3">HIGH</span></td><td>ANTI_SYCOPHANCY</td></tr>
+            <tr><td>12</td><td>Appropriate Opinion Persistence</td><td><span class="badge b2">MEDIUM</span></td><td>ANTI_SYCOPHANCY</td></tr>
+            <tr><td>13</td><td>Objective Technical Assessment</td><td><span class="badge b2">MEDIUM</span></td><td>ANTI_SYCOPHANCY</td></tr>
+            <tr><td>14</td><td>Project Pattern Consistency</td><td><span class="badge b2">MEDIUM</span></td><td>CODE_QUALITY</td></tr>
+            <tr><td>15</td><td>Code Testability</td><td><span class="badge b2">MEDIUM</span></td><td>CODE_QUALITY</td></tr>
+            <tr><td>16</td><td>Principle Conflict Resolution</td><td><span class="badge b3">HIGH</span></td><td>META</td></tr>
           </tbody>
         </table>
       </div>
@@ -326,7 +338,7 @@
       <p class="intro">
         Deterministic cortical discrimination across a 7-axis constraint space. Unlike the probabilistic
         semantic guardrails, the CGE produces the same coherence score for the same input every time.
-        4 policy profiles map scores to actions. 358 tests.
+        4 policy profiles map scores to actions. 190 tests. Status: called from the model-assurance scoring and verification-envelope code; not yet applied to agent output in the orchestrator.
       </p>
       <div class="tw">
         <table>
@@ -373,8 +385,9 @@
     <section class="section" id="sec-governance">
       <div class="sh"><div class="si si-blue">&#x1F512;</div><h2>5. Capability Governance (ADR-066)</h2></div>
       <p class="intro">
-        Every tool invocation passes through enforcement middleware that evaluates agent identity,
-        tool risk tier, execution context, and dynamic grants. 322 tests.
+        Enforcement middleware evaluates agent identity, tool risk tier, execution context, and dynamic
+        grants for a tool invocation. 981 tests. Status: the middleware is implemented but no agent or MCP
+        tool path calls it yet, and the capability-graph API router is not mounted in <code>main.py</code>.
       </p>
       <div class="tw">
         <table>
@@ -402,7 +415,7 @@
       <div class="sh"><div class="si si-teal">&#x1F50F;</div><h2>6. Context Provenance &amp; Integrity (ADR-067)</h2></div>
       <p class="intro">
         Every context fragment fed to an agent is tracked with cryptographic provenance records,
-        trust-scored, and quarantined if integrity verification fails. 275 tests.
+        trust-scored, and quarantined if integrity verification fails. 461 tests.
       </p>
       <div class="cg">
         <div class="c">
@@ -453,7 +466,7 @@
           <p>
             Detects excessive agreement, hidden uncertainty, missing alternatives, suppressed negative
             findings, and confirmation bias. Enforces minimum disagreement rate (5%) and maximum
-            confidence error (0.10).
+            confidence error (0.10). Status: the alignment services are not yet called from the agent pipeline, and <code>alignment_endpoints.py</code> is not mounted in <code>main.py</code>.
           </p>
         </div>
         <div class="c"><h3>Reversibility Tracking</h3><div class="cp">reversibility.py</div><p>Assesses rollback capability, estimates impact radius, and tracks recovery time for every agent action.</p></div>
@@ -536,7 +549,9 @@
       <div class="sh"><div class="si si-red">&#x1F6A8;</div><h2>10. Runtime Security (ADR-083)</h2></div>
       <p class="intro">
         Execution-time monitoring covering Kubernetes admission control, container escape detection,
-        and runtime-to-code correlation via GraphRAG. 155 tests.
+        and runtime-to-code correlation via GraphRAG. 1,077 tests. Status: the services process events passed
+        to them, but no admission webhook, Falco/eBPF feed, or CloudTrail consumer is deployed to call them yet;
+        the <code>/api/v1/runtime-security</code> endpoints read an in-memory history that is empty until they are.
       </p>
       <div class="cg">
         <div class="c">
@@ -591,8 +606,9 @@
           <h3>Cedar Policy Engine</h3>
           <div class="cp">src/services/cedar_policy_engine.py</div>
           <p>
-            Natural language &rarr; Cedar policy conversion. Real-time tool call interception with
-            hierarchical policy inheritance. 5 priority levels: SYSTEM (1000) &rarr; ORGANIZATION (500) &rarr;
+            Natural language &rarr; Cedar-style policy conversion and tool-call policy evaluation with
+            hierarchical policy inheritance (an in-house evaluator; it does not embed the Cedar language runtime,
+            and no tool path calls it yet). 5 priority levels: SYSTEM (1000) &rarr; ORGANIZATION (500) &rarr;
             TEAM (250) &rarr; USER (100) &rarr; DEFAULT (0).
           </p>
           <div class="tags"><span class="tag tp">ADR-070</span></div>
@@ -602,7 +618,8 @@
           <div class="cp">src/services/authorization/</div>
           <p>
             Attribute-based access control with clearance levels, multi-tenant isolation,
-            and dynamic attribute evaluation for agent permissions.
+            and dynamic attribute evaluation for agent permissions. Status: <code>require_abac</code> is not yet
+            applied to any API route.
           </p>
           <div class="tags"><span class="tag tp">ADR-073</span></div>
         </div>
@@ -611,7 +628,9 @@
           <div class="cp">src/services/guardrail_config/config_service.py</div>
           <p>
             Policy profile selection (4 presets), compliance profiles (NIST, SOX, CMMC),
-            threshold tuning per layer, and per-environment enable/disable.
+            threshold tuning per layer, and per-environment enable/disable. Status: the
+            <code>/api/v1/guardrails</code> settings are held in process memory and do not yet change runtime
+            guardrail behavior; its activity metrics are generated sample values.
           </p>
           <div class="tags"><span class="tag tp">ADR-069</span></div>
         </div>
@@ -627,18 +646,18 @@
         <table>
           <thead><tr><th>Guardrail</th><th>ADR</th><th>Type</th><th>Pipeline Stage</th><th>Tests</th></tr></thead>
           <tbody>
-            <tr><td>Semantic Guardrails (6 layers)</td><td>065</td><td>Probabilistic</td><td>Input</td><td>793</td></tr>
-            <tr><td>Constitutional AI (16 principles)</td><td>063</td><td>Probabilistic</td><td>Output</td><td>463</td></tr>
-            <tr><td>Constraint Geometry (7 axes)</td><td>081</td><td>Deterministic</td><td>Output</td><td>358</td></tr>
-            <tr><td>Capability Governance (4 tiers)</td><td>066</td><td>Policy</td><td>Tool Access</td><td>322</td></tr>
-            <tr><td>Context Provenance</td><td>067</td><td>Cryptographic</td><td>Context</td><td>275</td></tr>
-            <tr><td>AI Alignment &amp; Trust</td><td>052</td><td>Behavioral</td><td>Output</td><td>&mdash;</td></tr>
-            <tr><td>A2A Security (4 layers)</td><td>029</td><td>Defense-in-depth</td><td>Inter-agent</td><td>&mdash;</td></tr>
+            <tr><td>Semantic Guardrails (6 layers)</td><td>065</td><td>Probabilistic</td><td>Input</td><td>811</td></tr>
+            <tr><td>Constitutional AI (16 principles)</td><td>063</td><td>Probabilistic</td><td>Output</td><td>535</td></tr>
+            <tr><td>Constraint Geometry (7 axes)</td><td>081</td><td>Deterministic</td><td>Output</td><td>190</td></tr>
+            <tr><td>Capability Governance (4 tiers)</td><td>066</td><td>Policy</td><td>Tool Access</td><td>981</td></tr>
+            <tr><td>Context Provenance</td><td>067</td><td>Cryptographic</td><td>Context</td><td>461</td></tr>
+            <tr><td>AI Alignment &amp; Trust</td><td>052</td><td>Behavioral</td><td>Output</td><td>646</td></tr>
+            <tr><td>A2A Security (4 layers)</td><td>029</td><td>Defense-in-depth</td><td>Inter-agent</td><td>73</td></tr>
             <tr><td>Input Sanitization (39+ patterns)</td><td>051</td><td>Pattern</td><td>Input</td><td>119</td></tr>
-            <tr><td>Runtime Security</td><td>083</td><td>Monitoring</td><td>Execution</td><td>155</td></tr>
-            <tr><td>Policy-as-Code (Cedar)</td><td>070</td><td>Policy</td><td>Tool Access</td><td>98</td></tr>
-            <tr><td>ABAC Authorization</td><td>073</td><td>Policy</td><td>Access</td><td>115</td></tr>
-            <tr><td>Guardrail Config UI</td><td>069</td><td>Configuration</td><td>Management</td><td>128</td></tr>
+            <tr><td>Runtime Security</td><td>083</td><td>Monitoring</td><td>Execution</td><td>1,077</td></tr>
+            <tr><td>Policy-as-Code (Cedar)</td><td>070</td><td>Policy</td><td>Tool Access</td><td>84</td></tr>
+            <tr><td>ABAC Authorization</td><td>073</td><td>Policy</td><td>Access</td><td>134</td></tr>
+            <tr><td>Guardrail Config UI</td><td>069</td><td>Configuration</td><td>Management</td><td>173</td></tr>
           </tbody>
         </table>
       </div>

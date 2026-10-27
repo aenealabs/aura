@@ -20,7 +20,7 @@ Project Aura supports multiple deployment models to meet diverse enterprise requ
 | **Time to Deploy** | Minutes | Hours | 30 minutes | Days | Days |
 | **Data Location** | Aenea Labs cloud | Customer infrastructure | Customer infrastructure | On-premises | AWS GovCloud |
 | **Scaling** | Automatic | Customer configured | Manual | Customer configured | Customer configured |
-| **Compliance** | SOC 2, ISO 27001 | Customer responsibility | Customer responsibility | Shared responsibility | FedRAMP, CMMC |
+| **Compliance** | NIST 800-53 aligned controls (no SOC 2 or ISO 27001 certification yet) | Customer responsibility | Customer responsibility | Shared responsibility | NIST 800-53 aligned controls (FedRAMP and CMMC certification not yet pursued) |
 | **LLM Access** | AWS Bedrock | Configurable | Configurable | Configurable | Bedrock GovCloud |
 | **Cost Model** | Subscription | Infrastructure + License | Infrastructure + License | Infrastructure + License | Infrastructure + License |
 
@@ -35,7 +35,7 @@ The SaaS deployment is the recommended option for most organizations. Aenea Labs
 - Zero infrastructure management
 - Automatic scaling and high availability
 - Managed upgrades with zero downtime
-- SOC 2 Type II certified infrastructure
+- Infrastructure on AWS, whose underlying data centers hold SOC 2 Type II reports (Aura itself has not completed a SOC 2 audit)
 - 99.9% uptime SLA (Enterprise tier)
 
 ### Getting Started
@@ -51,7 +51,7 @@ The SaaS deployment is the recommended option for most organizations. Aenea Labs
    | Starter | Up to 10 | Core scanning, basic HITL | Community |
    | Professional | Up to 100 | Full HITL, sandbox testing | Email (8h) |
    | Enterprise | Unlimited | SSO, advanced RBAC, audit logs | Dedicated (1h) |
-   | Government | Unlimited | GovCloud, FedRAMP | Dedicated (1h) |
+   | Government | Unlimited | GovCloud (planned; production not yet deployed) | Dedicated (1h) |
 
 3. **Configure Organization**
 
@@ -188,7 +188,8 @@ kubectl get nodes
 #### Step 3: Install via Helm
 
 ```bash
-# Add Aura Helm repository
+# Add Aura Helm repository (the chart source is in the repository at deploy/helm/aura;
+# the hosted chart repository URL below cannot be confirmed from the repository)
 helm repo add aura https://charts.aenealabs.com
 helm repo update
 
@@ -455,6 +456,8 @@ ENABLE_SEMANTIC_CACHE=true
 ```
 
 #### Step 3: Create Compose File
+
+> The repository does not ship a Podman Compose file for Aura; the file below is a manual recipe for the supporting services.
 
 Create `~/aura/podman-compose.yml`:
 
@@ -735,10 +738,10 @@ For federal government customers and contractors requiring FedRAMP, CMMC, or ITA
 
 | Framework | Status | Authorization Level |
 |-----------|--------|---------------------|
-| FedRAMP | In Progress | Moderate (targeting High) |
-| CMMC | Level 3 Ready | Infrastructure controls deployed |
-| NIST 800-171 | Compliant | Full control implementation |
-| ITAR | Supported | GovCloud isolation |
+| FedRAMP | Planned (no filing submitted) | NIST 800-53 aligned technical controls deployed; no authorization sought |
+| CMMC | Planned (no filing submitted) | NIST 800-53 aligned technical controls deployed; no assessment performed |
+| NIST 800-171 | Not assessed | Overlaps with the NIST 800-53 aligned controls; no formal assessment |
+| ITAR | Design intent | GovCloud isolation; production GovCloud environment not yet deployed |
 
 ### GovCloud Architecture
 
@@ -837,9 +840,10 @@ security:
    export AWS_REGION=us-gov-west-1
    export AWS_DEFAULT_REGION=us-gov-west-1
 
-   # Deploy using GovCloud-specific templates
+   # Deploy using the customer-facing templates (deploy/customer/cloudformation/ with
+   # deploy/customer/parameters/govcloud.json); there is no cloudformation/govcloud/ directory
    aws cloudformation deploy \
-     --template-file cloudformation/govcloud/foundation.yaml \
+     --template-file deploy/customer/cloudformation/aura-foundation-only.yaml \
      --stack-name aura-foundation-prod \
      --capabilities CAPABILITY_NAMED_IAM
    ```

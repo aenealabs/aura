@@ -1,6 +1,9 @@
 # ADR-055: Agent Scheduling View and Job Queue Management
 
-**Status:** Proposed
+**Status:** Implemented
+
+> **Status note (2026-10-26).** Phases 1-3 are built: `src/services/scheduling/scheduling_service.py` (DynamoDB-backed), `src/api/scheduling_endpoints.py` (`/api/v1/schedule`, `/api/v1/schedule/timeline`, `/api/v1/queue/status`) and `src/api/recurring_task_endpoints.py`, all included in `src/api/main.py`; `deploy/cloudformation/scheduling-infrastructure.yaml` (two DynamoDB tables, an EventBridge-triggered dispatcher Lambda); and `frontend/src/components/scheduling/` (SchedulingPage routed in `App.jsx`, timeline with drag-and-drop, approval widget, cron builder, recurring tasks). Real-time updates use polling, not WebSocket. The checklist boxes under Implementation Phases were not updated.
+
 **Date:** 2026-01-06
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-032 (Autonomy Framework), ADR-039 (Self-Service Test Environments), ADR-042 (Real-Time Agent Intervention)

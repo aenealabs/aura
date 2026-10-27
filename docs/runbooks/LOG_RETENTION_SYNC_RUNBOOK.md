@@ -576,6 +576,8 @@ aws logs delete-log-group --log-group-name /aura/test/integration-test
 
 ### Compliance Indicators (UI)
 
+These badges only indicate whether the configured retention meets the CMMC audit-log retention practice. They do not indicate that Aura or the customer holds a CMMC certification.
+
 | Retention | Compliance Badge |
 |-----------|-----------------|
 | < 90 days | "Not CMMC Compliant" (orange warning) |

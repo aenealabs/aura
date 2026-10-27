@@ -1,11 +1,13 @@
 # ADR-024: Titan Neural Memory Architecture Integration
 
-**Status:** Deployed
+**Status:** Implemented (library, CPU backend); not integrated -- memory-service pod serves health and metrics only; orchestrator path off by default
 **Date:** December 6, 2025
 **Accepted:** December 6, 2025
 **Deployed:** December 16, 2025
 **Decision Makers:** Platform Architecture Team
 **Technical Area:** Agent Memory Architecture
+
+> **Status note (2026-10-26).** The PyTorch modules, backends, consolidation and audit code listed under Phases 1-5 exist (for example `src/services/models/deep_mlp_memory.py`, `src/services/memory_backends/`, `src/services/neural_memory_audit.py`) and are tested; `tests/services/test_production_hardening.py` now has 76 test functions, not 40. `deploy/docker/memory-service/server.py` (lines 282-286) constructs `MemoryServicer` but never registers it with the gRPC server (no generated stubs), so the deployed memory-service exposes only its health and metrics endpoints, and no client in `src/` calls it. The orchestrator path to `TitanCognitiveService` uses `unittest.mock.AsyncMock` stores and is off by default (`src/agents/agent_orchestrator.py` lines 2689-2716, `ENABLE_TITAN_MEMORY=false`).
 
 ---
 

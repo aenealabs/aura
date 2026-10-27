@@ -1,6 +1,9 @@
 # ADR-007: Modular CI/CD with Layer-Based Deployment
 
 **Status:** Deployed
+
+> **Status note (2026-10-26).** The project and buildspec counts below date from December 2025. The repo now has 25 `deploy/cloudformation/codebuild-*.yaml` templates and 28 `deploy/buildspecs/buildspec-*.yml` files (counted with `ls ... | wc -l`). The 600-line buildspec cap is no longer enforced: `buildspec-application.yml` is 888 lines, `buildspec-sandbox.yml` 653 and `buildspec-serverless.yml` 613.
+
 **Date:** 2025-11-11 (Updated: 2025-12-14)
 **Decision Makers:** Project Aura Team
 

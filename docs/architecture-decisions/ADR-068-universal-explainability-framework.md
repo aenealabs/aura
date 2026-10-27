@@ -2,8 +2,17 @@
 
 ## Status
 
-Deployed
+Implemented (library); not integrated -- API serves generated data; no infrastructure template
 
+> **Status note (2026-10-26).** `src/services/explainability/` is a working
+> library (227 tests under `tests/services/explainability/`), but no agent or
+> API code calls `UniversalExplainabilityService` or `ExplainabilityMixin`.
+> The mounted router `src/api/explainability_endpoints.py` returns decisions
+> built by `_initialize_mock_data()` with `random` values. The templates
+> `explainability.yaml` and `explainability-dashboard.yaml`, plus
+> `src/services/explainability/dashboard.py`, `metrics.py`, and
+> `src/agents/explainability_mixin.py` listed below, do not exist.
+>
 > **Status note (2026-10-14) -- approver evidence.** Explainability records are
 > produced by `src/services/explainability/`, but until this date nothing carried
 > them into the approval flow. `ApprovalRequest` in
@@ -12,7 +21,6 @@ Deployed
 > `create_approval_request` and `create_or_auto_approve` and returned by the
 > approval detail endpoint. Agent-side callers do not populate it yet. The
 > Reviews table above remains unfilled.
-
 
 ## Date
 
@@ -1780,7 +1788,7 @@ class TestInterAgentVerification:
 3. **Quantified Uncertainty** - Confidence intervals instead of false precision
 4. **Contradiction Detection** - Automatic detection of reasoning-action mismatches
 5. **Inter-Agent Verification** - Trust but verify across agent boundaries
-6. **Compliance Ready** - Full audit trail for CMMC/SOX/NIST
+6. **Audit Support** - Full audit trail supporting CMMC/SOX/NIST-aligned controls (not certified)
 7. **Trust Calibration** - Humans can appropriately trust agent decisions
 
 ### Negative

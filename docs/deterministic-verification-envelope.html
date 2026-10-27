@@ -379,7 +379,7 @@
     <div class="meta-item">|</div>
     <div class="meta-item">Record: <span class="meta-value">ADR-085</span></div>
     <div class="meta-item">|</div>
-    <div class="meta-item">Status: <span class="meta-value"><span class="badge badge-proposed">Proposed</span></span></div>
+    <div class="meta-item">Status: <span class="meta-value"><span class="badge badge-proposed">Proposed</span> &mdash; library built (October 2026), not yet wired into the orchestrator or sandbox pipeline</span></div>
   </div>
 </div>
 
@@ -396,12 +396,12 @@
     <div class="label">Independent Verification Passes</div>
   </div>
   <div class="exec-card">
-    <div class="number orange">~4,700</div>
-    <div class="label">Lines of Code (Planned)</div>
+    <div class="number orange">6,468</div>
+    <div class="label">Lines of Code (Built, unwired)</div>
   </div>
   <div class="exec-card">
-    <div class="number green">~750</div>
-    <div class="label">Tests (Planned)</div>
+    <div class="number green">226</div>
+    <div class="label">Tests (Built)</div>
   </div>
   <div class="exec-card">
     <div class="number">20</div>
@@ -684,7 +684,7 @@
       <tr><td>(c)</td><td>CGE deterministic 7-axis coherence scoring</td><td><span class="badge badge-deterministic">Deterministic</span> -- frozen embeddings, pure arithmetic</td></tr>
       <tr><td>(d)</td><td>Z3 formal constraint satisfaction proof</td><td><span class="badge badge-deterministic">Deterministic</span> -- SMT solver with reproducible proof hash</td></tr>
       <tr><td>(e)</td><td>Sandbox testing with MC/DC structural coverage</td><td><span class="badge badge-deterministic">Deterministic</span> -- tests pass or fail, coverage measured</td></tr>
-      <tr><td>(f)</td><td>HITL human review</td><td><span class="badge badge-independent">Independent</span> -- satisfies DO-178C independence requirements</td></tr>
+      <tr><td>(f)</td><td>HITL human review</td><td><span class="badge badge-independent">Independent</span> -- intended to meet DO-178C independence objectives (no certification credit claimed)</td></tr>
     </table>
   </div>
 
@@ -1106,6 +1106,8 @@ Edge Properties:
 <!-- 11. Implementation -->
 <section id="implementation">
   <h2>11. Implementation</h2>
+
+  <p><strong>Current status (October 2026):</strong> the package below exists in <code>src/services/verification_envelope/</code> (6,468 lines across consensus, coverage, formal, policies, traceability, sinks, and pipeline modules) with 226 tests. No production module imports it yet: the MetaOrchestrator N-of-M spawn, sandbox stage-6 coverage gate, and Neptune traceability writes described here are not wired. The VectorCAST and LDRA adapters fall back to clearly marked mock results when their CLIs are absent. Line estimates in the tree are the original plan.</p>
 
   <h3>Package Structure</h3>
   <div class="tree-container"><span class="tree-dir">src/services/verification_envelope/</span>

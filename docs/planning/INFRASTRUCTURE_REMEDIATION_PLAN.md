@@ -1,6 +1,6 @@
 # Infrastructure Remediation Plan - Project Aura
 **Date:** November 24, 2025
-**Status:** Critical Issues Identified - Remediation In Progress
+**Status:** Historical -- superseded. The Neptune, OpenSearch, and observability issues below were resolved; the templates now live at `deploy/cloudformation/neptune-simplified.yaml`, `deploy/cloudformation/opensearch.yaml`, and `deploy/cloudformation/monitoring.yaml`. See `docs/PROJECT_STATUS.md` for current infrastructure phase status (status reviewed 2026-10-26).
 
 ## 🔴 Current Issues Summary
 

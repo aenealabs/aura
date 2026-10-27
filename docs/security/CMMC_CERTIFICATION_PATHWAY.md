@@ -3,7 +3,8 @@
 
 **Version:** 2.0
 **Last Updated:** December 2025
-**Status:** Implementation Roadmap
+**Status:** Planned. No certification filing has been submitted (as of October 2026).
+**Document Type:** Implementation Roadmap
 **Owner:** Security & Compliance Team
 
 ---
@@ -13,6 +14,8 @@
 **Goal:** Achieve **CMMC Level 3 certification** within 18-24 months to unlock $5.2B defense contractor market.
 
 **Strategy:** Progressive certification (L1 → L2 → L3) with parallel infrastructure hardening and documentation.
+
+> **Status (October 2026):** CMMC certification is not yet pursued. No Level 1 self-assessment has been submitted to SPRS, and no C3PAO has been engaged. Checkmarks in this document mark technical controls that are aligned in the platform, not assessed or certified practices. Month targets are planning estimates measured from the start of a certification effort.
 
 **Investment Required:** $1.2-2.5M (depending on starting maturity)
 
@@ -39,7 +42,7 @@
 
 | Level | Security Controls | Assessment Type | DoD Contract Coverage | Aura's Target Date |
 |-------|-------------------|-----------------|----------------------|-------------------|
-| **Level 1** | 17 practices (FAR 52.204-21) | Self-assessment | Federal Contract Information (FCI) | Month 3 ✅ |
+| **Level 1** | 17 practices (FAR 52.204-21) | Self-assessment | Federal Contract Information (FCI) | Month 3 🎯 |
 | **Level 2** | 110 practices (NIST SP 800-171) | C3PAO assessment | Controlled Unclassified Information (CUI) | Month 12 🎯 |
 | **Level 3** | 110 + 24 enhanced (NIST SP 800-172) | C3PAO + Gov validation | CUI + Classified programs | Month 18-24 🎯 |
 
@@ -96,7 +99,7 @@ Dec 2026: Level 3 mandatory (25% of contracts)
 
 #### Week 5-6: Media & Physical Protection
 - [x] Implement secure media disposal policy
-- [x] Use AWS GovCloud (FedRAMP Moderate baseline)
+- [ ] Use AWS GovCloud (AWS GovCloud holds FedRAMP authorization; Aura is not yet deployed there)
 - [ ] Document data classification policy
 - [ ] Sanitization procedures for decommissioned storage
 
@@ -143,10 +146,10 @@ Dec 2026: Level 3 mandatory (25% of contracts)
 | **Access Control (AC)** | 22 | 🔶 Partial | High |
 | **Awareness & Training (AT)** | 5 | ❌ Missing | Medium |
 | **Audit & Accountability (AU)** | 9 | 🔶 Partial | High |
-| **Configuration Management (CM)** | 9 | ✅ Complete | Low |
+| **Configuration Management (CM)** | 9 | ✅ Technical controls aligned (unassessed) | Low |
 | **Identification & Authentication (IA)** | 11 | 🔶 Partial | High |
 | **Incident Response (IR)** | 6 | ❌ Missing | High |
-| **Maintenance (MA)** | 6 | ✅ Complete | Low |
+| **Maintenance (MA)** | 6 | ✅ Technical controls aligned (unassessed) | Low |
 | **Media Protection (MP)** | 9 | 🔶 Partial | Medium |
 | **Personnel Security (PS)** | 2 | ❌ Missing | Medium |
 | **Physical Protection (PE)** | 6 | ✅ AWS Inherited | Low |
@@ -160,7 +163,7 @@ Dec 2026: Level 3 mandatory (25% of contracts)
 #### **Month 4: Gap Analysis & Roadmap**
 
 **Activities:**
-- Hire CMMC consultant (Coalfire, Kratos, CYMPLE)
+- Hire a CMMC consultant (vendor not yet selected)
 - Conduct formal NIST 800-171 gap assessment
 - Prioritize remediation backlog (High/Medium/Low)
 - Define System Security Plan (SSP) scope
@@ -281,7 +284,7 @@ Dec 2026: Level 3 mandatory (25% of contracts)
 | **CA-7** | Continuous Monitoring | 🔶 Add: Automated compliance dashboard |
 
 **Activities:**
-- Hire penetration testing firm (Mandiant, CrowdStrike, Bishop Fox)
+- Hire a penetration testing firm (vendor not yet selected)
 - Deploy vulnerability scanner (Tenable.sc GovCloud or Qualys)
 - Create continuous monitoring dashboard (AWS Security Hub)
 
@@ -324,7 +327,7 @@ Dec 2026: Level 3 mandatory (25% of contracts)
 ### C3PAO Assessment (Month 13-14)
 
 **Process:**
-1. **Pre-Engagement:** Select C3PAO (Coalfire, Kratos, CMAS)
+1. **Pre-Engagement:** Select an authorized C3PAO from the Cyber AB marketplace
 2. **Scoping:** Define assessment boundaries
 3. **On-Site Assessment:** 3-5 days (remote + on-site if applicable)
 4. **Findings:** Receive draft assessment report
@@ -524,7 +527,7 @@ Dec 2026: Level 3 mandatory (25% of contracts)
 ### Fast-Track Approach
 
 **Months 1-2: Rapid Assessment + Remediation Plan**
-- Hire top-tier consultant (Coalfire, Kratos) for $100K
+- Hire a consultant (estimated $100K; vendor not yet selected)
 - Run parallel gap analysis + architecture design
 - Pre-purchase all tooling (SIEM, EDR, etc.)
 
@@ -584,14 +587,14 @@ Dec 2026: Level 3 mandatory (25% of contracts)
 
 | Aura Feature | CMMC Control | Compliance Benefit |
 |--------------|--------------|-------------------|
-| **Code Knowledge Graph (Neptune)** | SC-28 (encryption at rest) | CUI-approved data storage |
+| **Code Knowledge Graph (Neptune)** | SC-28 (encryption at rest) | Encryption at rest supporting CUI storage requirements |
 | **Autonomous Security Remediation** | SI-7 (software integrity) | Automated flaw remediation |
 | **HITL Approval Workflow** | AC-3 (access enforcement) | Human authorization for prod changes |
 | **Sandbox Testing** | SC-7 (boundary protection) | Isolated test environments |
 | **Cost Tracking (DynamoDB)** | AU-2 (auditable events) | Financial audit trail |
 | **Multi-Model LLM Service** | SC-12 (crypto key management) | Secure API key management |
 
-**Key Insight:** Aura's architecture is **already CMMC-friendly** by design. Certification is about documentation + tooling, not fundamental redesign.
+**Key Insight:** Aura's architecture was designed with CMMC-aligned technical controls. Certification would still require documentation, tooling, and a third-party assessment; none has been started.
 
 ---
 
@@ -609,7 +612,7 @@ Dec 2026: Level 3 mandatory (25% of contracts)
 - 🎯 Target defense contractors (not just government)
 - 🎯 Market window: 2025-2026 (before competitors catch up)
 
-**Sales Message:**
+**Planned Sales Message (usable only after a Level 3 certificate is issued; not a current claim):**
 > "Aura is the only CMMC Level 3 certified autonomous development platform, purpose-built for defense contractors who must comply with DoD cybersecurity requirements while accelerating software delivery."
 
 ---
@@ -618,7 +621,7 @@ Dec 2026: Level 3 mandatory (25% of contracts)
 
 ### Immediate Actions (Week 1-4)
 
-1. **Hire CMMC Consultant** (RFP to Coalfire, Kratos, CMAS)
+1. **Hire CMMC Consultant** (issue an RFP to qualified CMMC consultancies)
 2. **Conduct Gap Analysis** (self-assessment against 110 controls)
 3. **Build Business Case** (cost-benefit analysis for stakeholders)
 4. **Allocate Budget** (plan for 24-month pathway)
@@ -645,16 +648,9 @@ Dec 2026: Level 3 mandatory (25% of contracts)
 - **NIST SP 800-171:** https://csrc.nist.gov/publications/detail/sp/800-171/rev-2/final
 - **NIST SP 800-172:** https://csrc.nist.gov/publications/detail/sp/800-172/final
 
-### Recommended Consultants
-- **Coalfire:** Top-tier, expensive ($250K+)
-- **Kratos Defense:** Mid-tier, defense-focused ($150K+)
-- **CMAS (Cyber MASA):** Cost-effective, remote ($100K+)
+### Consultants and C3PAOs
 
-### Recommended C3PAOs
-- **Coalfire Federal**
-- **Kratos SecureInfo**
-- **Redspin**
-- **CMAS**
+Not yet selected. Choose consultants through an RFP, and choose the assessor from the authorized C3PAO list in the Cyber AB marketplace.
 
 ### Recommended Training
 - **CMMC-AB CCP Training:** Certified CMMC Professional

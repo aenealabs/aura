@@ -6,6 +6,8 @@
 **Status:** Phase 2 Complete (Cloud Abstraction Layer Deployed)
 **Classification:** Public
 
+> **Implementation status (October 2026):** Implemented: the cloud abstraction layer (`src/abstractions/`), the provider factory (`src/services/providers/factory.py`), AWS adapters, Azure service implementations written against the Azure SDKs (`src/services/providers/azure/`), a Gemini LLM service (`src/services/providers/google/`), and mock providers, covered by `tests/test_cloud_abstraction_layer.py` (46 tests). **Planned (no code or IaC exists):** all Azure infrastructure (Cosmos DB, Azure AI Search, AKS), Azure-specific Terraform modules, and any Azure Government deployment or validation. The only Terraform in the repository is `deploy/terraform/main.tf`, a single AWS-only file (Bedrock IAM role, cost-tracking DynamoDB table, budget alarms); the multi-cloud `terraform/main.tf` shown below is a design sketch and does not exist. The Helm chart (`deploy/helm/aura`) has no `cloudProvider` value; the `helm install --set cloudProvider=azure` example below is a design sketch.
+
 ---
 
 ## Executive Summary
@@ -410,7 +412,7 @@ def create_llm_service(cloud_provider: Optional[CloudProvider] = None) -> LLMSer
 | **Identity & Access** | IAM | Azure AD + RBAC | Use SAML/OIDC for unified auth |
 | **Encryption (at rest)** | KMS | Azure Key Vault | Both FIPS 140-2 Level 3 |
 | **Encryption (in transit)** | TLS 1.3 | TLS 1.3 | Standard across both |
-| **Compliance** | FedRAMP High | FedRAMP High | Both certified |
+| **Compliance** | FedRAMP High | FedRAMP High | Both cloud platforms are authorized; Aura itself holds no FedRAMP authorization |
 | **Audit Logging** | CloudTrail | Azure Monitor | Centralize to Splunk/Datadog |
 | **DDoS Protection** | AWS Shield | Azure DDoS Protection | Enabled by default (Gov) |
 
@@ -789,7 +791,7 @@ helm install aura-east ./aura-chart \
 | **Performance (Graph Query)** | ✅ 50ms p95 | ❓ TBD | Benchmark after Azure deployment |
 | **Performance (Vector Search)** | ✅ 100ms p95 | ❓ TBD | AI Search performance unknown |
 | **Cost (1M requests)** | ✅ $18K | ❓ TBD | Projected $22K (Azure) |
-| **Security (FedRAMP)** | ✅ Compliant | 🔶 In progress | Azure Gov inherits FedRAMP |
+| **Security (FedRAMP)** | 🔶 Not assessed | 🔶 Not assessed | Planned; no FedRAMP filing submitted. Underlying clouds hold FedRAMP; Aura does not |
 
 **Cloud Abstraction Layer Tests (46 total):**
 - Data model tests (CloudProvider, CloudConfig)
@@ -884,6 +886,8 @@ helm install aura-east ./aura-chart \
 **Recommendation:** Deploy to **USGov Virginia** (primary) + **USGov Texas** (DR)
 
 ### Azure Government Compliance
+
+These are Microsoft's platform authorizations for Azure Government, not Aura authorizations.
 
 | Certification | Status | Scope |
 |--------------|--------|-------|

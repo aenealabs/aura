@@ -1033,7 +1033,7 @@ frontend/src/components/ApprovalActions.tsx  🔲 TODO
 
 - ✅ **Real-time adaptive intelligence** - Anomaly detection, security scanning, optimization
 - ✅ **Automated patch lifecycle** - Generation → Testing → Security Review → HITL Approval
-- ✅ **Enterprise compliance** - CMMC Level 3, SOX, NIST 800-53 automated validation
+- ✅ **Enterprise compliance** - CMMC Level 3, SOX, NIST 800-53 automated control checks (not a certification)
 
 **Overall Completion Impact:**
 

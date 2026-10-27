@@ -4,6 +4,7 @@
 
 **Last Updated:** January 2, 2026
 **Document Status:** Planning Reference
+**Status:** Planned. No certification filing has been submitted (as of October 2026).
 
 ---
 
@@ -17,10 +18,10 @@ This directory contains comprehensive certification roadmaps for pursuing govern
 |--------|--------|
 | Overall Completion | 99% |
 | Infrastructure Security | 100% GovCloud-ready (19/19 services) |
-| Security Services | 100% Deployed (5 Python services, 328 tests) |
+| Security Services | Built as libraries, not yet wired onto API routes (5 Python services, 285 tests as of October 2026) |
 | Test Coverage | 20,800+ tests (14,200+ passed, 6,600 skipped, 0 failed) |
 | Lines of Code | 397,000+ |
-| CMMC Level 2 Progress | ~50-60% (infrastructure strong, organizational controls pending) |
+| CMMC Level 2 Progress | Not yet pursued; internal self-assessment only, unaudited (infrastructure strong, organizational controls pending) |
 
 ### Infrastructure Already Deployed
 
@@ -106,7 +107,7 @@ Understanding the relationships between certifications is critical for strategic
 | Timeline | 8-12 months |
 | Investment | $200,000-350,000 (first year) |
 | Annual Recurring | $65,000-140,000 |
-| Current Progress | ~50-60% |
+| Current Progress | Not started (no filing submitted; internal self-assessment only) |
 | Assessment | C3PAO (third-party) |
 | Certification Validity | 3 years |
 
@@ -302,7 +303,7 @@ Understanding the relationships between certifications is critical for strategic
 
 ### Immediate Next Steps
 
-1. **Review Current State:** Validate ~50-60% CMMC Level 2 estimate with self-assessment
+1. **Review Current State:** Perform a CMMC Level 2 self-assessment to establish a baseline
 2. **Budget Planning:** Allocate initial budget for first certification
 3. **Consultant Engagement:** Engage CMMC RP or FedRAMP specialist
 4. **Tool Procurement:** Begin SIEM, EDR, training platform evaluation
@@ -328,7 +329,7 @@ Understanding the relationships between certifications is critical for strategic
 These roadmaps should be reviewed and updated:
 - **Quarterly:** Timeline and cost estimates
 - **Upon regulatory changes:** CMMC rule updates, FedRAMP changes
-- **Post-certification:** Lessons learned, actual vs. estimated costs
+- **Post-certification (if pursued):** Lessons learned, actual vs. estimated costs
 - **Annually:** Full refresh of market analysis and strategy
 
 ---

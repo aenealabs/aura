@@ -4,6 +4,8 @@
 >
 > **Created:** 2025-12-07
 > **Status:** Design Complete
+>
+> **Implementation note (backend data):** The screens below have console implementations, but their backing APIs currently serve generated or demo data rather than live platform telemetry: the Trace Explorer (`/api/v1/traces`) returns randomly generated sample traces; the Model Router dashboard statistics, distribution, and costs (`/api/v1/model-router`) are generated; Query Decomposition (`/api/v1/query/decompose`) returns randomized result counts and confidence; the Red Team dashboard page uses built-in data and its trends route is seeded; the Integration Hub stores configured integrations in memory and its connection test returns a random result; and the Agent Registry page renders a built-in agent list.
 > **Design System:** Project Aura Design Principles v1.0
 > **Related:** [ADR-028](/docs/architecture-decisions/ADR-028-foundry-capability-adoption.md), [UI Requirements](/docs/UI_REQUIREMENTS_FOUNDRY_CAPABILITIES.md)
 

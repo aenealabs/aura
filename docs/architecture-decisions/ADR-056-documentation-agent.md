@@ -1,6 +1,9 @@
 # ADR-056: Documentation Agent for Architecture Discovery and Diagram Generation
 
-**Status:** Deployed
+**Status:** Deployed (partial; see status note)
+
+> **Status note (2026-10-26).** The agent, boundary detector, calibration, cache, and report code live in `src/services/documentation/` (not `src/agents/` as cited below) and the router is included in `src/api/main.py`. In the API path, `get_documentation_agent()` calls `create_documentation_agent(use_mock=False)` without an LLM or Neptune client (`src/api/documentation_endpoints.py:145`), so `ServiceBoundaryDetector` falls back to its built-in demo graph (`service_boundary_detector.py:403-409`) and the LLM summary is skipped; `/generate` therefore does not analyze the requested repository. Phase 2 cloud discovery code in `src/services/cloud_discovery/` is not imported by any API or agent.
+
 **Date:** 2026-01-06
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-024 (Titan Neural Memory), ADR-034 (Context Engineering), ADR-037 (AWS Agent Parity), ADR-043 (Repository Onboarding), ADR-048 (Developer Tools Integration)

@@ -4,14 +4,14 @@
 
 Project Aura now includes a production-ready AWS Bedrock integration for Claude API access with comprehensive cost controls, rate limiting, and secure credential management.
 
-**Status:** ✅ Ready for testing (Mock mode works locally, AWS mode ready for deployment)
+**Status:** ✅ Implemented (mock mode runs locally; AWS mode is used when boto3 and AWS credentials are available)
 
 **Components:**
 
 - `src/config/bedrock_config.py` - Environment-based configuration
 - `src/services/bedrock_llm_service.py` - Main service with cost controls
 - `tests/test_bedrock_service.py` - Comprehensive test suite
-- `docs/bedrock_integration_plan.md` - Detailed architecture documentation
+- `docs/integrations/BEDROCK_INTEGRATION_PLAN.md` - Original design record
 
 ---
 
@@ -57,7 +57,7 @@ This will demonstrate:
 ### 3. Use in Your Code
 
 ```python
-from services.bedrock_llm_service import create_llm_service
+from src.services.bedrock_llm_service import create_llm_service
 
 # Create service (auto-detects mock/AWS mode)
 llm_service = create_llm_service()
@@ -91,6 +91,9 @@ Set the `AURA_ENV` environment variable to control configuration:
 # Development ($10/day budget)
 export AURA_ENV=development
 
+# QA ($25/day budget)
+export AURA_ENV=qa
+
 # Staging ($50/day budget)
 export AURA_ENV=staging
 
@@ -121,6 +124,7 @@ Models are chosen per ADR-015 tier, not per environment: **fast** (Haiku family)
 | Environment | Daily Budget | Monthly Budget |
 |-------------|--------------|----------------|
 | Development | $10 | $100 |
+| QA | $25 | $250 |
 | Staging | $50 | $500 |
 | Production | $100 | $2,000 |
 
@@ -129,6 +133,7 @@ Models are chosen per ADR-015 tier, not per environment: **fast** (Haiku family)
 | Environment | Per Minute | Per Hour | Per Day |
 |-------------|------------|----------|---------|
 | Development | 5 | 100 | 500 |
+| QA | 10 | 200 | 1,000 |
 | Staging | 10 | 300 | 2,000 |
 | Production | 20 | 500 | 5,000 |
 
@@ -171,7 +176,7 @@ Please retry later or increase limits in config.
 3. **Create IAM Role**
 
    ```bash
-   # See docs/bedrock_integration_plan.md section 2.3
+   # See docs/integrations/BEDROCK_INTEGRATION_PLAN.md section 2.3
    # Create role: AuraBedrockServiceRole
    # Attach policy with bedrock:InvokeModel (on foundation-model and
    # inference-profile resources), bedrock:ListFoundationModels, and
@@ -181,8 +186,8 @@ Please retry later or increase limits in config.
 4. **Create DynamoDB Table**
 
    ```bash
-   # Table name: aura-llm-costs
-   # See docs/bedrock_integration_plan.md section 4.1
+   # Table name: aura-ddb-<env>-llm-costs (see cost_table_name in src/config/bedrock_config.py)
+   # See docs/integrations/BEDROCK_INTEGRATION_PLAN.md section 4.1
    ```
 
 5. **Configure AWS Credentials**
@@ -195,7 +200,7 @@ Please retry later or increase limits in config.
 ### Test AWS Mode
 
 ```python
-from services.bedrock_llm_service import BedrockLLMService, BedrockMode
+from src.services.bedrock_llm_service import BedrockLLMService, BedrockMode
 
 # Force AWS mode (will fail gracefully if not configured)
 service = BedrockLLMService(mode=BedrockMode.AWS, environment="development")
@@ -282,12 +287,14 @@ if summary['daily_percent'] > 80:
 
 ## Integration with Orchestrator
 
-To integrate with the existing `agent_orchestrator.py`:
+> **Already integrated.** `src/agents/agent_orchestrator.py:2782` and the individual agents (for example `src/agents/coder_agent.py:535`) already obtain the service through `create_llm_service()`. The snippet below is an illustrative pattern, not the current code.
+
+To integrate with an orchestrator-style class:
 
 ```python
 # In src/agents/agent_orchestrator.py
 
-from services.bedrock_llm_service import create_llm_service, BudgetExceededError, RateLimitExceededError
+from src.services.bedrock_llm_service import create_llm_service, BudgetExceededError, RateLimitExceededError
 
 class System2Orchestrator:
     def __init__(self):
@@ -331,7 +338,7 @@ class System2Orchestrator:
             return f"ERROR: LLM request failed. {e}"
 ```
 
-Then replace all hardcoded LLM responses with:
+Hardcoded LLM responses are replaced with:
 
 ```python
 # OLD (hardcoded mock)
@@ -352,7 +359,7 @@ plan_text = self._call_llm(
 ### View Spending
 
 ```python
-from services.bedrock_llm_service import create_llm_service
+from src.services.bedrock_llm_service import create_llm_service
 
 service = create_llm_service()
 summary = service.get_spend_summary()
@@ -389,7 +396,7 @@ import boto3
 from datetime import datetime
 
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
-table = dynamodb.Table('aura-llm-costs')
+table = dynamodb.Table('aura-ddb-dev-llm-costs')  # aura-ddb-<env>-llm-costs
 
 # Get today's costs
 today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
@@ -517,7 +524,7 @@ python -m pytest tests/test_bedrock_service.py::TestIntegration -v
 2. **Enable Bedrock** - Request model access in AWS Console
 3. **Deploy infrastructure** - Create DynamoDB table, IAM roles
 4. **Test AWS mode** - Run integration test with real API
-5. **Integrate with orchestrator** - Replace mock responses
+5. **Integrate with orchestrator** - Done (agents call `create_llm_service()`)
 6. **Set up monitoring** - Configure CloudWatch dashboards
 7. **Tune budgets** - Adjust limits based on actual usage
 
@@ -547,7 +554,7 @@ With caching and optimization: **$30-50/month**
 
 **Documentation:**
 
-- Architecture: `docs/bedrock_integration_plan.md`
+- Design record: `docs/integrations/BEDROCK_INTEGRATION_PLAN.md`
 - AWS Bedrock: <https://docs.aws.amazon.com/bedrock/>
 - Claude API: <https://docs.anthropic.com/>
 
@@ -560,5 +567,5 @@ With caching and optimization: **$30-50/month**
 ---
 
 **Created:** November 2025
-**Status:** Production-ready
-**Tested:** ✅ Mock mode (local), ⏳ AWS mode (pending deployment)
+**Status:** Implemented
+**Tested:** ✅ Mock mode (local). AWS-mode integration tests require AWS credentials (`RUN_INTEGRATION_TESTS=1`)

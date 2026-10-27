@@ -1,9 +1,11 @@
 # ADR-022: GitOps for Kubernetes Deployment with ArgoCD
 
-**Status:** Deployed
+**Status:** Deployed (partial: ArgoCD and Argo Rollouts manifests in repo; migration checklist incomplete)
 **Date:** 2025-12-04
 **Decision Makers:** Project Aura Team
 **Supersedes:** Portions of ADR-007 (Kubernetes deployment sections)
+
+> **Status note (2026-10-26).** The ArgoCD project and Applications (`deploy/kubernetes/argocd/`), Argo Rollouts analysis templates (`deploy/kubernetes/argo-rollouts/`) and `deploy/buildspecs/buildspec-service-frontend.yml` exist, and the frontend deploys through `kubectl argo rollouts`. The API still ships as a plain Deployment (`deploy/kubernetes/aura-api/base/kustomization.yaml` keeps `rollout.yaml` commented out) applied by `kubectl apply -k` in `deploy/buildspecs/buildspec-application.yml:798`; `buildspec-service-api.yml` and `buildspec-service-dnsmasq.yml` were not created, and kubectl has not been removed from the buildspecs. Whether ArgoCD is installed and syncing in DEV/QA cannot be verified from the repository.
 
 ## Context
 

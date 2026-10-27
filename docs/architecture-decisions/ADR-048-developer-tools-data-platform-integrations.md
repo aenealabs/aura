@@ -1,10 +1,23 @@
 # ADR-048: Developer Tools and Data Platform Integrations
 
-**Status:** Accepted
+**Status:** Accepted (Partially Implemented -- client scaffolds and API routes exist; backend analysis and export data are mock)
 **Date:** 2025-12-31 | **Target:** Q1-Q2 2026
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-046 (Support Ticketing Connectors), ADR-037 (AWS Agent Capability), ADR-034 (Context Engineering)
 **Reviews:** Product Manager (B+), Systems Architect (Medium Risk), Security Analyst (HIGH Risk - Mitigated)
+
+> **Status note (2026-10-26) -- clients scaffolded, backend mocked.** Code
+> exists for every phase although the checklists below are unchecked:
+> `vscode-extension/`, `jupyter-extension/`, `pycharm-plugin/`,
+> `dataiku-connector/`, `fivetran-connector/`, `sdk/typescript/`,
+> `src/services/integrations/` (base adapter, secrets pre-scan, export
+> authorization) and the routers `src/api/extension_endpoints.py` and
+> `src/api/export_endpoints.py` (both mounted in `src/api/main.py`, with tests).
+> The extension scan is substring pattern matching
+> (`extension_endpoints.py:681`), graph context is mocked (`:859`), scan state
+> is in process-local dicts, and export data is generated mock rows
+> (`export_endpoints.py:418`); only `fivetran-connector/` and `sdk/` ship their
+> own tests.
 
 ---
 
@@ -431,7 +444,7 @@ Code → Secrets Scanner → [REDACT] → GraphRAG Storage
 - Apply regex + ML-based secrets detection BEFORE code reaches Neptune
 - Redact detected secrets with `[REDACTED:type]` placeholders
 - Log secret detection events for audit trail
-- Implementation: `src/services/secrets_prescan_filter.py`
+- Implementation: `src/services/integrations/secrets_prescan_filter.py`
 
 #### 2. Supply Chain Security (HIGH)
 - VSCode extension: Sign with EV certificate, submit to Microsoft verification
@@ -442,7 +455,7 @@ Code → Secrets Scanner → [REDACT] → GraphRAG Storage
 #### 3. Row-Level Security for Data Exports (HIGH)
 - Fivetran connector must respect Aura's RBAC
 - Filter exported data based on user's organization and permissions
-- Implement in `src/services/export_authorization_service.py`
+- Implement in `src/services/integrations/export_authorization_service.py`
 
 #### 4. GovCloud/CUI Handling (MEDIUM)
 - If code may contain CUI markers, apply CUI-aware filtering

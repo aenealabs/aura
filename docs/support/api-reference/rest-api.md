@@ -8,15 +8,38 @@
 
 ## Overview
 
-This document provides the complete REST API specification for Project Aura. All endpoints require authentication unless otherwise noted.
+This document describes the Project Aura REST API. The authoritative, always-current list of mounted routes, parameters, and schemas is the OpenAPI document the API server generates at `/docs`, `/redoc`, and `/openapi.json`.
 
-**Base URL:** `https://api.aenealabs.com/v1`
+**Base URL:** `https://{your-aura-host}/api/v1` (all application routes use the `/api/v1` prefix; health probes are at the host root)
+
+### Implementation Status
+
+Sections below are labeled. **Implemented** sections match routes mounted in `src/api/main.py`. **Planned** sections describe API design that has no route today; calling those paths returns `404`.
+
+| Section | Status | Implemented alternative |
+|---------|--------|-------------------------|
+| Authentication (`/auth/login`, `/auth/refresh`, `/auth/logout`) | Planned | Cognito Hosted UI sign-in; `GET /api/v1/auth/me`, `GET /api/v1/auth/validate` |
+| Repositories | Implemented (with differences noted) | `GET/POST /repositories`, `GET/PUT/DELETE /repositories/{id}`, `POST /repositories/{id}/sync`, `POST /repositories/ingest` |
+| Vulnerabilities | Planned | Findings surface through approvals (`vulnerability` field). The IDE extension routes (`/api/v1/extension/scan`, `/findings`, `/patches`) exist but currently run placeholder pattern-matching analysis and generated patches, not the agent pipeline |
+| Patches | Planned | Patch review and decisions use `/api/v1/approvals` |
+| Approvals | Implemented | `GET /approvals`, `GET /approvals/stats`, `GET /approvals/{id}`, `POST /approvals/{id}/approve`, `/reject`, `/cancel` |
+| Agents (`/agents/status`, `/agents/executions`) | Planned | `GET /api/v1/agents` (agent registry), `GET /api/v1/orchestrate` (orchestration jobs) |
+| `GET /health` | Implemented | Also `/health/live`, `/health/ready`, `/health/startup`, `/health/detailed` |
+| `GET /metrics` | Planned on the API server | The agent job server exposes Prometheus `/metrics` |
+| Settings (`/settings/hitl`) | Implemented (schema differs; see below) | `GET/PUT /api/v1/settings/hitl` |
+| Webhook management (`/webhooks`) | Planned | Inbound GitHub webhook receiver: `POST /webhook/github` |
+
+### Authentication Coverage
+
+Authentication uses Amazon Cognito JWTs (`Authorization: Bearer <token>`), validated in `src/api/auth.py`. Routers that declare the `get_current_user` dependency (for example approvals, repositories, OAuth connections, dashboards, guardrails, security alerts) reject requests without a valid token. Several mounted routers do not yet declare an authentication dependency on their routes, including settings, team, onboarding, integrations, model router, traces, ticketing, and the agent registry; access to those routes depends on network-level controls in front of the API. Role checks are enforced only where a route declares them (for example approve/reject/cancel require the `security-engineer` or `admin` role).
 
 ---
 
 ## Authentication Endpoints
 
-### POST /auth/login
+### POST /auth/login (Planned)
+
+> Not implemented. Users sign in through the Cognito Hosted UI from the web console; the API has no password-login route.
 
 Authenticate with email and password.
 
@@ -60,7 +83,9 @@ Authenticate with email and password.
 
 ---
 
-### POST /auth/refresh
+### POST /auth/refresh (Planned)
+
+> Not implemented on the API. Token refresh is handled by the console against Cognito.
 
 Refresh an expired access token.
 
@@ -85,7 +110,9 @@ Refresh an expired access token.
 
 ---
 
-### POST /auth/logout
+### POST /auth/logout (Planned)
+
+> Not implemented on the API.
 
 Invalidate current session and refresh token.
 
@@ -111,9 +138,11 @@ Authorization: Bearer {access_token}
 
 ### GET /repositories
 
-List all repositories accessible to the current user.
+List all repositories accessible to the current user. **Implemented** (requires authentication).
 
-**Query Parameters:**
+> **Current behavior:** supported query parameters are `status` and `provider`. The response is a JSON array of repository objects with the fields `repository_id`, `name`, `provider`, `clone_url`, `branch`, `languages`, `scan_frequency`, `status`, `last_ingestion_at`, `file_count`, `entity_count`, `webhook_active`, `created_at`, and `updated_at`. The `per_page`, `cursor`, and `q` parameters, vulnerability counts, and the `data`/`pagination` wrapper shown below are **Planned**. When AWS credentials are unavailable and `AURA_DEV_MOCK_ON_AWS_ERROR` is not set to `false`, this route returns seeded demo repositories instead of an error.
+
+**Planned query parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -156,9 +185,11 @@ List all repositories accessible to the current user.
 
 ### POST /repositories
 
-Connect a new repository.
+Connect a new repository. **Implemented** (requires authentication).
 
-**Request:**
+> **Current behavior:** the request body accepts `name` (required), either `connection_id` + `provider_repo_id` (OAuth) or `clone_url` + `token` (manual; GitHub and GitLab URLs only), plus `branch` (default `main`), `languages`, `scan_frequency` (`on_push`, `daily`, `weekly`, `manual`), `exclude_patterns`, and `enable_webhook`. The nested `credentials`/`scan_config` shape below is **Planned**.
+
+**Planned request shape:**
 
 ```json
 {
@@ -203,7 +234,7 @@ Connect a new repository.
 
 ### GET /repositories/{id}
 
-Get detailed information about a repository.
+Get detailed information about a repository. **Implemented**; returns the same repository object as the list route. The `vulnerability_counts`, `statistics`, and `team` fields below are **Planned**.
 
 **Path Parameters:**
 
@@ -251,7 +282,9 @@ Get detailed information about a repository.
 
 ---
 
-### PATCH /repositories/{id}
+### PATCH /repositories/{id} (Planned)
+
+> Not implemented as `PATCH`. Use `PUT /api/v1/repositories/{id}` with the same body as `POST /repositories`.
 
 Update repository settings.
 
@@ -298,7 +331,9 @@ Disconnect a repository.
 
 ---
 
-### POST /repositories/{id}/scan
+### POST /repositories/{id}/scan (Planned)
+
+> Not implemented. To re-ingest a repository use `POST /api/v1/repositories/{id}/sync`; to start ingestion jobs for several repositories use `POST /api/v1/repositories/ingest` and poll `GET /api/v1/repositories/ingestion-status`.
 
 Trigger an immediate vulnerability scan.
 
@@ -326,7 +361,9 @@ Trigger an immediate vulnerability scan.
 
 ---
 
-## Vulnerability Endpoints
+## Vulnerability Endpoints (Planned)
+
+> No `/vulnerabilities` routes exist today. Vulnerability details appear in the `vulnerability` field of approval requests (`/api/v1/approvals`). The IDE extension findings routes (`/api/v1/extension/findings`) return results from a placeholder pattern-matching analyzer. The routes in this section are a planned design.
 
 ### GET /vulnerabilities
 
@@ -487,7 +524,9 @@ Update vulnerability status.
 
 ---
 
-## Patch Endpoints
+## Patch Endpoints (Planned)
+
+> No `/patches` routes exist today. Generated patches are reviewed and decided through the approval routes below (`POST /api/v1/approvals/{id}/approve` and `/reject`). Deployment after approval is driven by the HITL workflow, not by a `/patches/{id}/deploy` call. The routes in this section are a planned design.
 
 ### GET /patches
 
@@ -693,19 +732,32 @@ Deploy an approved patch.
 
 ## Approval Workflow Endpoints
 
+All approval routes are **Implemented**, require authentication, and are scoped to the caller's organization. Approve, reject, and cancel additionally require the `security-engineer` or `admin` role, take the reviewer identity from the token, and block self-approval.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/approvals` | List approval requests |
+| GET | `/api/v1/approvals/stats` | Counts by status |
+| GET | `/api/v1/approvals/{id}` | Approval detail, including patch diff and explainability evidence |
+| POST | `/api/v1/approvals/{id}/approve` | Approve; body `{"comment": "optional"}` |
+| POST | `/api/v1/approvals/{id}/reject` | Reject; body `{"reason": "required"}` |
+| POST | `/api/v1/approvals/{id}/cancel` | Cancel a pending request |
+
 ### GET /approvals
 
-List pending approvals.
+List approval requests.
 
 **Query Parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `per_page` | integer | 20 | Results per page |
-| `status` | string | `pending` | Filter: `pending`, `approved`, `rejected`, `expired` |
-| `repository_id` | string | - | Filter by repository |
+| `status` | string | - | Filter: `pending`, `approved`, `rejected` |
+| `severity` | string | - | Filter: `critical`, `high`, `medium`, `low` |
+| `limit` | integer | 50 | Maximum results (1-200) |
 
-**Response:**
+**Current response shape:** `{"approvals": [...], "total": n, "pending": n, "approved": n, "rejected": n}`, where each item has `id`, `title`, `vulnerability`, `patch`, `status`, `severity`, `created_at`, `requested_by`, and the approval/rejection actor and timestamp fields.
+
+**Planned response shape:**
 
 ```json
 {
@@ -734,7 +786,7 @@ List pending approvals.
 
 ### GET /approvals/{id}
 
-Get approval details.
+Get approval details. **Implemented**; the exact fields are defined by `ApprovalDetailResponse` in `/docs`. The `policy` and `notifications_sent` fields below are **Planned**.
 
 **Response:**
 
@@ -783,7 +835,9 @@ Get approval details.
 
 ---
 
-## Agent Endpoints
+## Agent Endpoints (Planned)
+
+> `/agents/status` and `/agents/executions` are not implemented. The implemented agent-registry routes are under `GET /api/v1/agents` (`/internal`, `/external`, `/marketplace`, `/{agent_id}`, `/{agent_id}/metrics`); their connection-test route currently returns simulated latency and success values. Orchestration jobs are listed at `GET /api/v1/orchestrate`.
 
 ### GET /agents/status
 
@@ -862,7 +916,9 @@ List recent agent executions.
 
 ### GET /health
 
-System health check (no authentication required).
+System health check (no authentication required). **Implemented.** Kubernetes probes are also available at `/health/live`, `/health/ready`, and `/health/startup`, and component detail at `/health/detailed`.
+
+> **Current behavior:** `/health` is a lightweight ALB check that returns a status and timestamp. Per-component status is reported by `/health/detailed`. The response below is illustrative.
 
 **Response:**
 
@@ -883,7 +939,9 @@ System health check (no authentication required).
 
 ---
 
-### GET /metrics
+### GET /metrics (Planned)
+
+> Not implemented on the API server. Dashboard metrics are available from the `/api/v1/dashboard/metrics/*` and `/api/v1/dashboards` routes.
 
 Get system metrics (requires admin role).
 
@@ -924,9 +982,11 @@ Get system metrics (requires admin role).
 
 ### GET /settings/hitl
 
-Get HITL configuration.
+Get HITL configuration. **Implemented.**
 
-**Response:**
+> **Current behavior:** the response fields are `require_approval_for_patches`, `require_approval_for_deployments`, `auto_approve_minor_patches`, `approval_timeout_hours` (1-168), `min_approvers` (1-5), `notify_on_approval_request`, and `notify_on_approval_timeout`, returned without a `data` wrapper. The `autonomy_level`, `policy_preset`, and per-severity `required_approvers` fields below are **Planned** for this route (autonomy policies are managed by a separate, not-yet-mounted autonomy router).
+
+**Planned response shape:**
 
 ```json
 {
@@ -950,7 +1010,7 @@ Get HITL configuration.
 
 ### PUT /settings/hitl
 
-Update HITL configuration (requires admin role).
+Update HITL configuration. **Implemented**, with the same body fields as the `GET` response. The route applies the admin rate-limit tier but does not currently enforce authentication or an admin role check (enforcement is **Planned**).
 
 **Request:**
 
@@ -966,7 +1026,9 @@ Update HITL configuration (requires admin role).
 
 ---
 
-## Webhook Management
+## Webhook Management (Planned)
+
+> Outbound webhook subscription management is not implemented; there are no `/webhooks` routes. The implemented webhook route is the inbound GitHub receiver at `POST /webhook/github`.
 
 ### GET /webhooks
 
@@ -995,15 +1057,15 @@ For complete webhook documentation, see [Webhooks](./webhooks.md).
 
 ### v1.0.0 (January 2026)
 
-- Initial stable release
-- All endpoints documented and stable
+- Initial release of the REST API under `/api/v1`
+- Sections marked **Planned** above are not yet implemented
 
 ---
 
 ## Related Documentation
 
 - [API Reference Index](./index.md)
-- [GraphQL API](./graphql-api.md)
+- [GraphQL API](./graphql-api.md) (Planned)
 - [Webhooks](./webhooks.md)
 - [Common Issues](../troubleshooting/common-issues.md)
 

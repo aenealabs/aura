@@ -82,6 +82,8 @@ This document provides an overview of Project Aura's security services, their ca
 
 ## Service Components
 
+> **Wiring status (October 2026):** All five services below are implemented and unit-tested, but none is yet applied to live API routes. No router in `src/api/main.py` uses the decorators or validated models from `src/api/security_integration.py`, and `src/services/input_validation_service.py` and `src/services/secrets_detection_service.py` are imported only by that module. `SecurityAuditService` writes structured JSON to the Python audit logger (shipped to CloudWatch by the container log driver); it has no DynamoDB writer. The Security Alerts panel API (`src/api/security_alerts_endpoints.py`) keeps its own in-memory store, seeded with demo alerts unless `AURA_SEED_MOCK_ALERTS=false`, and does not call `SecurityAlertsService`. The diagram above shows the target request flow. The API-wide protections that do run on every request are in `src/api/security_middleware.py` (security headers, request IDs, a 10 MB request size limit, and safe error responses) plus Cognito JWT validation on authenticated routes.
+
 ### 1. Input Validation Service
 
 **Location:** `src/services/input_validation_service.py`
@@ -264,7 +266,7 @@ service.resolve_alert(
 
 **Location:** `src/api/security_integration.py`
 
-**Purpose:** Integrates all security services into FastAPI endpoints.
+**Purpose:** Provides FastAPI decorators and validated request models for integrating the security services into endpoints (not yet applied to any route).
 
 **Components:**
 
@@ -333,12 +335,14 @@ pre-commit install
 
 | Service | Test File | Test Count |
 |---------|-----------|------------|
-| Input Validation | `test_input_validation_service.py` | 76 |
-| Secrets Detection | `test_secrets_detection_service.py` | 66 |
-| Security Audit | `test_security_audit_service.py` | 76 |
+| Input Validation | `test_input_validation_service.py` | 66 |
+| Secrets Detection | `test_secrets_detection_service.py` | 73 |
+| Security Audit | `test_security_audit_service.py` | 78 |
 | Security Alerts | `test_security_alerts_service.py` | 29 |
 | API Integration | `test_security_integration.py` | 39 |
-| **Total** | | **286** |
+| **Total** | | **285** |
+
+Counts from `pytest <file> --collect-only -q` (October 2026); all 285 pass. The broader glob below collects 472 tests because it also picks up the prescan filter, security agent orchestrator, load, middleware, E2E, and telemetry suites.
 
 **Run all security tests:**
 ```bash
@@ -348,6 +352,8 @@ pytest tests/test_security*.py tests/test_input*.py tests/test_secrets*.py -v
 ---
 
 ## Compliance Mapping
+
+The mappings below show which control each service is designed to support. Because the services are not yet wired onto API routes (see the wiring status above), they are not yet operating controls for the rows that depend on them.
 
 ### CMMC Level 3
 
@@ -394,8 +400,8 @@ pytest tests/test_security*.py tests/test_input*.py tests/test_secrets*.py -v
 |---------|-------------|
 | CloudWatch Logs | Audit event export |
 | SNS | Alert notifications |
-| EventBridge | Real-time event routing |
-| DynamoDB | Event persistence |
+| EventBridge | Real-time event routing (infrastructure-level; the Python services do not publish to it) |
+| DynamoDB | Event persistence (planned; audit events go to CloudWatch Logs today) |
 | Secrets Manager | Credential storage |
 | SSM Parameter Store | Configuration storage |
 

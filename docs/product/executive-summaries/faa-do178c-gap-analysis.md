@@ -224,7 +224,7 @@ The independence is meaningful: the Semantic Guardrails Engine (ADR-065) operate
 
 ### 4.3 Deterministic Decision Boundary
 
-The Constraint Geometry Engine (ADR-081) is architecturally unique among AI governance platforms. It provides deterministic, reproducible scoring using frozen embeddings, SHA-256 cache keys, and pure arithmetic. The same input always produces the same score -- a property validated by 358 tests.
+The Constraint Geometry Engine (ADR-081) is architecturally unique among AI governance platforms. It provides deterministic, reproducible scoring using frozen embeddings, SHA-256 cache keys, and pure arithmetic. The same input always produces the same score -- a property covered by its 190-test suite (October 2026).
 
 This deterministic boundary is significant for certification because it means the final accept/reject decision for any AI-generated output can be audited and reproduced exactly. While the upstream LLM output is non-deterministic, the governance decision applied to that output is fully reproducible. This architecture provides a clean audit boundary that a certification authority could evaluate.
 
@@ -256,7 +256,7 @@ This continuous monitoring parallels Continued Airworthiness requirements in whi
 
 ### 4.8 Supply Chain Security
 
-SBOM Attestation (ADR-076) generates CycloneDX and SPDX manifests with Sigstore cryptographic signing, dependency confusion detection, and license compliance analysis. All container builds use private ECR base images from a controlled `aura-base-images` repository.
+SBOM Attestation (ADR-076) generates CycloneDX and SPDX manifests with dependency confusion detection and license compliance analysis; Sigstore signing in the current library is simulated, and real signing is planned. All container builds use private ECR base images from a controlled `aura-base-images` repository.
 
 This supply chain discipline aligns with DO-178C configuration identification requirements (Section 7.2.1) and the broader aviation supply chain assurance practices defined in AS6171 (counterfeit parts avoidance) and DO-178C Section 12.3 (previously developed software).
 
@@ -421,7 +421,7 @@ Military aircraft engine programs have additional requirements beyond commercial
 | System safety program | MIL-STD-882E | No system safety program integration | CRITICAL -- MIL-STD-882E requires hazard tracking, risk assessment, and safety verification throughout the life cycle |
 | FACE conformance | DoD FACE Technical Standard (Edition 3.1) | No FACE conformance | CRITICAL -- FACE defines portable software architecture segments (Operating System, I/O Services, Platform Specific Services, Transport Services) |
 | Cybersecurity | NIST 800-171 / CMMC | Aligned -- Aura maps to NIST 800-53 with CMMC Level 3 presets | PARTIAL -- Aura's CMMC alignment addresses CUI protection requirements applicable to engine technical data |
-| Supply chain security | DoDI 5200.44 (Critical Technologies) | Partially aligned -- Private ECR images, SBOM/Sigstore (ADR-076) | PARTIAL -- SBOM and signed attestation support supply chain risk management; lacks formal DoDI 5200.44 program plan |
+| Supply chain security | DoDI 5200.44 (Critical Technologies) | Partially aligned -- Private ECR images, SBOM generation (ADR-076; Sigstore signing planned) | PARTIAL -- SBOM generation supports supply chain risk management; signed attestation is planned; lacks formal DoDI 5200.44 program plan |
 | CUI handling | NIST 800-171 / 32 CFR Part 2002 | GovCloud deployment supports CUI enclave | PARTIAL -- Aura's GovCloud-ready architecture (19/19 services compatible) supports CUI processing environments |
 | Anti-tamper | MIL-STD-129 / program-specific ATP | Not addressed | CRITICAL -- Anti-tamper protection for critical program information (CPI) in FADEC software is program-specific |
 | ITAR compliance | 22 CFR Parts 120-130 | Not addressed | CRITICAL -- FADEC software for military engines is likely ITAR-controlled; requires access control and export compliance |
@@ -490,7 +490,7 @@ The path to DO-178C compliance for Aura involves two distinct categories of work
 
 ### 10.4 Final Assessment
 
-Aura's governance architecture was designed for enterprise-regulated environments -- SOX, CMMC, HIPAA, PCI-DSS, FedRAMP -- and it delivers genuine assurance within those frameworks. Aviation DO-178C certification operates at a fundamentally different level of rigor, with formal evidence requirements, structural coverage mandates, and tool qualification standards that no AI development platform currently satisfies.
+Aura's governance architecture was designed for enterprise-regulated environments -- SOX, CMMC, HIPAA, PCI-DSS, FedRAMP -- and it provides controls aligned with those frameworks (Aura holds no CMMC, HIPAA, PCI-DSS, or FedRAMP certification; those are planned). Aviation DO-178C certification operates at a fundamentally different level of rigor, with formal evidence requirements, structural coverage mandates, and tool qualification standards that no AI development platform currently satisfies.
 
 The honest assessment is that Aura has 17 critical gaps and 12 partial gaps against DO-178C DAL A requirements. The DO-330 tool qualification barrier is the most significant because it depends on regulatory evolution outside any single vendor's control.
 
@@ -531,18 +531,20 @@ The path forward is not to wait for regulatory clarity but to close the engineer
 
 ## Appendix D: Aura Governance Mechanism Summary
 
+Wiring status as of October 2026: Capability Governance, Constitutional AI, the Constraint Geometry Engine (on agent output), the Runtime Agent Security Platform, and the Policy-as-Code synchronizer are implemented and tested as libraries but not yet called from production paths; the Semantic Guardrails Engine runs Layers 1-2 inline on ingested content only. Latency, capture-rate, and corpus figures are design targets.
+
 | Mechanism | ADR | Tests | Lines | Pipeline Phase | Key Metric |
 |-----------|-----|-------|-------|----------------|------------|
-| Semantic Guardrails Engine | ADR-065 | 793 | ~12K | Pre-Execution | 240ms P95, 6,300+ threat embeddings |
-| Agent Capability Governance | ADR-066 | 322 | ~5.4K | Pre-Execution | 4-tier classification, per-invocation enforcement |
+| Semantic Guardrails Engine | ADR-065 | 811 | 5,693 | Pre-Execution | 240ms P95 target, 6,300 threat embeddings planned |
+| Agent Capability Governance | ADR-066 | 981 | 10,837 | Pre-Execution | 4-tier classification, per-invocation enforcement (not yet wired) |
 | Configurable Autonomy Framework | ADR-032 | N/A | N/A | Pre-Execution | 4 autonomy levels, 5 hardcoded guardrails |
-| Constitutional AI Integration | ADR-063 | 463 | N/A | Post-Generation | 16 principles, 410ms P95, up to 3 revisions |
-| Constraint Geometry Engine | ADR-081 | 358 | ~4.5K | Post-Generation | 7 constraint axes, deterministic scoring |
+| Constitutional AI Integration | ADR-063 | 535 | 6,913 | Post-Generation | 16 principles, 410ms P95 target, up to 3 revisions (not yet wired) |
+| Constraint Geometry Engine | ADR-081 | 190 | 2,976 | Post-Generation | 7 constraint axes, deterministic scoring |
 | Sandbox Security | N/A | N/A | N/A | Sandbox/Approval | Container-level isolation, 5-category validation |
 | HITL Approval Workflow | N/A | N/A | N/A | Sandbox/Approval | 5-stage workflow, 3 decision options |
 | Real-Time Agent Intervention | ADR-042 | N/A | N/A | Sandbox/Approval | 6 intervention modes, WebSocket per-action checkpoints |
-| Runtime Agent Security Platform | ADR-083 | 1005 | ~10.3K | Continuous Monitoring | >99.5% traffic capture, <5ms P95, 97-technique red team |
-| Policy-as-Code GitOps | ADR-070 | 98 | ~1.2K | Continuous Monitoring | 3-stage CI/CD, 30-second Neptune sync |
+| Runtime Agent Security Platform | ADR-083 | 1,077 | 14,191 | Continuous Monitoring | 97-technique red team taxonomy; capture-rate and overhead targets not yet measured (not yet wired) |
+| Policy-as-Code GitOps | ADR-070 | N/A | N/A | Continuous Monitoring | 3-stage CI/CD, 30-second Neptune sync |
 
 ## Appendix E: Acronyms
 

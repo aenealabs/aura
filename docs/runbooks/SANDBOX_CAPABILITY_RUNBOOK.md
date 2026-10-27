@@ -4,6 +4,8 @@
 **Date:** 2026-02-05
 **Purpose:** Comprehensive guide for replicating Aura's self-service sandbox provisioning capability in an air-gapped environment
 
+> **Path mapping (October 2026):** The file-path headings in the code listings below are reference-implementation names, not repository paths. The corresponding real files are: `src/services/environment_provisioning_service.py`, `src/services/k8s_namespace_service.py`, `src/lambda/environment_provisioner.py`, `src/api/environment_endpoints.py`, `deploy/cloudformation/test-env-{state,iam,namespace,monitoring,approval,budgets,scheduler}.yaml`, `deploy/cloudformation/test-environment-catalog.yaml`, and `tests/test_environment_provisioning_service.py`, `tests/test_environment_endpoints.py`, `tests/test_k8s_namespace_service.py`. The repository does not contain `vpc-endpoints-sandbox.yaml`, `vpc-endpoints-airgapped.yaml`, `scripts/setup-private-ecr.sh`, `scripts/bundle_dependencies.py`, a `src/lambda/scheduled_cleanup/` handler (see `src/lambda/expiration_processor.py`), or `tests/integration/test_sandbox_e2e.py`; those listings are design material for an air-gapped replication and are not shipped code.
+
 ---
 
 ## Table of Contents

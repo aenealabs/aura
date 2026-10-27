@@ -3,12 +3,14 @@
 **Date:** November 17, 2025
 **Author:** AWS Solutions Architect Team
 **Status:** Planning Complete, Ready for Commercial Cloud Deployment
+**Certification Status:** Planned. No certification filing has been submitted (as of October 2026).
+**Schedule Note (October 2026):** The 2026 quarter targets in this document have passed and are not rescheduled. No GovCloud or production deployment is planned at this time; the current goal is a locally deployable prototype.
 
 ---
 
 ## Executive Summary
 
-Project Aura has been architected for seamless migration from **AWS Commercial Cloud** (development/QA) to **AWS GovCloud (US)** (production) to achieve CMMC Level 3, NIST 800-53, and SOX compliance requirements.
+Project Aura has been architected for seamless migration from **AWS Commercial Cloud** (development/QA) to **AWS GovCloud (US)** (production) to support NIST 800-53-aligned and SOX-supporting controls and a planned future pursuit of CMMC Level 3. Aura is not CMMC certified.
 
 ### Key Deliverables Completed
 
@@ -401,13 +403,13 @@ UserData:
 
 ### Compliance Certifications
 
-**Required for Government Deployment:**
+**Required for Government Deployment** (target frameworks; Aura holds none of these certifications or authorizations today, and CMMC and FedRAMP have not yet been pursued):
 
-- ✅ **CMMC Level 3** - Cybersecurity Maturity Model Certification
-- ✅ **NIST 800-53** - Security and Privacy Controls for Information Systems
-- ✅ **SOX Compliance** - Sarbanes-Oxley Act (for financial controls)
-- ✅ **FedRAMP High** - Federal Risk and Authorization Management Program
-- ✅ **ITAR Compliance** - International Traffic in Arms Regulations
+- 🎯 **CMMC Level 3** - Cybersecurity Maturity Model Certification (planned)
+- ✅ **NIST 800-53** - Security and Privacy Controls for Information Systems (technical controls aligned, not independently assessed)
+- 🎯 **SOX Compliance** - Sarbanes-Oxley Act (supporting controls aligned; attested by the customer's auditor)
+- 🎯 **FedRAMP High** - Federal Risk and Authorization Management Program (planned)
+- 🎯 **ITAR Compliance** - International Traffic in Arms Regulations (GovCloud provides the infrastructure basis; planned)
 
 **Bedrock (Claude) Certifications in GovCloud:**
 - ✅ FedRAMP High authorized (as of May 2025)
@@ -548,7 +550,7 @@ UserData:
 2. ⏳ Engage compliance consultant
 3. ⏳ Obtain AWS GovCloud account
 4. ⏳ Begin GovCloud migration preparation
-5. ⏳ Schedule CMMC Level 3 audit (Q3 2026)
+5. ⏳ Schedule CMMC Level 3 audit (not yet scheduled; no filing submitted)
 
 ---
 

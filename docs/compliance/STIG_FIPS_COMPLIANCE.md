@@ -4,6 +4,8 @@
 
 This document describes the DISA STIG (Security Technical Implementation Guide) hardening and FIPS 140-2 cryptographic compliance implementation for Project Aura's GovCloud deployment.
 
+**Status:** Planned. No certification filing has been submitted (as of October 2026). The hardening described here relies on FIPS-validated modules supplied by the operating system and AWS; Aura itself is not FIPS 140 validated, has not been assessed against DISA STIGs by a third party, and holds no DoD authorization.
+
 ## Compliance Requirements
 
 ### FIPS 140-2

@@ -2,7 +2,16 @@
 
 ## Status
 
-Deployed
+Deployed (IAM template only; adapter library built, API adapter wiring not implemented)
+
+> **Status note (2026-10-26).** `deploy/cloudformation/iam-palantir-integration.yaml`
+> is deployed from `buildspec-application.yml`. The adapter
+> (`src/services/palantir/palantir_adapter.py`, real `aiohttp` client), ontology
+> bridge, event publisher, and circuit breaker are tested under
+> `tests/services/palantir/`. The router is mounted in `src/api/main.py`, but
+> its `get_adapter`, `get_bridge`, and `get_publisher` dependencies always raise
+> HTTP 503 (`src/services/palantir/api.py:174`), and no agent consumes the
+> threat context.
 
 ## Date
 
@@ -66,7 +75,7 @@ Aura's complementary strengths:
 The integration targets organizations requiring both data-centric security operations and autonomous code remediation:
 
 1. **Defense Industrial Base (DIB)**: CMMC compliance, supply chain security
-2. **Healthcare**: HIPAA-compliant vulnerability management
+2. **Healthcare**: Vulnerability management for HIPAA-regulated environments
 3. **Financial Services**: SOX compliance, real-time threat response
 4. **Critical Infrastructure**: NERC CIP, ICS/OT security
 
@@ -968,7 +977,7 @@ API Versioning:
 │                                   │                                         │
 │                                   ▼                                         │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ AURA: HIPAA-Compliant Remediation                                   │   │
+│  │ AURA: HIPAA-Aligned Remediation                                     │   │
 │  │                                                                      │   │
 │  │  Finding 1: Hardcoded database credentials                         │   │
 │  │    → Patch: Move to AWS Secrets Manager                            │   │
@@ -1396,8 +1405,8 @@ components:
 │  │  │     Palantir AIP        │  │        Aura              │          │   │
 │  │  │     (GovCloud)          │  │     (GovCloud)           │          │   │
 │  │  │                         │  │                          │          │   │
-│  │  │  FedRAMP High           │  │  FedRAMP High            │          │   │
-│  │  │  IL5 Authorized         │  │  IL5 Ready               │          │   │
+│  │  │  FedRAMP High           │  │  FedRAMP: Planned        │          │   │
+│  │  │  IL5 Authorized         │  │  IL5: Planned            │          │   │
 │  │  │                         │  │                          │          │   │
 │  │  └───────────┬─────────────┘  └─────────────┬────────────┘          │   │
 │  │              │                              │                        │   │
@@ -1463,7 +1472,7 @@ components:
 2. **Reduced MTTR**: Autonomous patching closes the loop from detection to fix
 3. **Compliance acceleration**: Unified audit trail across both platforms
 4. **Market expansion**: Access to Palantir's enterprise customer base
-5. **GovCloud synergy**: Both platforms FedRAMP High, natural fit for DIB
+5. **GovCloud synergy**: Palantir AIP is FedRAMP High; Aura's FedRAMP authorization is planned (no filing submitted), so the pairing targets the DIB once that is obtained
 
 ### Negative
 
@@ -1560,7 +1569,7 @@ aws cloudformation deploy \
   --tags Project=aura Environment=dev ADR=ADR-074
 
 # Via CodeBuild (recommended)
-aws codebuild start-build --project-name aura-application-irsa-deploy-dev
+aws codebuild start-build --project-name aura-application-deploy-dev
 ```
 
 ## References

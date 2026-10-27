@@ -5,6 +5,8 @@
 **Decision Makers:** Platform Architecture Team
 **Context:** ADR-049 Phase 0 Prerequisite
 
+> **Implementation status (October 2026):** The shipped self-hosted scaling artifacts are `deploy/self-hosted/hpa/hpa-templates.yaml`, `deploy/self-hosted/hpa/resource-quotas.yaml` and the chart HPAs `deploy/helm/aura/templates/{api,frontend}/hpa.yaml`. The per-service files named below (`aura-api-hpa.yaml`, `agent-orchestrator-hpa.yaml`, `memory-service-hpa.yaml`, `vllm-hpa.yaml`, `frontend-hpa.yaml`), `deploy/self-hosted/prometheus/hpa-rules.yaml`, `deploy/self-hosted/quotas/aura-quota.yaml`, `deploy/self-hosted/quotas/aura-limitrange.yaml` and `deploy/self-hosted/vpa/neo4j-vpa.yaml` are design specifications (Planned) and are not present in the repository.
+
 ---
 
 ## Executive Summary

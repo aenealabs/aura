@@ -148,7 +148,7 @@
     <div class="header-meta">
       <span>Project Aura &mdash; Aenea Labs</span>
       <span>Version 1.0</span>
-      <span>Last Updated: February 2026</span>
+      <span>Last Updated: October 2026</span>
     </div>
   </div>
 </header>
@@ -200,8 +200,10 @@
         <h2>1. Agent Framework &amp; Base Classes</h2>
       </div>
       <p class="section-intro">
-        Every agent in Aura inherits from a common base class that provides MCP tool access,
-        task lifecycle management, checkpoint/resume, and HITL integration.
+        A common base class provides MCP tool access, task lifecycle management, checkpoint/resume,
+        and HITL integration. The MetaOrchestrator's spawnable agents use it; the Coder, Reviewer,
+        and Validator used by the running job server are standalone classes, and several agents below
+        are implemented as libraries but not yet invoked by the running service (noted per agent).
       </p>
 
       <div class="diagram">
@@ -272,7 +274,9 @@
           <p>
             Advanced dynamic agent spawning engine (ADR-018). Decomposes tasks recursively,
             spawns specialized agents on demand, runs independent sub-tasks in parallel,
-            and manages an <code>AgentRegistry</code> for capability-based discovery.
+            and manages an <code>AgentRegistry</code> for capability-based discovery. Implemented as a
+            library; not yet invoked by the running service (its only caller,
+            <code>create_patch_validation_workflow</code>, has no callers in <code>src/</code>).
           </p>
           <div class="tags">
             <span class="tag tag-purple">ADR-018</span>
@@ -319,6 +323,8 @@
         Six orchestrators manage agent workflows. The primary <code>System2Orchestrator</code>
         coordinates the Coder&rarr;Reviewer&rarr;Validator pipeline, while domain-specific
         orchestrators handle security, DevOps, transformation, scanning, and self-play training.
+        The job server runs <code>System2Orchestrator</code>; the MetaOrchestrator and the self-play
+        orchestrator are not yet invoked by a running service.
       </p>
 
       <div class="diagram">
@@ -360,9 +366,10 @@
           <div class="card-path">src/agents/agent_orchestrator.py</div>
           <p>
             Primary remediation pipeline: coordinates Coder, Reviewer, and Validator agents
-            through five workflow phases. Supports checkpoint/resume for long-running jobs.
-            Includes <code>GraphBuilderAgent</code> (AST &rarr; Neptune) and
-            <code>EmbeddingAgent</code> (code &rarr; OpenSearch vectors).
+            through five workflow phases, with a repair loop, a sandbox step, and an approval request.
+            Supports checkpoint/resume when called directly. Context comes from Neptune and OpenSearch
+            adapters when their endpoints are configured, otherwise from in-memory mocks; the code it
+            patches is the configured sample project, not a per-job customer repository.
           </p>
           <div class="tags">
             <span class="tag tag-blue">Primary Pipeline</span>
@@ -449,8 +456,9 @@
           <div class="card-path">src/agents/coder_agent.py</div>
           <p>
             Generates code from hybrid GraphRAG context. Uses Chain of Draft prompting
-            (ADR-029 Phase 1.2) for 92% token reduction. Produces security patches with
-            language detection and remediation indicators.
+            (ADR-029 Phase 1.2; the 92% token reduction is the published research figure, not an
+            Aura measurement). Produces security patches with remediation indicators; falls back to
+            a fixed template when no LLM is available.
           </p>
           <div class="tags">
             <span class="tag tag-green">Code Generation</span>
@@ -463,7 +471,8 @@
           <div class="card-path">src/agents/reviewer_agent.py</div>
           <p>
             Security code review with LLM integration and self-reflection (ADR-029 Phase 2.2).
-            Checks CMMC, SOX, and NIST 800-53 compliance. Generates remediation recommendations.
+            Enforces built-in crypto, secrets, and injection policies (pattern fallback without an LLM).
+            Generates remediation recommendations.
           </p>
           <div class="tags">
             <span class="tag tag-amber">Review</span>
@@ -475,8 +484,9 @@
           <h3>ValidatorAgent</h3>
           <div class="card-path">src/agents/validator_agent.py</div>
           <p>
-            Validates patches in sandboxed environments. Runs integration tests, detects
-            performance regressions, and performs dynamic security testing.
+            Static validation (syntax, structure, type hints, dangerous patterns) and sandbox task
+            launch when <code>SANDBOX_ENABLED=true</code>. Shipping the patch into the sandbox,
+            integration tests, performance regression checks, and dynamic security testing are planned.
           </p>
           <div class="tags">
             <span class="tag tag-blue">Validation</span>
@@ -489,7 +499,8 @@
           <p>
             <code>BugInjectionAgent</code> injects synthetic bugs for training.
             <code>BugSolvingAgent</code> solves them. Dual-role self-play enables
-            curriculum learning. ~15.9K lines, 354 tests.
+            curriculum learning. ~15.9K lines, 354 tests. Implemented as a library; not yet invoked by
+            a running service, and without an LLM or sandbox it uses mock responses.
           </p>
           <div class="tags">
             <span class="tag tag-purple">ADR-050</span>
@@ -511,19 +522,19 @@
         <div class="card">
           <h3>RedTeamAgent</h3>
           <div class="card-path">src/agents/red_team_agent.py</div>
-          <p>Adversarial attack simulation, threat model generation, and attack surface analysis. Feeds the AURA-ATT&amp;CK framework (75 techniques).</p>
+          <p>Adversarial attack simulation, threat model generation, and attack surface analysis. Feeds the AURA-ATT&amp;CK framework (75 techniques). Pattern-based (no LLM); not yet invoked by a running service. The red-team API serves seeded in-memory findings.</p>
           <div class="tags"><span class="tag tag-red">Red Team</span><span class="tag tag-purple">ADR-083</span></div>
         </div>
         <div class="card">
           <h3>ThreatIntelligenceAgent</h3>
           <div class="card-path">src/agents/threat_intelligence_agent.py</div>
-          <p>External threat monitoring, CVE tracking, and contextual vulnerability assessment with threat pattern recognition.</p>
+          <p>External threat monitoring, CVE tracking, and contextual vulnerability assessment with threat pattern recognition. Runs from the scheduled threat-intelligence Lambda with live NVD, CISA KEV, and GitHub feeds; falls back silently to built-in sample data on feed errors.</p>
           <div class="tags"><span class="tag tag-red">Threat Intel</span></div>
         </div>
         <div class="card">
           <h3>PenetrationTestingAgent</h3>
           <div class="card-path">src/agents/penetration_testing_agent.py</div>
-          <p>Automated security boundary testing: authentication, authorization, and input validation assessments.</p>
+          <p>Automated security boundary testing: authentication, authorization, and input validation assessments. Mock execution only today: its adapter is hard-coded to mock mode and no sandbox executor is implemented.</p>
           <div class="tags"><span class="tag tag-red">Pentest</span></div>
         </div>
         <div class="card">
@@ -535,7 +546,7 @@
         <div class="card">
           <h3>AdaptiveIntelligenceAgent</h3>
           <div class="card-path">src/agents/adaptive_intelligence_agent.py</div>
-          <p>Proactive vulnerability detection with adaptive threat monitoring. Learns from previous patches to improve future remediation.</p>
+          <p>Proactive vulnerability detection with adaptive threat monitoring. Learns from previous patches to improve future remediation. LLM-backed with template fallbacks; codebase impact uses a hard-coded file map, and its MetaOrchestrator adapter currently fails on a signature mismatch.</p>
           <div class="tags"><span class="tag tag-red">Adaptive</span></div>
         </div>
         <div class="card">
@@ -608,7 +619,7 @@
         <div class="card">
           <h3>RuntimeIncidentAgent</h3>
           <div class="card-path">src/agents/runtime_incident_agent.py</div>
-          <p>Runtime error detection, incident triage, root-cause determination, and remediation planning with on-call integration.</p>
+          <p>Runtime error detection, incident triage, root-cause determination, and remediation planning with on-call integration. Runs as a container task via <code>runtime_incident_cli.py</code> with LLM root cause analysis written to DynamoDB; graph, vector, and metrics evidence steps are skipped because the CLI does not pass those services yet.</p>
           <div class="tags"><span class="tag tag-purple">ADR-025</span><span class="tag tag-teal">Incidents</span></div>
         </div>
         <div class="card">
@@ -626,13 +637,13 @@
         <div class="card">
           <h3>BrowserToolAgent</h3>
           <div class="card-path">src/agents/browser_tool_agent.py</div>
-          <p>Web browsing for documentation research, external resource fetching, and API documentation analysis.</p>
+          <p>Web browsing for documentation research, external resource fetching, and API documentation analysis. Not yet invoked by a running service; without Playwright it returns mock sessions and canned results.</p>
           <div class="tags"><span class="tag tag-teal">Web Research</span></div>
         </div>
         <div class="card">
           <h3>CodeInterpreterAgent</h3>
           <div class="card-path">src/agents/code_interpreter_agent.py</div>
-          <p>Sandboxed Python code execution, test execution, script validation, and output analysis.</p>
+          <p>Sandboxed Python code execution, test execution, script validation, and output analysis. Not yet invoked by a running service; without a sandbox it returns mock output.</p>
           <div class="tags"><span class="tag tag-teal">Code Execution</span></div>
         </div>
         <div class="card">
@@ -895,8 +906,9 @@
         <h2>9. Constitutional AI &amp; Guardrails</h2>
       </div>
       <p class="section-intro">
-        All agent outputs pass through Constitutional AI critique-revision pipelines
-        (16 principles) and a 6-layer Semantic Guardrails Engine before reaching users.
+        Aura includes Constitutional AI critique-revision pipelines (16 principles) and a 6-layer
+        Semantic Guardrails Engine. The remediation agents (Coder, Reviewer, Validator) do not yet
+        route their outputs through either; wiring them in is planned.
       </p>
 
       <div class="card-grid">
@@ -1068,13 +1080,13 @@
         <table>
           <thead><tr><th>Policy Preset</th><th>Oversight Level</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><code>FULL_HITL</code></td><td>Maximum</td><td>All actions require human approval</td></tr>
-            <tr><td><code>CRITICAL_HITL</code></td><td>High</td><td>CRITICAL and HIGH severity require approval</td></tr>
-            <tr><td><code>FINTECH</code></td><td>High</td><td>Financial compliance-oriented oversight</td></tr>
-            <tr><td><code>ENTERPRISE</code></td><td>Balanced</td><td>Standard enterprise oversight</td></tr>
-            <tr><td><code>STARTUP</code></td><td>Moderate</td><td>Faster iteration with moderate checks</td></tr>
-            <tr><td><code>AUDIT_ONLY</code></td><td>Low</td><td>Actions approved after-the-fact via audit</td></tr>
-            <tr><td><code>FULL_AUTONOMOUS</code></td><td>None</td><td>No approval required (development only)</td></tr>
+            <tr><td><code>defense_contractor</code></td><td>Maximum</td><td>FULL_HITL default; LOW severity at CRITICAL_HITL</td></tr>
+            <tr><td><code>financial_services</code></td><td>Maximum</td><td>FULL_HITL default; LOW severity at AUDIT_ONLY</td></tr>
+            <tr><td><code>healthcare</code></td><td>Maximum</td><td>FULL_HITL default; LOW severity at AUDIT_ONLY</td></tr>
+            <tr><td><code>fintech_startup</code></td><td>High</td><td>CRITICAL_HITL default; LOW and MEDIUM at AUDIT_ONLY</td></tr>
+            <tr><td><code>enterprise_standard</code></td><td>Balanced</td><td>CRITICAL_HITL default; MEDIUM at AUDIT_ONLY, LOW at FULL_AUTONOMOUS</td></tr>
+            <tr><td><code>internal_tools</code></td><td>Low</td><td>FULL_AUTONOMOUS default; credential changes FULL_HITL</td></tr>
+            <tr><td><code>fully_autonomous</code></td><td>None</td><td>FULL_AUTONOMOUS with the HITL toggle off (guardrails still apply)</td></tr>
           </tbody>
         </table>
       </div>
@@ -1084,8 +1096,9 @@
           <h3>HITL Approval Service</h3>
           <div class="card-path">src/services/hitl_approval_service.py</div>
           <p>
-            Asynchronous SQS-based approval queue. Supports timeout escalation,
-            multi-approver workflows, and complete audit trail.
+            DynamoDB-backed approval queue (in-memory when AWS is not configured). Supports timeout
+            escalation to backup reviewers and an audit log of decisions; multi-approver workflows are
+            planned. The job server creates a request for every patch; presets are not yet applied.
           </p>
           <div class="tags"><span class="tag tag-purple">ADR-032</span></div>
         </div>
@@ -1157,8 +1170,10 @@
           <h3>Agent-to-Agent Security (A2AS)</h3>
           <div class="card-path">src/services/a2a_gateway.py</div>
           <p>
-            Secure inter-agent messaging with command verification, sandbox untrust enforcement,
-            injection filtering, and per-interaction audit trails. Enabled by default (ADR-029 Phase 2.3).
+            Injection filtering of the orchestrator's incoming prompt, enabled by default (ADR-029 Phase 2.3).
+            Command verification, sandbox untrust enforcement, and per-interaction audit trails exist in
+            the service; inter-agent messaging is in-process in the job server, so they apply only once the
+            networked agent path is enabled.
           </p>
           <div class="tags"><span class="tag tag-purple">ADR-029</span></div>
         </div>
@@ -1174,11 +1189,13 @@
         </div>
 
         <div class="card">
-          <h3>Orchestrator Dispatch (Step Functions)</h3>
+          <h3>Orchestrator Dispatch (Lambda)</h3>
           <div class="card-path">deploy/cloudformation/orchestrator-dispatcher.yaml</div>
           <p>
-            AWS Step Functions state machines coordinate multi-agent workflows with retry logic,
-            error handling, and parallel execution branches.
+            An SQS-triggered Lambda (<code>src/lambda/orchestrator_dispatcher.py</code>) records jobs and
+            routes them by deployment mode. Status: EKS Job creation is not implemented (the dispatch returns
+            success without creating a Job), warm-pool routing has no queue URL configured, and the Lambda
+            consumes the same queue the orchestrator pods poll.
           </p>
         </div>
       </div>
@@ -1198,16 +1215,16 @@
           <tbody>
             <tr><td><code>POST</code></td><td><code>/orchestrate</code></td><td>Start agent orchestration</td><td>orchestration_endpoints.py</td></tr>
             <tr><td><code>GET</code></td><td><code>/orchestrate/{id}</code></td><td>Get orchestration status</td><td>orchestration_endpoints.py</td></tr>
-            <tr><td><code>POST</code></td><td><code>/orchestrate/{id}/checkpoint</code></td><td>Save agent checkpoint</td><td>orchestration_endpoints.py</td></tr>
-            <tr><td><code>POST</code></td><td><code>/orchestrate/{id}/resume</code></td><td>Resume from checkpoint</td><td>orchestration_endpoints.py</td></tr>
+            <tr><td><code>GET</code></td><td><code>/orchestrate</code></td><td>List your orchestration jobs</td><td>orchestration_endpoints.py</td></tr>
+            <tr><td><code>DELETE</code></td><td><code>/orchestrate/{id}</code></td><td>Cancel job</td><td>orchestration_endpoints.py</td></tr>
+            <tr><td><code>WS</code></td><td><code>/orchestrate/{id}/stream</code></td><td>Stream job status</td><td>orchestration_endpoints.py</td></tr>
             <tr><td><code>GET</code></td><td><code>/agents</code></td><td>List all registered agents</td><td>agent_registry_endpoints.py</td></tr>
             <tr><td><code>GET</code></td><td><code>/agents/{id}</code></td><td>Get agent details</td><td>agent_registry_endpoints.py</td></tr>
-            <tr><td><code>POST</code></td><td><code>/agents</code></td><td>Register a new agent</td><td>agent_registry_endpoints.py</td></tr>
-            <tr><td><code>GET</code></td><td><code>/agents/by-capability/{cap}</code></td><td>Find agents by capability</td><td>agent_registry_endpoints.py</td></tr>
-            <tr><td><code>GET</code></td><td><code>/settings</code></td><td>Get orchestrator config</td><td>orchestrator_settings_endpoints.py</td></tr>
-            <tr><td><code>PUT</code></td><td><code>/settings</code></td><td>Update orchestrator config</td><td>orchestrator_settings_endpoints.py</td></tr>
-            <tr><td><code>POST</code></td><td><code>/settings/autonomy</code></td><td>Set autonomy policy</td><td>orchestrator_settings_endpoints.py</td></tr>
-            <tr><td><code>GET</code></td><td><code>/settings/capabilities</code></td><td>List available capabilities</td><td>orchestrator_settings_endpoints.py</td></tr>
+            <tr><td><code>POST</code></td><td><code>/agents/connect</code></td><td>Connect an external agent</td><td>agent_registry_endpoints.py</td></tr>
+            <tr><td><code>GET</code></td><td><code>/orchestrator/settings</code></td><td>Get orchestrator config</td><td>orchestrator_settings_endpoints.py</td></tr>
+            <tr><td><code>PUT</code></td><td><code>/orchestrator/settings</code></td><td>Update orchestrator config (stored only; does not scale)</td><td>orchestrator_settings_endpoints.py</td></tr>
+            <tr><td><code>POST</code></td><td><code>/orchestrator/settings/switch</code></td><td>Switch deployment mode (stored only; does not scale)</td><td>orchestrator_settings_endpoints.py</td></tr>
+            <tr><td><code>GET</code></td><td><code>/orchestrator/settings/status</code></td><td>Operational status</td><td>orchestrator_settings_endpoints.py</td></tr>
           </tbody>
         </table>
       </div>

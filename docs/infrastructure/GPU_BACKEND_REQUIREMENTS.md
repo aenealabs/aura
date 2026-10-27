@@ -118,7 +118,8 @@ class TitanEmbeddingService:
 ### EKS Node Group Configuration
 
 ```yaml
-# deploy/cloudformation/eks-nodegroup.yaml
+# Illustrative sizing; the deployed defaults live in deploy/cloudformation/eks-nodegroup-gpu.yaml
+# (InstanceTypes default 'g5.xlarge,g4dn.xlarge,g5.2xlarge')
 GPUNodeGroup:
   InstanceTypes:
     - g5.2xlarge      # Primary: A10G GPU

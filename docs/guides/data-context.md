@@ -60,6 +60,13 @@ Each approach has strengths:
 
 ### How Retrieval Works
 
+> **Current status (October 2026).** The diagram below shows the three-way
+> design. The agent workflow that runs today retrieves context with one Neptune
+> graph traversal and one OpenSearch k-NN vector search and passes both result
+> sets to the agent without keyword search or fused ranking. Keyword (BM25)
+> search with Reciprocal Rank Fusion is implemented in
+> `src/services/three_way_retrieval_service.py` but is not yet wired in.
+
 ```
 User Query: "How does user authentication work?"
                     |
@@ -97,24 +104,22 @@ The AST Parser Agent extracts and indexes:
 
 | Entity Type | Examples | Relationships Stored |
 |-------------|----------|----------------------|
-| **Functions** | `def authenticate()` | Calls, called by, parameters |
-| **Classes** | `class UserService` | Inheritance, methods, attributes |
+| **Functions** | `def authenticate()` | Calls (callers are found by traversing incoming `CALLS` edges) |
+| **Classes** | `class UserService` | Inheritance, contained methods |
 | **Methods** | `def get_user()` | Class membership, calls |
-| **Variables** | `API_KEY = ...` | Usage locations, assignments |
-| **Imports** | `import auth` | Dependencies, module relationships |
-| **Files** | `auth.py` | Contains, imports from |
+| **Variables** | `API_KEY = ...` | Definition location (variable usage is not tracked) |
+| **Imports** | `import auth` | Module dependencies |
 
 ### Relationship Types
 
 | Relationship | Meaning |
 |--------------|---------|
-| `CALLS` | Function A calls function B |
-| `CONTAINS` | File contains class/function |
-| `IMPORTS` | File imports module |
+| `CALLS` | Function A calls function B (deterministically resolved) |
+| `CALLS_INFERRED` | Call target resolved by the LLM-based resolver tier |
+| `CONTAINS` | Parent entity contains class/function |
+| `IMPORTS` | Module imports module |
 | `INHERITS` | Class A inherits from class B |
-| `USES` | Function uses variable |
-| `DEFINES` | Module defines function/class |
-| `DEPENDS_ON` | Component depends on another |
+| `READS_CONFIG`, `DEPENDS_ON_ENV`, `USES_KMS_KEY`, `FEATURE_GATED_BY` | Code depends on configuration or infrastructure |
 
 ### Example Graph Query
 
@@ -189,14 +194,13 @@ Session End
 
 ### Context Scoring
 
-Each context item is scored for relevance:
+The Context Scoring Service (`src/services/context_scoring_service.py`) scores each context item for relevance. It is implemented and unit-tested but not yet called by the agent workflow.
 
 | Factor | Weight | Description |
 |--------|--------|-------------|
-| Recency | 20% | How recently was this relevant |
-| Frequency | 15% | How often does this appear |
-| Semantic Similarity | 40% | How close to the query |
-| User Preference | 25% | Historical relevance to user |
+| Relevance | 50% | 70% embedding cosine similarity plus 30% TF-IDF term overlap with the query |
+| Recency | 30% | Exponential decay on file modification age (`recency_half_life_days` = 30) |
+| Density | 20% | Character-level Shannon entropy of the content, normalized to 0-1 |
 
 ### Hierarchical Tool Registry
 
@@ -212,7 +216,7 @@ Tools are organized in three tiers:
 
 ## HopRAG: Multi-Hop Reasoning
 
-For complex queries, Aura uses multi-hop reasoning across the code graph.
+Aura's HopRAG service (`src/services/hoprag_service.py`) is designed for multi-hop reasoning across the code graph on complex queries. It is implemented and unit-tested but not yet called by the agent workflow.
 
 ### What is Multi-Hop?
 
@@ -291,7 +295,7 @@ When agents receive context, each item is tagged with its source:
 
 ## Community Summarization
 
-For large codebases, Aura uses community detection to create summaries.
+For large codebases, Aura's community summarization service groups related code with Leiden clustering (falling back to connected components when the clustering libraries are not installed) and generates LLM summaries. It is implemented and unit-tested but not yet called by the agent workflow.
 
 ### What is Community Detection?
 
@@ -371,7 +375,7 @@ Coordinates context between tools:
 
 ### Tenant Separation
 
-Your data is isolated from other organizations:
+The diagram below shows the target isolation model. Today, ingestion writes all repositories to a shared OpenSearch index and a shared Neptune graph, with entities and documents tagged by repository; dedicated per-tenant clusters are the planned higher isolation tiers (see ADR-093):
 
 ```
 +----------------------------------+
@@ -427,14 +431,11 @@ Ask natural language questions:
 
 ### Query Decomposition Panel
 
-For complex queries, view how Aura breaks them down:
+**Planned.** A Query Decomposition panel component exists in the frontend but is not yet shown on any page, and the `/api/v1/query/decompose` endpoint currently returns illustrative sub-queries with randomly generated counts and confidence values. When connected, it will show how Aura breaks a query down into individual sub-queries:
 
-1. Navigate to a query result
-2. Click **Show Query Decomposition**
-3. View the individual sub-queries:
-   - **Structural** (Neptune) - Blue
-   - **Semantic** (OpenSearch) - Green
-   - **Temporal** (Git history) - Purple
+- **Structural** (Neptune) - Blue
+- **Semantic** (OpenSearch) - Green
+- **Temporal** (Git history) - Purple
 
 ---
 
@@ -442,36 +443,39 @@ For complex queries, view how Aura breaks them down:
 
 ### Indexing Your Repository
 
-1. Connect your repository (GitHub, GitLab, Bitbucket)
+1. Start ingestion through `POST /api/v1/ingest`, or configure the GitHub webhook for push-triggered updates
 2. Aura automatically:
-   - Parses all supported file types
+   - Parses supported file types
    - Extracts code entities
    - Builds the graph
    - Generates embeddings
-3. Monitor progress in the Dashboard
+3. Monitor progress with `GET /api/v1/jobs/{job_id}`
+
+> **Known gap.** Adding a repository or clicking sync through the Repositories
+> page (`/api/v1/repositories/ingest` and `/api/v1/repositories/{id}/sync`)
+> records an ingestion job but does not yet start the ingestion pipeline.
 
 ### Supported Languages
 
-| Language | File Extensions |
-|----------|-----------------|
-| Python | `.py` |
-| JavaScript | `.js`, `.jsx` |
-| TypeScript | `.ts`, `.tsx` |
-| Java | `.java` |
-| Go | `.go` |
-| Rust | `.rs` |
-| C/C++ | `.c`, `.cpp`, `.h` |
-| C# | `.cs` |
-| Ruby | `.rb` |
-| PHP | `.php` |
+| Language | File Extensions | Graph entities | Vector embeddings |
+|----------|-----------------|----------------|-------------------|
+| Python | `.py` | Yes (Python `ast`) | Yes |
+| JavaScript | `.js`, `.jsx` | Yes (tree-sitter; regex fallback without relationships when tree-sitter is not installed) | Yes |
+| TypeScript | `.ts`, `.tsx` | Yes (parsed with the JavaScript grammar; type annotations are ignored) | Yes |
+| Java | `.java` | Planned | Yes |
+| Go | `.go` | Planned | Yes |
+| Rust | `.rs` | Planned | Yes |
+
+C/C++, C#, Ruby, and PHP are not yet ingested. The vulnerability scanner has its own parser with broader language coverage; this table covers the GraphRAG code graph and embeddings only.
 
 ### Incremental Updates
 
 After initial indexing, Aura updates incrementally:
 
-- On git push
-- On scheduled scan
-- On manual trigger
+- On git push (GitHub webhook)
+- On manual trigger (`POST /api/v1/ingest`)
+
+Scheduled scans are planned.
 
 ---
 

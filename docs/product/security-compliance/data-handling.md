@@ -8,7 +8,7 @@
 
 ## Overview
 
-This document describes how Project Aura handles, protects, and manages customer data throughout its lifecycle. Our data handling practices are designed to meet requirements for CMMC, FedRAMP, SOX, HIPAA, and GDPR compliance.
+This document describes how Project Aura handles, protects, and manages customer data throughout its lifecycle. Our data handling practices are designed to support controls aligned with CMMC, FedRAMP, SOX, HIPAA, and GDPR requirements. Aura holds no CMMC, FedRAMP, or HIPAA certification, authorization, or attestation (planned; no filing submitted), and no BAA is offered.
 
 Understanding data handling is critical for security teams, compliance officers, and data protection officers evaluating Aura for regulated workloads.
 
@@ -145,9 +145,9 @@ Supported Cipher Suites (TLS 1.2):
 - ECDHE-RSA-AES128-GCM-SHA256
 ```
 
-#### FIPS 140-2 Compliance
+#### FIPS 140-2 Validated Modules (AWS-Provided)
 
-For GovCloud deployments, FIPS 140-2 validated cryptographic modules are used:
+For GovCloud deployments, Aura is configured to use FIPS 140-2 validated cryptographic modules provided by AWS and the operating system. Aura itself has not undergone FIPS 140 validation.
 
 - AWS FIPS endpoints enabled
 - OpenSSL FIPS provider active
@@ -224,7 +224,7 @@ Project Aura enforces strict data residency controls:
 **US GovCloud:**
 - All data stored in GovCloud partition
 - Bedrock available in us-gov-west-1
-- ITAR-compliant data handling
+- ITAR-aligned data handling (GovCloud partition)
 - US persons access only
 
 **European Union:**
@@ -399,7 +399,7 @@ Customers are notified 30 days before new sub-processor additions. Notification 
 
 ### Data Processing Agreements
 
-DPAs are in place with all sub-processors. Copies available upon request.
+Planned: data processing agreements with each sub-processor will be put in place before customer data is processed. None are recorded in this repository.
 
 ---
 

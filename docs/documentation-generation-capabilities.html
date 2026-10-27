@@ -363,7 +363,7 @@
     <div class="header-meta">
       <span>Project Aura &mdash; Aenea Labs</span>
       <span>Version 1.0</span>
-      <span>Last Updated: February 2026</span>
+      <span>Last Updated: October 2026</span>
     </div>
   </div>
 </header>
@@ -375,7 +375,7 @@
     <!-- ── Stats Bar ── -->
     <div class="stats-bar">
       <div class="stat-card">
-        <div class="stat-value">53+</div>
+        <div class="stat-value">44</div>
         <div class="stat-label">Generation Capabilities</div>
       </div>
       <div class="stat-card">
@@ -383,7 +383,7 @@
         <div class="stat-label">Service Categories</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">9</div>
+        <div class="stat-value">14</div>
         <div class="stat-label">Output Formats</div>
       </div>
       <div class="stat-card">
@@ -391,7 +391,7 @@
         <div class="stat-label">Storage Tiers</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">5</div>
+        <div class="stat-value">4</div>
         <div class="stat-label">Delivery Channels</div>
       </div>
     </div>
@@ -432,8 +432,12 @@
           <h3>Report Generator</h3>
           <div class="card-path">src/services/documentation/report_generator.py</div>
           <p>
-            Produces full technical reports with executive summaries, service inventories,
-            data-flow analysis, security considerations, and recommendations.
+            Produces technical reports with executive summaries, service inventories,
+            data-flow analysis, security considerations, and recommendations. Sections are
+            assembled from templates; an LLM-enhanced executive summary is supported when an
+            LLM client is supplied, but the API path does not supply one today. The data-flow
+            section is empty because the documentation agent passes no data flows (TODO in
+            <code>documentation_agent.py</code>).
           </p>
           <div class="tag-row">
             <span class="tag tag-format">Markdown</span>
@@ -465,8 +469,11 @@
           <h3>Service Boundary Detector</h3>
           <div class="card-path">src/services/documentation/service_boundary_detector.py</div>
           <p>
-            Identifies service boundaries in the codebase and feeds structured context
-            into the report generator for accurate service-inventory sections.
+            Identifies service boundaries with Louvain community detection (networkx) and feeds
+            structured context into the report and diagram generators. Current limitation: the
+            API never injects a Neptune client, so the detector falls back to a built-in demo
+            graph of the Aura codebase for every repository; the Neptune edge query is also a
+            placeholder that returns no edges.
           </p>
           <div class="tag-row">
             <span class="tag tag-format">Structured Objects</span>
@@ -477,8 +484,10 @@
           <h3>Confidence Calibration</h3>
           <div class="card-path">src/services/documentation/confidence_calibration.py</div>
           <p>
-            Scores documentation accuracy and calibrates LLM confidence on generated content
-            before it is surfaced to users.
+            Isotonic-regression calibrator trained on user feedback (stored in DynamoDB) with
+            ECE metrics to CloudWatch. Exposed through the feedback, calibration, and
+            calibrate endpoints; trained models are held in process memory, and calibrated
+            scores are not yet applied to <code>/generate</code> responses.
           </p>
           <div class="tag-row">
             <span class="tag tag-format">JSON</span>
@@ -500,12 +509,13 @@
           <h3>Mermaid Diagram Generator</h3>
           <div class="card-path">src/services/documentation/diagram_generator.py</div>
           <p>
-            Generates Mermaid.js source for five diagram types: architecture, data-flow,
-            dependency, component, and sequence. Uses the Aura design-system palette.
+            Generates Mermaid.js source for five diagram types (architecture, data-flow,
+            dependency, component, and sequence) from detected service boundaries using
+            deterministic templates; no LLM is called. Uses the Aura design-system palette.
           </p>
           <div class="tag-row">
             <span class="tag tag-format">Mermaid</span>
-            <span class="tag tag-storage">S3</span>
+            <span class="tag tag-storage">Memory / Redis / S3 cache</span>
           </div>
           <ul class="method-list">
             <li>_generate_architecture()</li>
@@ -520,12 +530,16 @@
           <h3>AI Diagram Generator</h3>
           <div class="card-path">src/services/diagrams/ai_diagram_generator.py</div>
           <p>
-            Natural-language-to-diagram conversion via multi-provider LLM routing
-            (Bedrock Claude, OpenAI GPT-4, Vertex AI). Includes professional cloud-provider
-            icons and ELK.js layout engine integration.
+            Natural-language-to-diagram conversion (intent extraction, DSL generation, and
+            critique/refinement) routed through AWS Bedrock Claude models; OpenAI and Vertex
+            client modules exist but are disabled in the router. Output is rendered by the
+            built-in Python layout engine and SVG renderer with embedded cloud-provider icons.
+            An ELK.js layout backend exists but is not enabled on the API path. Served by
+            <code>POST /api/v1/documentation/generate</code> with <code>mode=AI_PROMPT</code>;
+            an optional Eraser.io rendering backend is available with a user-supplied API key.
           </p>
           <div class="tag-row">
-            <span class="tag tag-format">SVG / Mermaid</span>
+            <span class="tag tag-format">SVG / Aura DSL</span>
             <span class="tag tag-adr">ADR-060</span>
           </div>
         </div>
@@ -534,8 +548,10 @@
           <h3>Diagram Export Service</h3>
           <div class="card-path">src/services/diagrams/diagram_export_service.py</div>
           <p>
-            Multi-format export pipeline supporting SVG, PNG (via Playwright), PDF,
-            and draw.io XML. Results stored in S3 with pre-signed URL delivery.
+            Multi-format export library supporting SVG, PNG and PDF (via cairosvg, with
+            Playwright fallback), and draw.io XML, with optional S3 storage and pre-signed URL
+            delivery. Not yet wired to an API endpoint; the web UI currently exports diagrams
+            client-side in the browser.
           </p>
           <div class="tag-row">
             <span class="tag tag-format">SVG</span>
@@ -556,8 +572,10 @@
           <h3>SVG Renderer &amp; Git Sync</h3>
           <div class="card-path">src/services/diagrams/svg_renderer.py<br>src/services/diagrams/diagram_git_sync.py</div>
           <p>
-            Native SVG rendering with style optimization and responsive sizing.
-            Git-sync service commits generated diagrams back into repositories automatically.
+            Native SVG rendering with style optimization and responsive sizing (used by the
+            AI diagram path). The Git-sync library can commit diagrams to GitHub or GitLab via
+            direct commit or pull request, but it is not yet wired to an API endpoint or
+            workflow, so no automatic commits occur today.
           </p>
           <div class="tag-row">
             <span class="tag tag-format">SVG</span>
@@ -580,13 +598,15 @@
           <h3>Data Flow Report Generator</h3>
           <div class="card-path">src/services/data_flow/report_generator.py</div>
           <p>
-            Comprehensive data-movement analysis covering database connections, queue / event flows,
-            API call chains, PII inventory with compliance mapping, and embedded Mermaid diagrams.
-            Classifies data as PII, Sensitive, Confidential, Internal, or Public.
+            Data-movement analysis of Python source (AST plus regex) covering database
+            connections, queue / event flows, API call chains, PII inventory with compliance
+            mapping, and embedded Mermaid diagrams. Classification levels: Public, Internal,
+            Confidential, Restricted, and Top Secret. Library only: not yet wired to an API
+            endpoint or agent workflow, and non-Python files are skipped.
           </p>
           <div class="tag-row">
             <span class="tag tag-format">Markdown + Mermaid</span>
-            <span class="tag tag-storage">S3 / Memory</span>
+            <span class="tag tag-storage">Memory</span>
           </div>
           <ul class="method-list">
             <li>generate_report()</li>
@@ -1021,10 +1041,9 @@
 
         <div class="capability-card">
           <h3>Policy-as-Code Validation</h3>
-          <div class="card-path">src/services/ (PolicyValidator, PolicySimulator)</div>
+          <div class="card-path">src/services/capability_governance/policy_validator.py<br>src/services/capability_governance/simulator.py</div>
           <p>
-            OPA Rego validation results, policy simulation outputs, and GitOps-driven
-            compliance assessment reports.
+            Capability-policy validation results and policy simulation outputs.
           </p>
           <div class="tag-row">
             <span class="tag tag-format">JSON</span>
@@ -1075,7 +1094,7 @@
           <h3>AURA-ATT&amp;CK Red Team</h3>
           <div class="card-path">src/services/runtime_security/red_team/</div>
           <p>
-            Attack simulation results across 75 AURA-ATT&amp;CK techniques with
+            Attack simulation results across 97 AURA-ATT&amp;CK techniques with
             detection-effectiveness scoring and defense-gap analysis.
           </p>
           <div class="tag-row">
@@ -1087,7 +1106,7 @@
 
         <div class="capability-card">
           <h3>ML Anomaly Detection</h3>
-          <div class="card-path">src/services/ (anomaly_detection)</div>
+          <div class="card-path">src/services/anomaly_detection_service.py</div>
           <p>
             Statistical anomaly reports, honeypot trigger events, and human-readable
             anomaly explanations generated by the ML detection pipeline.
@@ -1328,31 +1347,31 @@
             <tr>
               <td><code>POST</code></td>
               <td><code>/api/v1/documentation/generate</code></td>
-              <td>Start async documentation generation job</td>
+              <td>Generate documentation synchronously (<code>CODE_ANALYSIS</code> Mermaid or <code>AI_PROMPT</code> SVG)</td>
             </tr>
             <tr>
               <td><code>GET</code></td>
-              <td><code>/api/v1/documentation/{job_id}</code></td>
-              <td>Retrieve generated documentation result</td>
+              <td><code>/api/v1/documentation/diagram-types</code></td>
+              <td>List supported diagram types</td>
             </tr>
             <tr>
               <td><code>GET</code></td>
-              <td><code>/api/v1/documentation/{job_id}/stream</code></td>
-              <td>SSE progress stream for generation jobs</td>
+              <td><code>/api/v1/documentation/generate/{repository_id}/stream</code></td>
+              <td>SSE progress stream for code-analysis generation</td>
             </tr>
             <tr>
               <td><code>POST</code></td>
-              <td><code>/api/v1/documentation/{job_id}/feedback</code></td>
-              <td>Submit feedback on generated docs</td>
+              <td><code>/api/v1/documentation/feedback</code></td>
+              <td>Submit feedback on generated docs (also: <code>GET /feedback/stats</code>, <code>GET /calibration/stats</code>, <code>POST /calibration/train</code>, <code>POST /calibrate</code>)</td>
             </tr>
             <tr>
               <td><code>GET</code></td>
               <td><code>/api/v1/documentation/cache/stats</code></td>
-              <td>Cache hit/miss statistics</td>
+              <td>Cache hit/miss statistics (also: <code>DELETE /cache/{repository_id}</code>)</td>
             </tr>
             <tr>
               <td><code>GET</code></td>
-              <td><code>/api/v1/explainability/{decision_id}</code></td>
+              <td><code>/api/v1/explainability/decisions/{decision_id}</code></td>
               <td>Retrieve reasoning chain for a decision</td>
             </tr>
           </tbody>
@@ -1400,15 +1419,15 @@
             <tr>
               <td>AI Diagrams</td>
               <td>AIDiagramGenerator</td>
-              <td>SVG, Mermaid</td>
-              <td>S3</td>
+              <td>SVG, Aura DSL</td>
+              <td>&mdash;</td>
               <td>060</td>
             </tr>
             <tr>
               <td>Data Flow</td>
               <td>DataFlowReportGenerator</td>
               <td>Markdown + Mermaid</td>
-              <td>S3 / Memory</td>
+              <td>Memory</td>
               <td>&mdash;</td>
             </tr>
             <tr>

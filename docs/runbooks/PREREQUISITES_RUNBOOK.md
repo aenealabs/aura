@@ -58,13 +58,13 @@ Replace `{env}` with `dev`, `qa`, or `prod`.
 # Set environment
 ENV=dev
 
-# Admin Role ARN (for EKS access and CloudFormation)
-# This is typically your AWS SSO AdministratorAccess role
+# Admin Role ARN (EKS cluster-admin access entry)
+# Use the AuraBreakGlass SSO role (AURA-CTL-005); Kubernetes deploys run in CodeBuild
 aws ssm put-parameter \
   --name "/aura/${ENV}/admin-role-arn" \
   --type "String" \
-  --value "arn:aws:iam::YOUR_ACCOUNT_ID:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AdministratorAccess_XXXXXXXX" \
-  --description "SSO Administrator Role ARN for EKS access" \
+  --value "arn:aws:iam::YOUR_ACCOUNT_ID:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AuraBreakGlass_XXXXXXXX" \
+  --description "AuraBreakGlass SSO role ARN for EKS cluster-admin access" \
   --region us-east-1
 
 # Alert Email (for SNS notifications)
@@ -154,7 +154,7 @@ After the EKS cluster is deployed:
 aws eks update-kubeconfig \
   --name aura-cluster-dev \
   --region us-east-1 \
-  --profile aura-admin
+  --profile aura-deployer-dev
 
 # Verify access
 kubectl cluster-info

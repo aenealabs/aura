@@ -10,6 +10,8 @@
 
 This document covers frequently encountered issues that affect daily operations of Project Aura. Each issue includes symptoms, causes, diagnostic steps, and resolution procedures.
 
+> **API examples in this guide:** routes are served under `/api/v1` on your Aura API host (the `https://api.aenealabs.com/v1/...` form in older examples is illustrative). Of the API paths used in the examples below, `/repositories`, `/integrations`, and the host-root `/health` exist today; `/auth/login`, `/auth/refresh`, `/auth/mfa/verify`, `/users/me`, `/users/me/verify-email`, `/organizations/current`, `/audit`, `/agents/executions`, `/health/agents`, `/health/orchestrator`, `/notifications`, `/repositories/bulk`, `/schemas/repository`, and `/settings/agents` are **Planned**. Use `GET /api/v1/auth/me` to inspect the caller's roles and groups. The `AURA-*` error codes are **Planned** labels; the API currently reports errors by HTTP status and an `error` message.
+
 ---
 
 ## Authentication Issues
@@ -52,18 +54,12 @@ fi
 
 **Resolution:**
 
-1. **Refresh the token** using the refresh endpoint:
-   ```bash
-   curl -X POST https://api.aenealabs.com/v1/auth/refresh \
-     -H "Content-Type: application/json" \
-     -d '{"refresh_token": "${REFRESH_TOKEN}"}'
-   ```
+1. **Refresh the token:** the console refreshes Cognito tokens automatically; for scripts, use the Cognito refresh-token flow. (An API `POST /auth/refresh` endpoint is planned.)
 
-2. **Re-authenticate** if refresh token is also expired:
+2. **Re-authenticate** if the refresh token is also expired by signing in to the console again (Cognito Hosted UI), then confirm the new token:
    ```bash
-   curl -X POST https://api.aenealabs.com/v1/auth/login \
-     -H "Content-Type: application/json" \
-     -d '{"email": "user@example.com", "password": "****"}'
+   curl -s -H "Authorization: Bearer ${AURA_TOKEN}" \
+     https://{your-aura-api-host}/api/v1/auth/me
    ```
 
 3. **Check clock synchronization** (for self-hosted):
@@ -92,9 +88,9 @@ fi
 **Diagnostic Steps:**
 
 ```bash
-# Check current user's roles and permissions
+# Check current user's roles and groups
 curl -s -H "Authorization: Bearer ${AURA_TOKEN}" \
-  https://api.aenealabs.com/v1/users/me | jq '.roles, .permissions'
+  https://{your-aura-api-host}/api/v1/auth/me | jq '.roles, .groups'
 
 # Example output
 {
@@ -109,7 +105,7 @@ curl -s -H "Authorization: Bearer ${AURA_TOKEN}" \
 
 **Resolution:**
 
-1. **Verify required permissions** for the operation:
+1. **Verify required permissions** for the operation. Current role checks use the Cognito groups `admin`, `security-engineer`, `developer`, and `viewer` (for example, approving patches requires `security-engineer` or `admin`); the fine-grained permission strings below are **Planned**:
 
    | Operation | Required Permission |
    |-----------|---------------------|

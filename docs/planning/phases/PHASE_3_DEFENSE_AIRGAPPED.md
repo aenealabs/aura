@@ -4,6 +4,8 @@
 **Market Focus:** Anduril, Defense contractors, Federal agencies
 **Dependencies:** ADR-049 air-gap foundation, Phase 1-2 services
 
+> **Status (2026-10-26):** Planning document. Under ADR-078, `src/services/airgap/` exists as tested library code, but signing uses hardcoded mock crypto, the edge runtime loads only a mock inference engine, and no API or infrastructure template exists; `deploy/airgap/scripts/create-airgap-bundle.sh` is the shipped piece. See ADR-078 for current status.
+
 ---
 
 ## Service 1: Air-Gap Orchestrator

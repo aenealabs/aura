@@ -1,6 +1,9 @@
 # ADR-053: Enterprise Security Integrations (Zscaler, Saviynt, AuditBoard)
 
-**Status:** Proposed
+**Status:** Implemented (library, Phase 2-4 connectors); not integrated
+
+> **Status note (2026-10-26).** `src/services/zscaler_connector.py`, `saviynt_connector.py`, and `auditboard_connector.py` are real `aiohttp` clients with 166 tests (70+42+54). Phase 1 and Phase 5 are not built: `deploy/cloudformation/secrets-enterprise-integrations.yaml` and `src/api/enterprise_security_endpoints.py` do not exist, and no API route or agent imports the connectors (only `src/services/connectors/__init__.py` re-exports them). `frontend/src/components/integrations/ZscalerConfig.jsx` exists, but the backend integration endpoints do not recognize these providers.
+
 **Date:** 2026-01-05
 **Decision Makers:** Project Aura Platform Team, Security Architecture Team
 **Related:** ADR-028 (External Tool Connectors), ADR-048 (Developer Tools Integration), ADR-004 (Cloud Abstraction Layer)

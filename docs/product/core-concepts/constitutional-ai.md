@@ -1,7 +1,7 @@
 # Constitutional AI
 
-**Version:** 1.0
-**Last Updated:** January 2026
+**Version:** 1.1
+**Last Updated:** October 2026
 
 ---
 
@@ -10,6 +10,8 @@
 Constitutional AI (CAI) is Project Aura's principled approach to AI safety and alignment. Based on Anthropic's research (arXiv:2212.08073), it applies explicit principles to evaluate and refine agent outputs before they reach users or downstream systems.
 
 Unlike traditional guardrails that simply block potentially harmful outputs, Constitutional AI engages constructively. When an agent output violates a principle, the system provides transparent reasoning and attempts revision rather than silent rejection.
+
+> **Current status (October 2026):** The critique, revision, tiered-critique, fast-path, audit-queue, golden-set, and LLM-as-judge services are implemented with 535 tests, and the nightly evaluation Lambda runs them offline. Inline critique of live agent output is not yet active: agents opt in through `ConstitutionalMixin`, and no production agent class (Coder, Reviewer, Validator, or the orchestrator) uses it yet. The agent integration described below is the designed behavior.
 
 ---
 
@@ -27,7 +29,7 @@ Enterprise AI systems face a fundamental tension:
 
 Constitutional AI provides:
 
-- **Principled behavior**: Every output is evaluated against explicit, documented principles
+- **Principled behavior**: Outputs are evaluated against explicit, documented principles (once agents adopt the mixin)
 - **Transparent reasoning**: Users can see why outputs were flagged or revised
 - **Constructive engagement**: Issues are explained, not just blocked
 - **Continuous improvement**: Critique-revision history enables quality monitoring
@@ -37,58 +39,58 @@ Constitutional AI provides:
 
 ## The 16 Constitutional Principles
 
-Aura's constitution defines 16 principles across six categories, each with specific severity levels that determine handling.
+Aura's constitution (`src/services/constitutional_ai/constitution.yaml`) defines 16 principles across seven categories, each with a severity level that determines handling.
 
 ### Safety Principles (Critical Severity)
 
 | Principle | Description |
 |-----------|-------------|
-| **Security-First** | Never generate code that introduces vulnerabilities or weakens security posture |
-| **Non-Destructive Defaults** | Default to read-only operations; require explicit confirmation for destructive actions |
-| **Sandbox Containment** | All generated code must be testable in isolated sandbox environments |
+| **Security-First Code Generation** | Never generate code that introduces vulnerabilities such as injection flaws or weakened security posture |
+| **Data Protection and Privacy** | Avoid exposing or logging PII, credentials, or other sensitive data |
+| **Sandbox Environment Isolation** | Never attempt to access resources outside the sandbox boundary |
 
 ### Compliance Principles (High Severity)
 
 | Principle | Description |
 |-----------|-------------|
-| **Regulatory Alignment** | Outputs must align with applicable compliance frameworks (CMMC, SOX, NIST) |
-| **Audit Trail** | All decisions must be logged with sufficient detail for compliance audits |
+| **Regulatory Compliance (CMMC/SOX/NIST)** | Outputs must align with applicable compliance frameworks |
+| **Comprehensive Audit Trail** | Generated code logs security-relevant events with user attribution |
+
+### Transparency Principles (High/Medium Severity)
+
+| Principle | Severity | Description |
+|-----------|----------|-------------|
+| **Honest Capability Representation** | High | Do not claim actions or guarantees the system cannot deliver |
+| **Transparent Reasoning Process** | Medium | Explain major decisions, trade-offs, and assumptions |
+
+### Helpfulness Principles (Medium/Low Severity)
+
+| Principle | Severity | Description |
+|-----------|----------|-------------|
+| **Genuinely Helpful Assistance** | Medium | Address the user's actual need with practical, actionable information |
+| **Comprehensive Error Handling** | Medium | Handle operations that can fail with clear error messages |
+| **Code Maintainability** | Low | Keep generated code readable, documented, and of manageable complexity |
 
 ### Anti-Sycophancy Principles (High/Medium Severity)
 
-| Principle | Description |
-|-----------|-------------|
-| **Independent Judgment** | Maintain technical accuracy even when it contradicts user expectations |
-| **Constructive Pushback** | Respectfully challenge requests that would compromise security or quality |
+| Principle | Severity | Description |
+|-----------|----------|-------------|
+| **Honest Disagreement** | High | Do not agree with incorrect technical claims or validate bad practices |
+| **Appropriate Opinion Persistence** | Medium | Do not abandon a correct position without new evidence |
+| **Objective Technical Assessment** | Medium | Evaluate approaches without bias toward the user's preference |
 
-### Transparency Principles (Medium Severity)
-
-| Principle | Description |
-|-----------|-------------|
-| **Uncertainty Expression** | Clearly communicate confidence levels and limitations |
-| **Reasoning Chain** | Provide step-by-step explanation for significant decisions |
-
-### Helpfulness Principles (Medium Severity)
+### Code Quality Principles (Medium Severity)
 
 | Principle | Description |
 |-----------|-------------|
-| **Genuine Assistance** | Focus on solving the user's actual problem, not just the literal request |
-| **Non-Evasive Engagement** | When unable to fulfill a request, explain why and offer alternatives |
-
-### Code Quality Principles (Low Severity)
-
-| Principle | Description |
-|-----------|-------------|
-| **Maintainability** | Generated code should be readable, well-structured, and maintainable |
-| **Minimal Change** | Patches should make the minimum changes necessary to fix the issue |
-| **Pattern Consistency** | Follow existing codebase patterns and conventions |
-| **Context Preservation** | Maintain surrounding code context and avoid unintended side effects |
+| **Project Pattern Consistency** | Follow established naming, structure, and error-handling conventions |
+| **Code Testability** | Avoid hard dependencies, global state, and non-determinism that block testing |
 
 ### Meta Principles (High Severity)
 
 | Principle | Description |
 |-----------|-------------|
-| **Principle Conflict Resolution** | When principles conflict, prioritize by severity (Critical > High > Medium > Low) |
+| **Principle Conflict Resolution** | When principles conflict, resolve the tension explicitly and prioritize by severity |
 
 ---
 
@@ -179,7 +181,7 @@ Organizations can configure default policies per principle severity level.
 
 ## Integration with Agents
 
-Constitutional AI integrates with Aura's multi-agent system through the `ConstitutionalMixin`:
+Constitutional AI is designed to integrate with Aura's multi-agent system through the `ConstitutionalMixin` (not yet adopted by production agent classes):
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -213,16 +215,16 @@ Each agent type has preconfigured domain tags that determine which principles ap
 
 | Agent | Domain Tags | Primary Principles |
 |-------|-------------|-------------------|
-| Coder Agent | `code_generation`, `security` | Security-First, Minimal Change, Pattern Consistency |
-| Reviewer Agent | `review`, `analysis` | Independent Judgment, Constructive Pushback |
-| Security Agent | `security`, `compliance` | Regulatory Alignment, Audit Trail |
-| Validator Agent | `validation`, `testing` | Sandbox Containment, Non-Destructive Defaults |
+| Coder Agent | `code_generation`, `security` | Security-First Code Generation, Project Pattern Consistency, Code Testability |
+| Reviewer Agent | `review`, `analysis` | Honest Disagreement, Objective Technical Assessment |
+| Security Agent | `security`, `compliance` | Regulatory Compliance, Comprehensive Audit Trail |
+| Validator Agent | `validation`, `testing` | Sandbox Environment Isolation, Comprehensive Error Handling |
 
 ---
 
 ## Trust Center Dashboard
 
-The AI Trust Center provides real-time visibility into Constitutional AI operations:
+The AI Trust Center provides visibility into Constitutional AI operations. By default the Trust Center API runs in mock mode and returns sample data; with `USE_AWS_DYNAMODB` set it reads principles, CloudWatch safety metrics, and DynamoDB audit decisions, but the Overview tab's compliance score (0.94) and 24-hour decision counts are still fixed placeholder values:
 
 ### Overview Tab
 - System health status (Healthy / Warning / Critical)
@@ -297,7 +299,7 @@ Any regression in golden set pass rate triggers immediate investigation.
 
 ### Technical References
 - [ADR-063: Constitutional AI Integration](../../architecture-decisions/ADR-063-constitutional-ai-integration.md) - Full technical specification
-- [Trust Center Troubleshooting](../../support/troubleshooting/constitutional-ai-troubleshooting.md) - Debugging guide
+- [Trust Center Troubleshooting](../../support/troubleshooting/constitutional-ai-issues.md) - Debugging guide
 
 ### Related Concepts
 - [Multi-Agent System](./multi-agent-system.md) - How agents use Constitutional AI

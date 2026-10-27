@@ -2,7 +2,15 @@
 
 ## Status
 
-Deployed
+Implemented (library); not integrated -- not wired into capability enforcement
+
+> **Status note (2026-10-26).** The four modules below work as a library, but
+> no code outside `src/services/capability_governance/` (including
+> `middleware.py`) instantiates the statistical or honeypot detectors, so no
+> live tool invocation is scored. Quarantine and forensic records are
+> in-memory dicts (`honeypot_detector.py:142`). The table now shows exact line
+> and test counts (`wc -l`; `def test_` counts in
+> `tests/services/test_capability_governance/`).
 
 ## Date
 
@@ -12,11 +20,11 @@ Deployed
 
 | Component | File | LOC | Tests |
 |-----------|------|-----|-------|
-| Anomaly Contracts | `src/services/capability_governance/anomaly_contracts.py` | ~350 | 40 |
-| Statistical Detector | `src/services/capability_governance/statistical_detector.py` | ~400 | 30 |
-| Honeypot Detector | `src/services/capability_governance/honeypot_detector.py` | ~350 | 28 |
-| Anomaly Explainer | `src/services/capability_governance/anomaly_explainer.py` | ~250 | 15 |
-| **Total** | | ~1,350 | 113 |
+| Anomaly Contracts | `src/services/capability_governance/anomaly_contracts.py` | 439 | 39 |
+| Statistical Detector | `src/services/capability_governance/statistical_detector.py` | 525 | 26 |
+| Honeypot Detector | `src/services/capability_governance/honeypot_detector.py` | 425 | 29 |
+| Anomaly Explainer | `src/services/capability_governance/anomaly_explainer.py` | 379 | 19 |
+| **Total** | | 1,768 | 113 |
 
 **Features Implemented:**
 - Statistical anomaly detection (Z-score, sequence n-grams, temporal patterns)

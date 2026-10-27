@@ -1,9 +1,11 @@
 # ADR-031: Neptune Deployment Mode Configuration
 
-**Status:** Deployed
+**Status:** Deployed (provisioned mode only; serverless template not built)
 **Date:** 2025-12-10
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-003 (EKS EC2 Nodes for GovCloud), ADR-004 (Multi-Cloud Architecture)
+
+> **Status note (2026-10-26).** `deploy/cloudformation/neptune-simplified.yaml` is the only Neptune template; its `NeptuneMode` parameter allows only `provisioned` (lines 36-41), and it exports `NeptuneMode` and `NeptuneGovCloudCompatible`. `deploy/cloudformation/neptune-serverless.yaml` does not exist and has no history in git, so the serverless option described below is not implemented.
 
 ---
 

@@ -105,14 +105,17 @@ Two consequences that matter when editing a buildspec:
 
 ---
 
-## cfn-lint Exit Codes in Buildspecs -- Unresolved
+## cfn-lint in Buildspecs -- Resolved (2026-10-26)
 
-122 call sites across `deploy/buildspecs/*.yml` invoke cfn-lint as
-`cfn-lint template.yaml || echo "cfn-lint warnings (non-blocking)"`. That form makes **every** exit
-code pass, including 2 / 6 / 8, which `deploy/cloudformation/CLAUDE.md` documents as "Fail build".
-A template error in a deploy build is therefore swallowed today, while the PR gate and the nightly
-job both use `scripts/cfn-lint-wrapper.sh` and fail correctly.
+Every buildspec lints with `./scripts/cfn-lint-wrapper.sh <args> || exit 1`: warnings (exit 4)
+pass, errors (2 / 6 / 8) fail the build, matching the PR gate and the nightly job. The `|| exit 1`
+matters inside multi-line `- |` blocks, where CodeBuild checks only the last command's status.
+Every buildspec that calls the wrapper installs `cfn-lint==1.57.2`, so a new upstream rule cannot
+fail a deploy that passed before; bump the pin deliberately, after running the wrapper over every
+template.
 
-This divergence is flagged, not resolved: converting 122 sites could start failing deploy builds
-that currently pass. See the "UNRESOLVED CONTRADICTION" note in
-`deploy/cloudformation/CLAUDE.md` before changing either side.
+Before conversion, all 120 former `cfn-lint ... || echo` sites were run with their exact arguments
+on cfn-lint 1.51.0 and 1.57.2. One real error surfaced and was fixed: the Service Catalog
+`data-pipeline-v1` product (both copies) used the deprecated Lambda runtime `python3.11`, now
+`python3.12`. `tests/architecture/test_iam_escalation_guards.py` fails CI on a swallowed lint
+error, a direct `cfn-lint` call, a wrapper call without `|| exit 1`, or an unpinned install.

@@ -5,6 +5,8 @@
 **Decision Makers:** Platform Architecture Team
 **Context:** ADR-049 Phase 0 Prerequisite
 
+> **Implementation status (October 2026):** Edition detection is implemented in `src/services/edition_service.py` (not `src/config/edition_service.py`) and exposed by `src/api/edition_endpoints.py`; tests are in `tests/test_edition_service.py` (not `tests/config/`). The frontend counterparts are `frontend/src/context/EditionContext.jsx`, `frontend/src/services/editionApi.js` and `frontend/src/components/settings/EditionSettings.jsx`; the frontend is JavaScript, so the `.tsx` listings below are illustrative. No `FeatureGate` component file exists under `frontend/src/components/`.
+
 ---
 
 ## Executive Summary

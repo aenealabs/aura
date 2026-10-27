@@ -104,8 +104,10 @@ spec:
 **Deploy HPA:**
 
 ```bash
-# Apply HPA configuration
-kubectl apply -f deploy/kubernetes/aura-api/hpa.yaml
+# Save the manifest above as hpa.yaml, then apply it. The repository does not ship
+# deploy/kubernetes/aura-api/hpa.yaml; HPAs are provided only by the Helm chart
+# (deploy/helm/aura/templates/api/hpa.yaml) and deploy/self-hosted/hpa/hpa-templates.yaml.
+kubectl apply -f hpa.yaml
 
 # Check HPA status
 kubectl get hpa -n aura-system

@@ -52,7 +52,7 @@ We chose **Private ECR Base Images** with a bootstrap pattern:
 |-----------|---------|
 | `ecr-base-images.yaml` | CloudFormation stack for base image repository |
 | `bootstrap-base-images.sh` | One-time script to populate from ECR Public Gallery |
-| `Dockerfile.alpine` | ARG-based base image with fallback pattern |
+| `deploy/docker/dnsmasq/Dockerfile` | ARG-based base image with fallback pattern |
 | `buildspec-application.yml` | Retrieves base image URI from stack outputs |
 
 **Base Image Strategy:**
@@ -151,7 +151,7 @@ Use a third-party registry service (e.g., JFrog Artifactory, Harbor).
 5. **GovCloud Ready**
    - Same pattern works in Commercial and GovCloud
    - No external registry access required from GovCloud
-   - Meets FedRAMP supply chain requirements
+   - Aligned with FedRAMP supply chain expectations (not certified)
 
 ### Negative
 
@@ -242,7 +242,7 @@ build:
 
 - `deploy/cloudformation/ecr-base-images.yaml` - ECR repository stack
 - `deploy/scripts/bootstrap-base-images.sh` - Bootstrap script
-- `deploy/docker/dnsmasq/Dockerfile.alpine` - Example Dockerfile with ARG pattern
+- `deploy/docker/dnsmasq/Dockerfile` - Example Dockerfile with ARG pattern
 - `deploy/buildspecs/buildspec-application.yml` - CI/CD integration
 - `DEPLOYMENT_GUIDE.md` - Bootstrap documentation
 - [AWS ECR Pricing](https://aws.amazon.com/ecr/pricing/)

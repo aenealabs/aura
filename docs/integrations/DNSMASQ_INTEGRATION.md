@@ -40,7 +40,7 @@ Provide Project Aura with:
 |---------|-------------|--------|
 | **Performance** | Local DNS caching reduces query latency by 70-90% | Faster agent response times |
 | **Service Discovery** | Friendly names like `neptune.aura.local` simplify configuration | Easier development & operations |
-| **Security** | DNSSEC validation prevents DNS spoofing attacks | Enhanced compliance (CMMC L3) |
+| **Security** | DNSSEC validation prevents DNS spoofing attacks | Supports CMMC L3-aligned controls |
 | **Testing** | Isolated sandbox networks enable safe integration testing | Improved HITL workflow |
 | **Cost** | Reduced AWS Route53 query costs | Savings at scale |
 
@@ -700,7 +700,7 @@ trust-anchor=.,20326,8,2,E06D44B80B8F1D39A95C0B0D7C65D08458E880409BBC68345710423
 **Benefits:**
 - Prevents DNS spoofing attacks
 - Validates cryptographic signatures on DNS records
-- Required for CMMC Level 3 compliance
+- Expected by CMMC Level 3 practices
 
 ### DNS Rebinding Prevention
 
@@ -753,7 +753,9 @@ CloudFormation-deployed Fargate tasks use least-privilege IAM:
 
 ### Compliance
 
-| Requirement | Implementation | Status |
+Control alignment only. Aura holds no CMMC certification and no CMMC or SOX assessment has been performed.
+
+| Requirement | Implementation | Control implemented |
 |-------------|----------------|--------|
 | **CMMC L3 - Access Control** | Non-root containers, minimal capabilities | ✅ |
 | **CMMC L3 - Audit Logging** | CloudWatch Logs integration | ✅ |

@@ -2,7 +2,9 @@
 
 ## Status
 
-Deployed
+Deployed (infrastructure templates; service modules built as library code, not yet wired into agent request paths)
+
+> **Status note (2026-10-26).** All four phases have modules under `src/services/runtime_security/` (`interceptor/`, `discovery/`, `baselines/`, `red_team/`, `correlation/`) with real boto3/Neptune/OpenSearch paths behind a `use_mock=True` default, and CloudFormation templates exist (`runtime-security-interceptor.yaml`, `-discovery.yaml`, `-baselines.yaml`, `-correlation.yaml`). No module outside the package imports the interceptor, discovery, baseline, red-team or correlation services, so none of the planned hooks into ADR-063/065/066/042 exist. `red_team/generators/` and `red_team/evaluators/` were not built, and `RedTeamEngine._execute_test` (`red_team/engine.py:347`) returns a canned `BLOCKED` result unless an executor is injected; no executor implementation exists. The `/api/v1/runtime-security/*` router (`src/api/runtime_security_endpoints.py`) serves ADR-077 admission/escape/GuardDuty data from the in-process history store, not ADR-083 data.
 
 ## Date
 

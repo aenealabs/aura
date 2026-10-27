@@ -6,11 +6,13 @@
 
 ---
 
+> **Status: Planned -- not implemented.** Aura does not currently expose a GraphQL API. The API server (`src/api/main.py`) mounts only REST routers under `/api/v1`; there is no `/graphql` route, no GraphQL server library in the Python dependencies, and no playground or WebSocket subscription endpoint. This page is a design proposal for a future GraphQL layer. For the API that exists today, use the [REST API Reference](./rest-api.md).
+
 ## Overview
 
-Project Aura provides a GraphQL API alongside the REST API, enabling flexible queries and efficient data fetching. GraphQL is particularly useful when you need to fetch related data in a single request or when building complex dashboards.
+Project Aura is planned to provide a GraphQL API alongside the REST API, enabling flexible queries and efficient data fetching. GraphQL would be particularly useful when you need to fetch related data in a single request or when building complex dashboards. Everything below describes the proposed design, not shipped behavior.
 
-**Endpoint:** `https://api.aenealabs.com/v1/graphql`
+**Proposed endpoint:** `https://api.aenealabs.com/v1/graphql` (not live)
 
 ---
 
@@ -31,7 +33,7 @@ curl -X POST https://api.aenealabs.com/v1/graphql \
 
 ### GraphQL Playground
 
-An interactive GraphQL IDE is available at:
+An interactive GraphQL IDE is planned at the following locations (not live):
 
 - Production: `https://api.aenealabs.com/v1/graphql/playground`
 - Staging: `https://api.staging.aenealabs.com/v1/graphql/playground`

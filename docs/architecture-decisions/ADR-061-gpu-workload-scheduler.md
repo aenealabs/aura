@@ -2,7 +2,9 @@
 
 ## Status
 
-Deployed
+Deployed (partial; see status note)
+
+> **Status note (2026-10-26).** Job submission, status, cancel, and log endpoints in `src/api/gpu_scheduler_endpoints.py` are included in `src/api/main.py` and persist to DynamoDB, and the CloudFormation and `deploy/kubernetes/gpu-scheduler/` manifests exist. `submit_job` only writes a queued record; the only code that creates the Kubernetes Job is `QueueDispatcher` (`src/services/gpu_scheduler/queue_dispatcher.py:214`), which nothing instantiates and no deployment runs. `PreemptionManager`, `StalledJobDetector`, `GPUCostService`, `JobTemplateService`, and `ScheduledJobService` are likewise not referenced outside the package, and `get_resource_status` returns hardcoded values (`gpu_scheduler_service.py:676-685`).
 
 ## Date
 

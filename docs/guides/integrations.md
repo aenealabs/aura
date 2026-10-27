@@ -26,6 +26,27 @@ Aura supports integrations with a variety of external tools through the MCP (Mod
   +------+   +------+   +--------+   +------+   +--------+
 ```
 
+> **Implementation status:** The MCP Gateway client (`src/services/mcp_gateway_client.py`) currently returns simulated tool responses; its call to the AgentCore Gateway is not enabled yet, so tool calls routed through the gateway do not reach Slack, Jira, or the other tools shown above. The vendor connectors listed in the next section call the vendor APIs directly. See [Implementation Status by Integration](#implementation-status-by-integration).
+
+---
+
+## Implementation Status by Integration
+
+This guide describes the intended administrator experience. The table below states what exists in the code today. "Connector" means a tested API client class that talks to the vendor over HTTPS; unless noted, no scheduled sync, event trigger, or UI flow invokes it yet, and the settings screens described below do not persist configuration to it.
+
+| Integration | Status | What exists |
+|-------------|--------|-------------|
+| Slack, Microsoft Teams | Partial | Incoming-webhook delivery in `notification_service.py`, a Slack connector, and a Slack Web API adapter (`integrations/slack_adapter.py`); not called by the HITL or alert flows (see the [Notification Integration Guide](./NOTIFICATION_INTEGRATION_GUIDE.md)) |
+| Jira, PagerDuty | Partial | `JiraConnector` and `PagerDutyConnector` in `external_tool_connectors.py`; optional arguments of the anomaly service that `src/api/main.py` does not supply |
+| Azure DevOps, ServiceNow, Snyk, CrowdStrike, Qualys, Splunk, Terraform Cloud | Partial | One connector module each under `src/services/` and the registry in `src/services/connectors/__init__.py`; not wired to agents, schedulers, or API routes |
+| AuditBoard, Saviynt, Zscaler | Partial (not described in this guide) | Connector modules with the same status as above |
+| GitHub | Partial | Implemented and reachable: OAuth (`oauth_provider_service.py`), GitHub App tokens (`github_app_auth.py`), inbound webhook `POST /webhook/github`. Built but not reachable from the API or workers today: pull-request creation for approved patches (`github_pr_service.py`) and webhook registration (`webhook_registration_service.py`). The GitHub Issues ticketing connector works, but `/api/v1/ticketing` cannot build it because the per-customer config lookup is a TODO and returns nothing |
+| GitLab | Partial | OAuth flow and webhook registration only |
+| Bitbucket | Planned | No code |
+| Datadog | Planned | Listed in the Integration Hub catalog only; no connector or metric publisher |
+| Integration Hub (Settings > Integrations) | Partial | `/api/v1/integrations` stores configurations in process memory (lost on restart) and **Test Connection** returns a simulated random result; it does not call the vendor |
+| Outbound webhooks | Planned | See [Webhooks](../support/api-reference/webhooks.md) |
+
 ---
 
 ## Prerequisites
@@ -262,6 +283,8 @@ Connect GitLab for self-hosted or GitLab.com integration.
 
 ### Bitbucket
 
+> **Planned.** No Bitbucket code exists yet.
+
 Connect Bitbucket for Atlassian ecosystem integration.
 
 **Setup**:
@@ -327,6 +350,8 @@ Connect ServiceNow for enterprise ITSM.
 ## Monitoring Integrations
 
 ### Datadog
+
+> **Planned.** No Datadog connector or metric publisher exists yet; the metrics below are the intended set.
 
 Connect Datadog for enhanced observability.
 
@@ -473,6 +498,8 @@ Navigate to **Settings > Integrations** to see all available integrations.
 
 ### Testing Connections
 
+> **Note:** The current Test Connection endpoint returns a simulated result and does not contact the external service.
+
 1. Click on an integration
 2. Click **Test Connection**
 3. Review the test results
@@ -513,6 +540,8 @@ A2A allows Aura to communicate with external AI agents using a standard protocol
 ---
 
 ## Webhook Configuration
+
+> **Planned.** Outbound webhooks are not implemented; the event names and payload below are the intended design. Inbound GitHub webhooks are implemented (`POST /webhook/github`).
 
 ### Creating Webhooks
 
@@ -560,8 +589,8 @@ Send events from Aura to your systems.
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| Monthly Budget | Maximum monthly spend | $500 |
-| Daily Limit | Maximum daily spend | $50 |
+| Monthly Budget | Maximum monthly spend | $100 |
+| Daily Limit | Maximum daily spend | $10 |
 | Per-Tool Limits | Individual tool limits | Configurable |
 
 ### Monitoring Costs

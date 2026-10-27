@@ -1,9 +1,15 @@
 # ADR-044: Enhanced Node Detail Panel for GraphRAG Explorer
 
-**Status:** Deployed
+**Status:** Deployed (Phase 1 frontend only, on mock graph data; Phases 2-3 planned)
 **Date:** 2025-12-18 | **Deployed:** 2025-12-31
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-024 (Titan Neural Memory), ADR-034 (Context Engineering Implementation)
+
+> **Status note (2026-10-26) -- UI only, mock data.** `NodeDetailPanel` in
+> `frontend/src/components/CKGEConsole.jsx:1051` is built, but the console
+> loads `MOCK_NODES`/`MOCK_EDGES` (`CKGEConsole.jsx:86`, `:1516`) and no
+> `/api/v1/graph/nodes/{id}` endpoint exists in `src/api/`. Summaries and
+> impact text are hand-written mock fields, not generated.
 
 ---
 

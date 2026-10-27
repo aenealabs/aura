@@ -75,7 +75,7 @@ A directed graph representing the calling relationships between functions or met
 
 ### CMMC {#cmmc}
 
-**Cybersecurity Maturity Model Certification** - A unified standard for implementing cybersecurity across the defense industrial base. Project Aura supports CMMC Level 2 and Level 3 compliance requirements.
+**Cybersecurity Maturity Model Certification** - A unified standard for implementing cybersecurity across the defense industrial base. Project Aura is designed to support CMMC Level 2 and Level 3-aligned controls; it is not CMMC certified, and certification is planned.
 
 | Level | Description | Control Families |
 |-------|-------------|------------------|
@@ -252,7 +252,7 @@ AWS Fargate is a serverless compute engine for containers. Aura uses Fargate for
 
 ### FedRAMP {#fedramp}
 
-**Federal Risk and Authorization Management Program** - A US government program providing a standardized approach to security assessment for cloud services. Aura supports FedRAMP High authorization through AWS GovCloud deployment.
+**Federal Risk and Authorization Management Program** - A US government program providing a standardized approach to security assessment for cloud services. Aura plans to pursue FedRAMP High authorization through AWS GovCloud deployment; Aura is not FedRAMP authorized, and no filing has been submitted.
 
 | Level | Data Sensitivity | Aura Support |
 |-------|------------------|--------------|
@@ -317,7 +317,7 @@ Safety mechanisms that prevent AI agents from taking potentially harmful actions
 
 ### HIPAA {#hipaa}
 
-**Health Insurance Portability and Accountability Act** - US legislation providing data privacy and security provisions for safeguarding medical information. Aura supports HIPAA compliance through encryption, access controls, and audit logging.
+**Health Insurance Portability and Accountability Act** - US legislation providing data privacy and security provisions for safeguarding medical information. Aura provides HIPAA-aligned technical safeguards (encryption, access controls, and audit logging); it has no HIPAA attestation and offers no BAA.
 
 ---
 

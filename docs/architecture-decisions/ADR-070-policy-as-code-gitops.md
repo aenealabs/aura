@@ -2,7 +2,15 @@
 
 ## Status
 
-Deployed
+Implemented (library: validator and simulator); not integrated -- GitOps pipeline not built
+
+> **Status note (2026-10-26).** `PolicyValidator`
+> (`src/services/capability_governance/policy_validator.py`) and
+> `PolicySimulator` (`simulator.py`) are implemented and tested, but nothing
+> outside the package calls them. The `capability-policies/` repository,
+> `buildspec-policy-validate.yml`, `.github/workflows/policy-validation.yml`,
+> `policy-pipeline.yaml`, `policy-graph-sync.yaml`, `reconciliation.py`, and
+> `PolicyDeployer` do not exist.
 
 ## Date
 
@@ -555,7 +563,7 @@ class PolicyGraphReconciler:
 - **Auditability**: Complete history of policy changes with commit SHAs
 - **Safety**: Validation prevents deploying broken policies
 - **Speed**: Policy updates without application deployment
-- **Compliance**: Meets CMMC/SOX change management requirements
+- **Compliance**: Aligned with CMMC/SOX change management controls (not certified)
 - **Collaboration**: Security team can review policies without code context
 
 ### Negative

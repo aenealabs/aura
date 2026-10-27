@@ -2,7 +2,16 @@
 
 ## Status
 
-Deployed
+Implemented (library); not integrated -- not applied to API routes
+
+> **Status note (2026-10-26).** `ABACAuthorizationService`
+> (`src/services/authorization/abac_service.py`) and `require_abac` /
+> `ABACMiddleware` (`abac_middleware.py`) are implemented with 115 tests in
+> `tests/services/authorization/`, but no route or app factory imports them.
+> No Rego policies, OPA deployment, UserProfiles table template,
+> `/api/v1/authz/check` endpoint, or `useABAC` frontend hook exist. Tenant
+> filtering on graph retrieval comes from ADR-090
+> (`src/services/graph/phase5_abac_filter.py`), not this service.
 
 ## Date
 

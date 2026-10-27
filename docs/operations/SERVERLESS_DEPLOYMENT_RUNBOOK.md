@@ -23,7 +23,7 @@ This runbook documents common deployment failures for the serverless layer and t
 
 ```bash
 # Set AWS profile
-export AWS_PROFILE=aura-admin
+export AWS_PROFILE=aura-breakglass-dev
 
 # Check stack status
 aws cloudformation describe-stacks --stack-name aura-orchestrator-dispatcher-dev \

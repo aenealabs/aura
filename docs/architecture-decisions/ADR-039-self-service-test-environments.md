@@ -1,10 +1,25 @@
 # ADR-039: Self-Service Test Environment Provisioning
 
-**Status:** Deployed
+**Status:** Deployed (infrastructure, API and Lambdas; API-to-provisioner hand-off not wired)
 **Date:** 2025-12-15
 **Implementation Date:** 2025-12-15
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-005 (HITL Sandbox Architecture), ADR-032 (Configurable Autonomy Framework), ADR-017 (Dynamic Sandbox Resource Allocation)
+
+> **Status note (2026-10-26) -- provisioning hand-off not wired.** The
+> templates, the REST API (`src/api/environment_endpoints.py`, mounted in
+> `src/api/main.py`), the DynamoDB-backed
+> `src/services/environment_provisioning_service.py` and the Phase 4 Lambdas
+> with their 40 tests exist. `POST /api/v1/environments` only saves a record
+> with status `provisioning` or `pending_approval`
+> (`environment_provisioning_service.py:476-506`); nothing starts the approval
+> state machine or calls Service Catalog, and
+> `src/lambda/environment_provisioner.py` is not referenced by any template.
+> The inline provisioner in `deploy/cloudformation/test-env-approval.yaml:267`
+> uses a placeholder product lookup, the scheduler and marketplace templates
+> ship placeholder Lambda code, and `test-env-ecs.yaml`,
+> `buildspec-test-env-catalog.yml` and `cost-alerts.yaml` do not exist (the
+> environments page is `frontend/src/components/Environments.jsx`).
 
 ---
 

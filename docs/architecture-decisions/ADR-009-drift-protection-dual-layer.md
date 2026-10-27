@@ -1,6 +1,9 @@
 # ADR-009: Dual-Layer Drift Protection for Compliance Monitoring
 
 **Status:** Deployed
+
+> **Status note (2026-10-26).** `deploy/cloudformation/config-compliance.yaml` defines 17 AWS Config rules, not 18 (`grep -c 'Type: AWS::Config::ConfigRule'`). The drift Lambda schedule in `deploy/cloudformation/drift-detection.yaml` defaults to `rate(1 day)`; `deploy/buildspecs/buildspec-security.yml` deploys it with `rate(6 hours)`.
+
 **Date:** 2025-11-24
 **Decision Makers:** Project Aura Team
 

@@ -17,6 +17,14 @@ By the end of this guide, you will be able to:
 - Configure notification preferences for your team
 - Review activity audit logs for compliance
 
+> **Implementation status: Partial -- most flows in this guide are Planned.**
+>
+> - **Roles (implemented):** the four roles below map to the Cognito groups `admin`, `security-engineer`, `developer`, and `viewer`, and API routes that declare role checks enforce them (for example, patch approval requires `security-engineer` or `admin`). Roles are assigned by adding users to Cognito groups; there is no in-app role editor yet.
+> - **Invitations (partial):** the backend invitation API (`/api/v1/team/invitations`: create, list, revoke, resend, validate, accept) stores invitations in DynamoDB and sends email through SNS, but its routes do not yet authenticate the caller and attribute all requests to a placeholder organization. The console's **Invite Team** wizard does not call this API yet: it simulates sending and displays a randomly generated link. `GET /api/v1/team/members` returns two fixed sample members.
+> - **Dashboard sharing:** the sharing API exists (`POST /api/v1/dashboards/{id}/share`), but the console share dialog is not yet wired in; see [Dashboard Customization](./dashboard-customization.md).
+> - **Notifications:** HITL approval notifications are sent by the notification service (SNS, SES, Slack, and Teams webhooks). The notification channel, preference, and quiet-hours screens read canned data from the dev-mock router; creating, editing, and testing channels has no backend route yet.
+> - **Planned:** organization settings, teams, saved searches, report sharing, the activity audit-log viewer and export, user deactivation and reactivation, and SSO enforcement.
+
 ---
 
 ## Prerequisites
@@ -495,7 +503,7 @@ For compliance reporting:
 
 | Environment | Retention | Notes |
 |-------------|-----------|-------|
-| Cloud (SaaS) | 7 years | Meets SOX, CMMC requirements |
+| Cloud (SaaS) | 7 years | Designed to support SOX and CMMC retention requirements (not certified) |
 | Self-hosted | Configurable | Default 90 days, extend as needed |
 | Data export | Unlimited | Archive exports for compliance |
 
@@ -668,5 +676,5 @@ Require SSO for all users:
 - [Dashboard Customization](./dashboard-customization.md) - Sharing dashboards
 - [Patch Approval Workflows](./patch-approval.md) - Approval team configuration
 - [Getting Started: Quick Start Guide](../getting-started/quick-start.md) - Initial setup
-- [API Reference: Users](../../support/api-reference/rest-api.md) - Programmatic user management
+- [API Reference](../../support/api-reference/rest-api.md) - REST API (programmatic user management is planned)
 - [Security Architecture](../../support/architecture/security-architecture.md) - Access control details

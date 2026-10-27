@@ -1,6 +1,9 @@
 # ADR-008: Comprehensive Cost Controls for AWS Bedrock LLM Integration
 
 **Status:** Deployed
+
+> **Status note (2026-10-26).** Enforcement inside the service is implemented in `src/services/bedrock_llm_service.py`: budget and rate checks (`_check_budget`, `_check_rate_limit`, lines 855 and 886) raise `BudgetExceededError` / `RateLimitExceededError`, `_record_cost` (line 979) writes each call to the `aura-ddb-{env}-llm-costs` table from `deploy/cloudformation/aura-bedrock-infrastructure.yaml`, and responses are cached. The hard stop does not attach a DenyAll policy. `deploy/cloudformation/aura-cost-alerts.yaml` has an optional Lambda (`EnableBudgetEnforcement`, default `false`) that stops `aura` ECS tasks and scales `aura` Auto Scaling groups to zero, and its alerts go to SNS only, with no PagerDuty or Slack integration. Model routing now follows the ADR-015 tiers, not the two-model table below.
+
 **Date:** 2025-11-28
 **Decision Makers:** Project Aura Team
 

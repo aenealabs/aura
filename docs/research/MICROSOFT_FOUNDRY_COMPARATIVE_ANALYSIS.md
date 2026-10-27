@@ -237,7 +237,7 @@ This report provides a comprehensive comparative analysis between **Microsoft Fo
 | **Hybrid GraphRAG** | Native graph database for code relationships | Optional integration (not native) | Continue innovation in code-specific graph queries |
 | **Automated Patch Generation** | End-to-end vulnerability remediation | Relies on GitHub Copilot (separate product) | Core differentiator; accelerate Coder Agent capabilities |
 | **Ephemeral Sandbox Testing** | Dedicated ECS/Fargate per patch | Project-level isolation only | Unique for security patch validation |
-| **GovCloud Native** | AWS GovCloud (FedRAMP High, CMMC L3) | Azure GCC High (different ecosystem) | Stronger for DoD/IC customers on AWS |
+| **GovCloud Native** | AWS GovCloud target (FedRAMP High infrastructure; Aura CMMC L3 planned, not certified) | Azure GCC High (different ecosystem) | Stronger for DoD/IC customers on AWS |
 | **Code-Specific Agents** | Coder, Reviewer, Validator specialization | Generic agent framework | Domain expertise is defensible moat |
 | **RuntimeIncidentAgent** | LLM-powered RCA with code visibility | No direct equivalent | Unique competitive positioning vs. AWS DevOps Agent |
 
@@ -347,7 +347,7 @@ This report provides a comprehensive comparative analysis between **Microsoft Fo
 |-----------|-----------------|---------------|-----------|
 | **Breadth vs. Depth** | Broad AI platform | Deep code intelligence | "Purpose-built for security patching" |
 | **Cloud Platform** | Azure-native | AWS-native | "GovCloud-ready from day one" |
-| **Compliance Focus** | General enterprise | Defense contractors | "CMMC Level 3 by design" |
+| **Compliance Focus** | General enterprise | Defense contractors | "Designed for CMMC Level 3-aligned controls" (not certified) |
 | **Patch Generation** | Via Copilot (separate) | Native Coder Agent | "End-to-end remediation" |
 | **Code Understanding** | General RAG | Hybrid GraphRAG | "Relationship-aware code reasoning" |
 
@@ -358,7 +358,7 @@ This report provides a comprehensive comparative analysis between **Microsoft Fo
 | **Fortune 500 (General)** | Strong | Moderate | Partner/integrate |
 | **Defense Industrial Base** | Moderate (GCC High) | Strong (GovCloud) | Primary target |
 | **Financial Services** | Strong (SOX) | Strong (SOX + code) | Specialize in code compliance |
-| **Federal Agencies** | Strong (FedRAMP) | Strong (FedRAMP + CMMC) | Differentiate on CMMC |
+| **Federal Agencies** | Strong (FedRAMP) | Strong once FedRAMP + CMMC are obtained (planned; no filing submitted) | Differentiate on CMMC |
 | **Healthcare** | Strong (HIPAA) | Moderate | Lower priority |
 
 ---

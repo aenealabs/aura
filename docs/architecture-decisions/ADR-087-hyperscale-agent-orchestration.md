@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (Phase 1 Implemented; full implementation in progress)
+Accepted (Phase 1 settings API implemented; execution wiring and Phases 2-4 not started)
+
+> **Status note (2026-10-26).** Tenant isolation on the per-org settings endpoints is now done (`_resolve_settings_key`, `src/api/orchestrator_settings_endpoints.py:988`), and `tests/test_hyperscale_endpoints.py` collects 42 tests. `_hyperscale_settings` is still an in-memory module-level dict (`:985`), and no execution path reads it: `MetaOrchestrator` keeps its own `max_parallel_agents=10` default (`src/agents/meta_orchestrator.py:783`) with no tenant-config, `MAX_CONCURRENT_AGENTS` or admission-control wiring. No code exists for the Phase 2 feasibility gate (`MutationSpec`, `FeasibilityResult`), the Phase 3 job graph and dispatch, or Karpenter NodePools.
 
 Phase 1 deployed: UI gating, execution tier selection, security gate validation, Integration Mode enforcement, hyperscale endpoints (`src/api/orchestrator_settings_endpoints.py`, 39 tests at `tests/test_hyperscale_endpoints.py`).
 

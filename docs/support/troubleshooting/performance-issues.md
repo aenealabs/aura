@@ -10,6 +10,8 @@
 
 This document covers performance-related issues including slow response times, high resource utilization, database bottlenecks, and scaling problems. Use this guide when the system is slower than expected or experiencing resource constraints.
 
+> **API examples in this guide:** routes are served under `/api/v1` on your Aura API host; health probes are at the host root (`/health`, `/health/detailed`). The `/metrics`, `/agents/coder/metrics`, `/cache/warm`, and `/sandboxes/metrics` API paths used in some examples are **Planned** (the agent job server exposes a Prometheus `/metrics` endpoint, and `GET /api/v1/sandboxes` currently returns canned data from the dev-mock router).
+
 ---
 
 ## Performance Baseline

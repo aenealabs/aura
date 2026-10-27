@@ -1,6 +1,9 @@
 # ADR-060: Enterprise Diagram Generation with Multi-Provider Model Routing
 
-**Status:** Accepted
+**Status:** Implemented (Phases 1-3, wired via the documentation endpoints); Phase 4 not exposed via API
+
+> **Status note (2026-10-26).** `src/services/diagrams/` implements the icon library, DSL parser, layout engine, SVG renderer, multi-provider `diagram_model_router.py`, and `ai_diagram_generator.py`, used by `src/api/documentation_endpoints.py` (real Bedrock-backed router unless `DOCUMENTATION_USE_MOCK=true`), with tests in `tests/services/diagrams/`. `diagram_export_service.py` and `diagram_git_sync.py` are not imported outside the package, and the routes the frontend calls (`/api/v1/diagrams/export` in `DiagramExportPanel.jsx:326`, `/api/v1/diagrams/git/commit` in `DiagramGitDialog.jsx:499`) do not exist in `src/`. The layout engine uses its built-in Python layout unless an ELK.js path is configured (`src/services/diagrams/layout_engine.py:135`), and `diagram_model_router.py` (lines 469-480) refuses OpenAI and Vertex clients, so all model calls go through Bedrock.
+
 **Date:** 2026-01-12
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-015 (Tiered LLM Model Strategy), ADR-056 (Documentation Agent), ADR-004 (Multi-Cloud Architecture), ADR-051 (RLM Input Sanitizer)
@@ -1806,7 +1809,7 @@ class DiagramGitSync:
 **Deliverables:**
 - Natural language to diagram generation
 - Multi-provider model selection with resilience
-- FedRAMP/CMMC compliant data routing
+- FedRAMP/CMMC-aligned data routing (not certified)
 
 ### Phase 3: Frontend & Accessibility (3 weeks)
 

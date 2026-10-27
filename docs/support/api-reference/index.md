@@ -8,7 +8,9 @@
 
 ## Overview
 
-This section provides comprehensive API documentation for integrating with Project Aura. The API enables programmatic access to vulnerability management, patch generation, approval workflows, and system configuration.
+This section provides API documentation for integrating with Project Aura. The API enables programmatic access to repository onboarding, HITL approval workflows, platform settings, dashboards, and system configuration.
+
+> **Implementation status:** The API is a FastAPI REST service (`src/api/main.py`) served under the `/api/v1` path prefix. Interactive OpenAPI documentation for every mounted route is generated at `/docs` (Swagger UI), `/redoc`, and `/openapi.json`, and is the authoritative endpoint list. Some capabilities described in this section are planned rather than shipped: there is no GraphQL API, no password-login endpoint, no top-level `/vulnerabilities` or `/patches` resource, no outbound-webhook subscription API, and no uniform response envelope. Each page marks those items as **Planned**.
 
 ---
 
@@ -17,7 +19,7 @@ This section provides comprehensive API documentation for integrating with Proje
 | Document | Description | Audience |
 |----------|-------------|----------|
 | [REST API Reference](./rest-api.md) | Full REST endpoint specifications | Developers, Integration Engineers |
-| [GraphQL API](./graphql-api.md) | GraphQL schema and operations | Developers |
+| [GraphQL API](./graphql-api.md) | GraphQL schema and operations (**Planned -- not implemented**) | Developers |
 | [Webhooks](./webhooks.md) | Event notifications and payloads | Developers, Operations |
 
 ---
@@ -26,41 +28,31 @@ This section provides comprehensive API documentation for integrating with Proje
 
 ### Authentication
 
-All API requests require a valid JWT token in the Authorization header:
+Authenticated API requests require a valid Amazon Cognito JWT in the Authorization header (validated against the user pool JWKS in `src/api/auth.py`). Health probes (`/health`, `/health/live`, `/health/ready`, `/health/startup`) do not require a token. Note that a number of routers do not yet enforce authentication on every route; see the [REST API Reference](./rest-api.md#authentication-coverage).
 
 ```bash
-curl -X GET https://api.aenealabs.com/v1/repositories \
+curl -X GET https://{your-aura-host}/api/v1/repositories \
   -H "Authorization: Bearer ${AURA_TOKEN}" \
   -H "Content-Type: application/json"
 ```
 
 ### Obtaining an Access Token
 
-```bash
-# Login with email/password
-curl -X POST https://api.aenealabs.com/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "user@example.com",
-    "password": "your-password"
-  }'
+Access tokens are issued by Amazon Cognito. Users sign in through the Cognito Hosted UI (OAuth 2.0 authorization-code flow) from the web console; the console stores the resulting tokens and sends them as `Bearer` tokens. The API itself has no email/password login endpoint (a `POST /auth/login` endpoint is **Planned**). To confirm a token is valid:
 
-# Response
-{
-  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "refresh_token": "dGhpcyBpcyBhIHJlZnJlc2ggdG9rZW4...",
-  "token_type": "Bearer",
-  "expires_in": 3600
-}
+```bash
+# Returns {"valid": true, "user": {...}} for a valid token, {"valid": false} otherwise
+curl -X GET https://{your-aura-host}/api/v1/auth/validate \
+  -H "Authorization: Bearer ${AURA_TOKEN}"
+
+# Returns the caller's sub, email, name, roles, and groups (401 without a valid token)
+curl -X GET https://{your-aura-host}/api/v1/auth/me \
+  -H "Authorization: Bearer ${AURA_TOKEN}"
 ```
 
 ### Base URL
 
-| Environment | Base URL |
-|-------------|----------|
-| Production | `https://api.aenealabs.com/v1` |
-| Staging | `https://api.staging.aenealabs.com/v1` |
-| Self-Hosted | `https://{your-domain}/api/v1` |
+All application routes are served under the `/api/v1` path prefix of the Aura API host (for example `https://{your-aura-host}/api/v1`). Health probes are served at the host root (`/health`). Hostnames are deployment-specific; ask your administrator for the API host of your DEV, QA, or self-hosted environment.
 
 ---
 
@@ -74,13 +66,27 @@ Project Aura's API follows REST conventions:
 |-------------|-------|---------|
 | GET | Retrieve resource(s) | `GET /repositories` |
 | POST | Create resource | `POST /repositories` |
-| PUT | Replace resource | `PUT /repositories/{id}` |
-| PATCH | Partial update | `PATCH /repositories/{id}` |
+| PUT | Replace or update resource | `PUT /repositories/{id}` |
 | DELETE | Remove resource | `DELETE /repositories/{id}` |
+
+`PATCH` is not currently used by any route; updates use `PUT`.
 
 ### Response Format
 
-All responses use JSON with a consistent structure:
+All responses are JSON. **Current behavior:** successful responses return the resource or list directly (the endpoint's Pydantic response model), without a `data`/`meta` wrapper. Errors raised by an endpoint return:
+
+```json
+{
+  "error": "Approval not found",
+  "status_code": 404,
+  "path": "/api/v1/approvals/appr-123",
+  "request_id": "6f1c..."
+}
+```
+
+Request-validation failures return FastAPI's standard `422` body (`{"detail": [...]}`), and unexpected server errors return `{"error": "Internal server error", "message": "...", "path": "...", "request_id": "..."}`.
+
+**Planned envelope format (not implemented):** the examples below describe a planned uniform envelope.
 
 **Success Response:**
 
@@ -149,14 +155,15 @@ All responses use JSON with a consistent structure:
 | `Authorization` | Yes | Bearer token: `Bearer {token}` |
 | `Content-Type` | Yes (POST/PUT/PATCH) | `application/json` |
 | `Accept` | No | `application/json` (default) |
-| `X-Request-ID` | No | Client-provided request ID for tracing |
-| `X-Org-ID` | No | Override default organization context |
+| `X-Request-ID` | No | Client-provided request ID for tracing (echoed back; generated when absent) |
+
+Organization context is taken from the authenticated token; an `X-Org-ID` override header is not supported.
 
 ---
 
 ## Pagination
 
-List endpoints support cursor-based pagination:
+**Current behavior:** there is no uniform pagination scheme. List endpoints accept endpoint-specific parameters such as `limit` (for example `GET /api/v1/approvals?limit=50`); check each route in `/docs`. The cursor-based scheme below is **Planned**.
 
 ```bash
 # First page
@@ -181,13 +188,18 @@ curl -X GET "https://api.aenealabs.com/v1/repositories?per_page=20&cursor=eyJpZC
 
 ## Rate Limiting
 
-API requests are rate-limited to ensure fair usage:
+Rate limits are applied per endpoint category by `src/services/api_rate_limiter.py` (sliding window, keyed by user when available and otherwise by client IP). Limits are not tied to subscription plan. Counters are held in memory in each API process, so limits apply per replica rather than cluster-wide.
 
-| Tier | Limit | Window | Burst |
-|------|-------|--------|-------|
-| Free | 100 | 1 minute | 10 |
-| Professional | 1000 | 1 minute | 100 |
-| Enterprise | 10000 | 1 minute | 1000 |
+| Endpoint tier | Default limit | Window |
+|---------------|---------------|--------|
+| Public | 100 | 1 minute |
+| Standard (authenticated) | 60 | 1 minute |
+| Sensitive | 10 | 1 minute |
+| Admin | 5 | 1 minute |
+| Critical (HITL, deployments) | 2 | 1 minute |
+| Webhook | 200 | 1 minute |
+
+Not every router applies a rate-limit dependency; routes without one are not rate limited by the API process.
 
 **Rate Limit Headers:**
 
@@ -195,7 +207,10 @@ API requests are rate-limited to ensure fair usage:
 X-RateLimit-Limit: 1000
 X-RateLimit-Remaining: 999
 X-RateLimit-Reset: 1737288060
+X-RateLimit-Tier: standard
 ```
+
+A `429` response includes a `Retry-After` header.
 
 **Handling Rate Limits:**
 
@@ -221,7 +236,7 @@ def api_call_with_backoff(url, headers, max_retries=5):
 
 ## Filtering and Searching
 
-Most list endpoints support filtering:
+**Current behavior:** filters are endpoint-specific query parameters (for example `GET /api/v1/approvals?status=pending&severity=critical`, `GET /api/v1/repositories?status=active&provider=github`). The `/vulnerabilities` examples below are **Planned**; no `/vulnerabilities` route exists today.
 
 ```bash
 # Filter by field
@@ -245,18 +260,11 @@ curl -X GET "https://api.aenealabs.com/v1/vulnerabilities?created_after=2026-01-
 
 ## API Versioning
 
-The API version is included in the URL path (`/v1/`). Breaking changes require a new major version.
+The API version is included in the URL path (`/api/v1/`). Breaking changes require a new major version. `v1` is the only version served; there is no `v0` route set.
 
-**Version Support Policy:**
+**Deprecation Headers (Planned):**
 
-| Version | Status | Support Until |
-|---------|--------|---------------|
-| v1 | Current | Active |
-| v0 (beta) | Deprecated | June 2026 |
-
-**Deprecation Headers:**
-
-When using deprecated endpoints:
+The API does not emit deprecation headers today. When endpoints are deprecated in the future, the planned headers are:
 
 ```
 Deprecation: true
@@ -267,6 +275,8 @@ Link: <https://api.aenealabs.com/v1/new-endpoint>; rel="successor-version"
 ---
 
 ## Error Codes
+
+**Current behavior:** errors are identified by HTTP status code and the `error` message string. The `AURA-*` error codes below are **Planned** and are not returned by the API today.
 
 | Code | HTTP Status | Description |
 |------|-------------|-------------|
@@ -286,15 +296,13 @@ Link: <https://api.aenealabs.com/v1/new-endpoint>; rel="successor-version"
 
 ## SDK Support
 
-Official SDKs are available for common languages:
+| Language | Package | Status |
+|----------|---------|--------|
+| TypeScript/JavaScript | `@aenealabs/aura-sdk` (source in `sdk/typescript/`, version 0.2.0) | Available in the repository. Covers approvals, incidents, settings, and the IDE extension endpoints. Authenticate with `jwtToken`; the `apiKey` option sends an `X-API-Key` header that the API does not currently accept. |
+| Python | `aura-sdk` | **Planned** |
+| Go | `aura-go` | **Planned** |
 
-| Language | Package | Documentation |
-|----------|---------|---------------|
-| Python | `pip install aura-sdk` | [PyPI](https://pypi.org/project/aura-sdk) |
-| JavaScript | `npm install @aenealabs/aura-sdk` | [npm](https://npmjs.com/package/@aenealabs/aura-sdk) |
-| Go | `go get github.com/aenealabs/aura-go` | [pkg.go.dev](https://pkg.go.dev/github.com/aenealabs/aura-go) |
-
-**Python SDK Example:**
+**Python SDK Example (Planned -- illustrative only):**
 
 ```python
 from aura_sdk import AuraClient
@@ -352,9 +360,9 @@ client.patches.approve(
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      REST API / GraphQL                              │
+│                 REST API (/api/v1; GraphQL planned)                  │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  /repositories  /vulnerabilities  /patches  /approvals      │   │
+│  │  /repositories  /approvals  /settings  /dashboards  /...    │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────┘
                            │
@@ -374,10 +382,10 @@ client.patches.approve(
 ### v1.0.0 (January 2026)
 
 - Initial stable release
-- Full CRUD for repositories, vulnerabilities, patches
+- Repository onboarding (OAuth connections, repositories, ingestion jobs)
 - HITL approval workflows
-- Webhook subscriptions
-- GraphQL API support
+- Platform settings, dashboards, and operational endpoints
+- Vulnerability and patch resources, outbound webhook subscriptions, and GraphQL remain **Planned**
 
 ### v0.9.0 (December 2025) - Deprecated
 

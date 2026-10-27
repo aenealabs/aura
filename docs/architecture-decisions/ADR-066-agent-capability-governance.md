@@ -2,7 +2,9 @@
 
 ## Status
 
-Deployed
+Implemented (library, Phases 1 and 3); not integrated -- infrastructure template present; tool calls not enforced
+
+> **Status note (2026-10-26).** `src/services/capability_governance/` (middleware, policy, registry, audit, dynamic grants, graph analysis, detectors) and `deploy/cloudformation/capability-governance.yaml` exist, with 956 test functions in 27 files. Phase 2 is not done: `MCPToolMixin.invoke_tool` in `src/agents/base_agent.py` performs no capability check and no agent imports the package. `src/api/capability_graph_endpoints.py` is not included in `src/api/main.py`; the frontend capability graph is served by canned data in `src/api/dev_mocks_endpoints.py:201-219`, which `main.py:943-949` mounts unless `AURA_ENABLE_DEV_MOCKS` is set to false.
 
 ## Date
 
@@ -1806,7 +1808,7 @@ class TestSecurityBypass:
 2. **Defense in Depth** - Multiple layers of access control (policy, context, dynamic grants)
 3. **Complete Audit Trail** - Every capability decision logged for forensics
 4. **HITL Integration** - Seamless escalation for sensitive operations
-5. **Compliance Support** - Meets CMMC AC-6, NIST 800-53 AC-2(7) requirements
+5. **Compliance Support** - Aligned with CMMC AC-6, NIST 800-53 AC-2(7) controls (not certified)
 6. **Runtime Enforcement** - Policy violations blocked before tool invocation
 7. **Flexible Governance** - Dynamic grants enable HITL-approved exceptions
 

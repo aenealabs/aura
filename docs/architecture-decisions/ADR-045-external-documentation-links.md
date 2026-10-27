@@ -1,9 +1,14 @@
 # ADR-045: External Documentation Links for Knowledge Graph
 
-**Status:** Deployed
+**Status:** Deployed (Phase 1 frontend only, on mock graph data; Phases 2-3 planned)
 **Date:** 2025-12-18 | **Deployed:** 2025-12-31
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-044 (Enhanced Node Detail Panel)
+
+> **Status note (2026-10-26) -- UI only, mock data.** `DocumentationLink`
+> (`frontend/src/components/CKGEConsole.jsx:901`, used at `:1236`) renders the
+> `docs_url` values in the console's mock nodes. The `DocumentationLinkResolver`
+> service, allowlist table and audit logging (Phase 2) do not exist.
 
 ---
 
@@ -15,7 +20,7 @@ This ADR documents the decision to add external documentation links to the Knowl
 - Graph-scoped queries only (no external data fetching with code context)
 - Curated allowlist of official documentation domains
 - Graceful fallback when documentation unavailable
-- CMMC/FedRAMP compliant (no data exfiltration)
+- Aligned with CMMC/FedRAMP data-boundary controls (no data exfiltration; not certified)
 
 ---
 

@@ -1,6 +1,9 @@
 # ADR-003: EKS EC2 Managed Node Groups for GovCloud Compatibility
 
 **Status:** Deployed
+
+> **Status note (2026-10-26).** The EC2 managed node group decision is implemented, and no template in `deploy/` defines an EKS Fargate profile. The three-group layout below (system, application, sandbox) is the original design; it was archived to `deploy/cloudformation/archive/eks-multi-tier.yaml`. The active templates define a general group (`eks-nodegroup-general.yaml`, t3.large/t3a.large/t3.xlarge, 2-6 nodes), a memory-optimized On-Demand group (`eks-nodegroup-memory.yaml`) and a GPU group (`eks-nodegroup-gpu.yaml`, 0-2 nodes). Patch sandboxes run on ECS Fargate (`deploy/cloudformation/sandbox.yaml`), not on an EKS sandbox node group.
+
 **Date:** 2025-11-17
 **Decision Makers:** Project Aura Team
 

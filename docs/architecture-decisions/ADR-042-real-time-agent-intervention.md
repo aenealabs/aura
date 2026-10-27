@@ -3,6 +3,18 @@
 ## Status
 **Deployed** | December 17, 2025 (Phase 1: CloudTrail, IAM Security Alerting, Checkpoint Infrastructure)
 
+> **Status note (2026-10-26) -- checkpoint API not mounted; no agent creates
+> checkpoints.** The Phase 1 templates (`checkpoint-dynamodb.yaml`,
+> `checkpoint-websocket.yaml`, `iam-security-alerting.yaml`,
+> `org-cloudtrail.yaml`), `src/services/execution_checkpoint_service.py` with
+> tests, the WebSocket Lambdas in `src/lambda/checkpoint/` and the Phase 2-4
+> frontend components in `frontend/src/components/execution/` exist. The REST
+> router in `src/api/checkpoint_endpoints.py` is not included in
+> `src/api/main.py`, no agent or orchestrator calls
+> `ExecutionCheckpointService`, and `frontend/src/context/ExecutionContext.jsx:87`
+> uses a mock WebSocket in development builds, so per-action intervention is
+> not yet active in agent runs.
+
 ## Context
 
 ### Current State

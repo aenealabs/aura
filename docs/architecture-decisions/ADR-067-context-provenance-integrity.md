@@ -29,7 +29,14 @@ Deployed
 > injectable but not built by the environment factory; existing indexes must be
 > re-ingested before strict mode is enabled; the System2 orchestrator uses its
 > own lightweight retrieval class and does not pass through this verifier.
-
+>
+> **Status note (2026-10-26).** Ingestion-side recording is reachable:
+> `src/api/main.py` passes `create_provenance_service_from_env()` to
+> `GitIngestionService`. Retrieval-side verification is not yet on a running
+> path: `create_context_retrieval_service` in
+> `src/services/context_retrieval_service.py` is called only from tests, and
+> `System2Orchestrator` in `src/agents/agent_orchestrator.py` builds its own
+> `ContextRetrievalService` class with no verifier.
 
 ## Date
 
@@ -2290,7 +2297,7 @@ class TestAnomalyDetection:
 2. **Source traceability** - Full provenance chain for all indexed content
 3. **Trust-based filtering** - Low-trust content excluded or deprioritized
 4. **Anomaly prevention** - Injection patterns caught in context
-5. **Compliance ready** - Complete audit trail for CMMC/SOX
+5. **Audit support** - Complete audit trail supporting CMMC/SOX-aligned controls (not certified)
 6. **Quarantine workflow** - Suspicious content isolated for review
 7. **Defense in depth** - Complements ADR-065 user input sanitization
 

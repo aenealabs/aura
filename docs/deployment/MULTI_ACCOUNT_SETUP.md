@@ -69,15 +69,12 @@ Environments:
 ### AWS CLI Profile Naming
 
 ```
-Pattern: aura-admin-{environment}
+Pattern: aura-{permission-set}-{environment}
 
 Profiles:
-  - aura-admin    → Development account access
-  - aura-admin     → QA account access
-  - aura-admin-prod   → Production account access (GovCloud)
-
-SSO Default Pattern (auto-generated):
-  - AdministratorAccess-{account_id}
+  - aura-deployer-dev / aura-deployer-qa       → AuraDeployer (deploys)
+  - aura-breakglass-dev / aura-breakglass-qa   → AuraBreakGlass (one-time setup, teardown, kill switches)
+  - aura-readonly-dev / aura-readonly-qa       → AuraReadOnly
 ```
 
 ### SSM Parameter Paths
@@ -85,7 +82,7 @@ SSO Default Pattern (auto-generated):
 ```
 Per-Account Parameters:
   /aura/{env}/account-id           Account ID reference
-  /aura/{env}/admin-role-arn       SSO Administrator role ARN
+  /aura/{env}/admin-role-arn       EKS cluster-admin principal (the AuraBreakGlass SSO role ARN)
   /aura/{env}/alert-email          SNS notification email
   /aura/{env}/codeconnections-arn  GitHub connection (per-account)
   /aura/{env}/vpc-id               VPC identifier
@@ -136,9 +133,9 @@ Examples:
 | Component | Current State |
 |-----------|---------------|
 | SSO Instance | Account-local IAM Identity Center |
-| Permission Set | `AdministratorAccess` (AWS-managed) |
-| SSO Role ARN | `AWSReservedSSO_AdministratorAccess_XXXXXXXX` |
-| CLI Profile | `AdministratorAccess-123456789012` |
+| Permission Sets | `AuraDeployer`, `AuraReadOnly`, `AuraBreakGlass` (`deploy/cloudformation/identity-center-permission-sets.yaml`, AURA-CTL-005). Earlier setups used the AWS-managed `AdministratorAccess` set. |
+| SSO Role ARN | `AWSReservedSSO_AuraDeployer_XXXXXXXX` (deploys); `AWSReservedSSO_AuraBreakGlass_XXXXXXXX` (teardown, kill switches) |
+| CLI Profile | `aura-deployer-dev`, `aura-deployer-qa` |
 
 ### SSM Parameters (Existing)
 
@@ -201,13 +198,13 @@ Examples:
 
 **Prerequisites:**
 - AWS CLI configured with DEV account credentials
-- AdministratorAccess permissions
+- Administrator access (one-time organization setup; use `AuraBreakGlass` once the permission sets exist)
 
 **Steps:**
 
 ```bash
 # 1. Set profile for DEV account (will become Management Account)
-export AWS_PROFILE=aura-admin
+export AWS_PROFILE=aura-breakglass-dev
 
 # 2. Enable AWS Organizations
 aws organizations create-organization --feature-set ALL
@@ -267,9 +264,17 @@ aws ssm put-parameter \
 1. Navigate to **IAM Identity Center** in Management Account
 2. If not enabled, click **Enable IAM Identity Center**
 3. Go to **AWS accounts** → Select QA account
-4. Click **Assign users or groups**
-5. Select your user/group → Select `AdministratorAccess` permission set
-6. Click **Submit**
+4. Deploy the permission sets and assignments (once, from the management account, as an administrator):
+
+   ```bash
+   aws cloudformation deploy --stack-name aura-identity-center-permission-sets \
+     --template-file deploy/cloudformation/identity-center-permission-sets.yaml \
+     --parameter-overrides InstanceArn=<SSO_INSTANCE_ARN> \
+       DevAccountId=<DEV_ACCOUNT_ID> QaAccountId=<QA_ACCOUNT_ID> \
+       DeployerGroupId=<GROUP_ID> ReadOnlyGroupId=<GROUP_ID> BreakGlassGroupId=<GROUP_ID>
+   ```
+
+5. Day-to-day deploys use `AuraDeployer`; `AuraBreakGlass` (one-hour sessions) is for teardown, kill switches and incidents.
 
 **Configure AWS CLI Profile:**
 
@@ -277,24 +282,24 @@ aws ssm put-parameter \
 # Add QA profile to ~/.aws/config
 cat >> ~/.aws/config << 'EOF'
 
-[profile aura-admin]
+[profile aura-deployer-qa]
 sso_session = aenealabs
 sso_account_id = <QA_ACCOUNT_ID>
-sso_role_name = AdministratorAccess
+sso_role_name = AuraDeployer
 region = us-east-1
 output = json
 EOF
 
 # Login to SSO (will authenticate for all accounts)
-aws sso login --profile aura-admin
+aws sso login --profile aura-deployer-qa
 ```
 
 ### Phase 4: Bootstrap QA Account
 
-**Switch to QA account context:**
+**Switch to QA account context (one-time setup uses break-glass):**
 
 ```bash
-export AWS_PROFILE=aura-admin
+export AWS_PROFILE=aura-breakglass-qa
 
 # Verify you're in QA account
 aws sts get-caller-identity
@@ -309,9 +314,9 @@ aws iam create-account-alias --account-alias aenealabs-qa
 **Create SSM parameters:**
 
 ```bash
-# Admin role ARN (get from IAM Identity Center)
+# EKS cluster-admin principal: the AuraBreakGlass SSO role (AURA-CTL-005)
 ADMIN_ROLE_ARN=$(aws iam list-roles \
-  --query "Roles[?contains(RoleName, 'AdministratorAccess')].Arn" \
+  --query "Roles[?contains(RoleName, 'AuraBreakGlass')].Arn" \
   --output text | head -1)
 
 aws ssm put-parameter \
@@ -348,8 +353,8 @@ aws ssm put-parameter \
 ### Phase 5: Deploy Infrastructure to QA
 
 ```bash
-# Ensure QA profile is active
-export AWS_PROFILE=aura-admin
+# Ensure the QA deployer profile is active
+export AWS_PROFILE=aura-deployer-qa
 
 # Bootstrap base images
 ./deploy/scripts/bootstrap-base-images.sh qa
@@ -388,8 +393,8 @@ aws codebuild start-build --project-name aura-foundation-deploy-qa
 ### IAM Identity Center
 
 - [ ] SSO access configured for QA account
-- [ ] AdministratorAccess permission set assigned
-- [ ] CLI profile `aura-admin` configured
+- [ ] `AuraDeployer`, `AuraReadOnly` and `AuraBreakGlass` permission sets assigned (`identity-center-permission-sets.yaml`)
+- [ ] CLI profiles `aura-deployer-qa` and `aura-breakglass-qa` configured
 - [ ] SSO login tested successfully
 
 ### SSM Parameters (QA Account)

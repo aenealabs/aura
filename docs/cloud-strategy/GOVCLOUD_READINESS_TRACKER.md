@@ -4,6 +4,7 @@
 **Current Environment:** AWS Commercial (us-east-1)
 **Target Environment:** AWS GovCloud (us-gov-west-1 or us-gov-east-1)
 **Strategy:** Build in commercial, validate GovCloud compatibility, migrate when customers require it
+**Status:** Planned. No certification filing has been submitted (as of October 2026). Aura holds no FedRAMP, CMMC or DoD IL authorization; readiness figures below measure AWS service availability only.
 
 **Last Updated:** December 12, 2025 (Security Services Deployed)
 
@@ -30,7 +31,7 @@
 - ✅ ARN partitions support GovCloud (auto-detection implemented)
 
 **SECURITY SERVICES DEPLOYED (Dec 12, 2025):**
-- ✅ 5 Python security services (328 tests): input validation, secrets detection, audit, alerts, API integration
+- ✅ 5 Python security services (285 tests as of October 2026): input validation, secrets detection, audit, alerts, API integration. These are libraries; the API decorators in `src/api/security_integration.py` are not yet applied to routes
 - ✅ Security EventBridge Bus: `aura-security-events-dev`
 - ✅ Security SNS Topic: `aura-security-alerts-dev` with email subscriptions
 - ✅ 3 CloudWatch Log Groups (90-day retention): security-audit, security-events, security-threats
@@ -549,7 +550,7 @@ The **96% GovCloud Readiness** score measures **infrastructure and technical con
 | Infrastructure Security Controls | ✅ Implemented | IAM, encryption, network segmentation, WAF |
 | ARN Partition Compatibility | ✅ Complete | All templates use `${AWS::Partition}` |
 | Critical Security Fixes | ✅ Complete | Nov 22, 2025 audit remediation |
-| Security Services | ✅ Complete | Dec 12, 2025 - 5 services, 328 tests, full infrastructure |
+| Security Services | ⚠️ Partial | Dec 12, 2025 - 5 services built (285 tests as of October 2026); not yet wired onto API routes |
 
 ### What the 96% Score Does NOT Represent
 
@@ -563,10 +564,10 @@ The **96% GovCloud Readiness** score measures **infrastructure and technical con
 | **Risk Assessment (RA)** | 6 | ❌ Missing | No formal risk assessment |
 | **Security Assessment (CA)** | 9 | ❌ Missing | No pentest program |
 
-### Honest CMMC Level 2 Assessment (110 Controls)
+### Internal CMMC Level 2 Gap View (110 Controls; unaudited, no self-assessment score submitted)
 
 ```
-Infrastructure/Technical Controls:  ~75-80% complete
+Infrastructure/Technical Controls (internal estimate, unassessed):
 ├── ✅ Configuration Management (CM): 9/9 controls
 ├── ✅ Maintenance (MA): 6/6 controls
 ├── ✅ Physical Protection (PE): 6/6 controls (AWS inherited)
@@ -575,14 +576,14 @@ Infrastructure/Technical Controls:  ~75-80% complete
 ├── 🔶 System & Communications (SC): ~14/20 controls (encryption done, hardening pending)
 └── 🔶 System Integrity (SI): ~12/17 controls (validation done, EDR pending)
 
-Organizational/Process Controls:    ~10-20% complete
+Organizational/Process Controls (internal estimate, unassessed):
 ├── ❌ Awareness & Training (AT): 0/5 controls
 ├── ❌ Incident Response (IR): 0/6 controls
 ├── ❌ Personnel Security (PS): 0/2 controls
 ├── ❌ Risk Assessment (RA): 0/6 controls
 └── ❌ Security Assessment (CA): 0/9 controls
 
-OVERALL CMMC LEVEL 2 PROGRESS:      ~50-60%
+OVERALL CMMC LEVEL 2: Not assessed; no certification filing submitted
 ```
 
 ### Path to Certification

@@ -67,16 +67,16 @@ After the kill-switch runs, the AWS Config recorder and other orphaned resources
 
 ```bash
 # Dry-run: show what would be cleaned up
-AWS_PROFILE=aura-admin python scripts/qa_killswitch.py cleanup
+AWS_PROFILE=aura-breakglass-qa python scripts/qa_killswitch.py cleanup
 
 # Execute cleanup (ELBs, Config, CloudWatch log retention)
-AWS_PROFILE=aura-admin python scripts/qa_killswitch.py cleanup --execute
+AWS_PROFILE=aura-breakglass-qa python scripts/qa_killswitch.py cleanup --execute
 
 # Execute cleanup (skip confirmation prompt)
-AWS_PROFILE=aura-admin python scripts/qa_killswitch.py cleanup --execute --force
+AWS_PROFILE=aura-breakglass-qa python scripts/qa_killswitch.py cleanup --execute --force
 
 # Execute cleanup INCLUDING KMS key deletion (see warning below)
-AWS_PROFILE=aura-admin python scripts/qa_killswitch.py cleanup --execute --schedule-kms-deletion
+AWS_PROFILE=aura-breakglass-qa python scripts/qa_killswitch.py cleanup --execute --schedule-kms-deletion
 ```
 
 ### What Each Step Does
@@ -127,7 +127,7 @@ After running `cleanup`, the restore process (`qa_killswitch.py restore --execut
 
 - **AWS CLI v2** configured with QA account credentials
 - **Python 3.11+** with `boto3` installed
-- **AWS Profile:** Must have sufficient IAM permissions to delete and create CloudFormation stacks
+- **AWS Profile:** the `AuraBreakGlass` IAM Identity Center permission set for the QA account (AURA-CTL-005). Teardown deletes every stack, which the scoped `AuraDeployer` set cannot do.
 - **No active CodeBuild builds** targeting QA (the script checks for this)
 
 ---
@@ -137,7 +137,7 @@ After running `cleanup`, the restore process (`qa_killswitch.py restore --execut
 ### Check QA Environment Status
 
 ```bash
-AWS_PROFILE=aura-admin python scripts/qa_killswitch.py status
+AWS_PROFILE=aura-breakglass-qa python scripts/qa_killswitch.py status
 ```
 
 Displays the CloudFormation stack status, EventBridge schedule state, and kill-switch state file contents.
@@ -146,13 +146,13 @@ Displays the CloudFormation stack status, EventBridge schedule state, and kill-s
 
 ```bash
 # Dry-run: shows the plan without making changes
-AWS_PROFILE=aura-admin python scripts/qa_killswitch.py shutdown
+AWS_PROFILE=aura-breakglass-qa python scripts/qa_killswitch.py shutdown
 
 # Execute shutdown (interactive confirmation required)
-AWS_PROFILE=aura-admin python scripts/qa_killswitch.py shutdown --execute
+AWS_PROFILE=aura-breakglass-qa python scripts/qa_killswitch.py shutdown --execute
 
 # Execute shutdown (skip confirmation prompt)
-AWS_PROFILE=aura-admin python scripts/qa_killswitch.py shutdown --execute --force
+AWS_PROFILE=aura-breakglass-qa python scripts/qa_killswitch.py shutdown --execute --force
 ```
 
 **What happens during shutdown:**
@@ -171,13 +171,13 @@ AWS_PROFILE=aura-admin python scripts/qa_killswitch.py shutdown --execute --forc
 
 ```bash
 # Dry-run: shows the restore plan
-AWS_PROFILE=aura-admin python scripts/qa_killswitch.py restore
+AWS_PROFILE=aura-breakglass-qa python scripts/qa_killswitch.py restore
 
 # Execute restore
-AWS_PROFILE=aura-admin python scripts/qa_killswitch.py restore --execute
+AWS_PROFILE=aura-breakglass-qa python scripts/qa_killswitch.py restore --execute
 
 # Execute restore (skip confirmation prompt)
-AWS_PROFILE=aura-admin python scripts/qa_killswitch.py restore --execute --force
+AWS_PROFILE=aura-breakglass-qa python scripts/qa_killswitch.py restore --execute --force
 ```
 
 **What happens during restore:**
@@ -250,7 +250,7 @@ aws autoscaling resume-processes \
   --auto-scaling-group-name <ASG_NAME>
 
 # Retry the kill-switch
-AWS_PROFILE=aura-admin python scripts/qa_killswitch.py shutdown --execute --force
+AWS_PROFILE=aura-breakglass-qa python scripts/qa_killswitch.py shutdown --execute --force
 ```
 
 ### Cross-Stack Security Group References

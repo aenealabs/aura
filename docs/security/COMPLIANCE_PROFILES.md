@@ -1,12 +1,14 @@
 # Compliance Profiles - Compliance-Aware Security Scanning
 
-**Status:** Production Ready
+**Status:** Partial (library implemented and tested; not yet wired into CI or deployment)
 **Version:** 1.0.0
-**Last Updated:** 2025-12-06
+**Last Updated:** 2026-10-26
 
 ---
 
 ## Overview
+
+> **Current status (October 2026):** `ComplianceProfileManager`, `compliance_config.py`, and `ComplianceSecurityService` are implemented with tests, and the guardrails settings API lists the profiles. However, no CI workflow or buildspec calls `ComplianceSecurityService` (the module has no command-line entry point, and `aura-security-review.yml` does not invoke it), so scanning decisions and deployment blocks described below are not yet enforced anywhere. `ComplianceAuditService` buffers events and writes them to the application logger; its CloudWatch Logs and DynamoDB writers are stubs, and `query_events` reads only the in-process buffer.
 
 Aura's **Compliance Profiles** feature provides **compliance-aware security scanning** that automatically adjusts scanning granularity, review requirements, and audit trails based on regulatory requirements.
 
@@ -288,9 +290,9 @@ summary = security_service.format_scan_summary(result)
 print(summary)
 ```
 
-### GitHub Actions Integration
+### GitHub Actions Integration (Planned)
 
-The `aura-security-review.yml` workflow automatically uses the configured compliance profile:
+Planned integration (not yet in `aura-security-review.yml`; `compliance_security_service` also needs a `__main__` entry point first):
 
 ```yaml
 - name: Run Aura Security Review

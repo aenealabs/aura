@@ -12,6 +12,10 @@ External tool connectors provide integrations with third-party services for secu
 - Error handling and retries
 - Rate limiting
 
+### Current Status
+
+Each connector listed below is a real asynchronous HTTP client (aiohttp) with authentication, status-code handling, and unit tests that mock the HTTP layer. None of them is called from an agent, scheduler, or API route yet: the only importer is the registry in `src/services/connectors/__init__.py`, and the Integration Hub API (`/api/v1/integrations`) does not instantiate them. `ExternalToolConnectorFactory.from_config()` builds only the Slack, Jira, and PagerDuty connectors; the other connectors are constructed directly or through `get_connector_class()`. The GitHub Issues, Linear, Zendesk, and ServiceNow ticketing connectors under `src/services/ticketing/` use a separate base class (`TicketingConnector`) and are covered in ADR-046; of those, only GitHub Issues is implemented.
+
 ### Design Principles
 
 1. **Independence**: Each connector is self-contained (~1000 lines). This isolation allows updates without cross-connector regression.
@@ -26,16 +30,19 @@ External tool connectors provide integrations with third-party services for secu
 
 ```
 src/services/
-├── external_tool_connectors.py    # Base class and common connectors
+├── external_tool_connectors.py    # Base class, factory, and Slack/Jira/PagerDuty connectors
+├── auditboard_connector.py        # AuditBoard GRC
 ├── azure_devops_connector.py      # Azure DevOps integration
 ├── crowdstrike_connector.py       # CrowdStrike Falcon EDR
 ├── qualys_connector.py            # Qualys vulnerability scanning
+├── saviynt_connector.py           # Saviynt identity governance
 ├── snyk_connector.py              # Snyk security scanning
 ├── splunk_connector.py            # Splunk SIEM
 ├── terraform_cloud_connector.py   # Terraform Cloud IaC
 ├── servicenow_connector.py        # ServiceNow ITSM
+├── zscaler_connector.py           # Zscaler ZIA/ZPA
 └── connectors/
-    └── __init__.py                # Registry and discovery
+    └── __init__.py                # Registry and discovery (13 entries)
 ```
 
 ## Creating a New Connector

@@ -40,6 +40,12 @@ findings.findings.forEach((f) => {
 });
 ```
 
+> **Current backend limitations:**
+>
+> - **Authentication:** The SDK sends `apiKey` as an `X-API-Key` header, but the Aura API authenticates with JWT bearer tokens only (`src/api/auth.py`) and does not read `X-API-Key` on the routes the SDK calls. Use `jwtToken` until API-key authentication is implemented.
+> - **ExtensionAPI:** The `/api/v1/extension/*` endpoints currently run a simple pattern scan (substring checks such as `eval(`, `exec(`, `password`, `TODO`), generate template patches, and keep results in process memory. They do not call the Reviewer or Coder agents or GraphRAG yet, and a patch that requires approval cannot reach the approved state through these endpoints.
+> - **Verification:** The SDK's 64 unit tests run against a mock HTTP server (MSW); they do not exercise a live Aura API.
+
 ### React Integration
 
 ```tsx

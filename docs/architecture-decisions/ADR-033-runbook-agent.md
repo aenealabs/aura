@@ -1,9 +1,11 @@
 # ADR-033: Runbook Agent for Automated Incident Documentation
 
-**Status:** Deployed
+**Status:** Deployed (core agent and scheduled run built; external integrations not built)
 **Date:** 2025-12-11
 **Author:** Platform Team
 **Reviewers:** DevOps, SRE
+
+> **Status note (2026-10-26).** `src/services/runbook/` provides `RunbookAgent`, `IncidentDetector`, `RunbookGenerator` (optional Bedrock enhancement), `RunbookUpdater` and `RunbookRepository`, run on a schedule by the EventBridge rule in `deploy/cloudformation/runbook-agent.yaml:147` through `deploy/buildspecs/buildspec-runbook-agent.yml`, with tests such as `tests/test_runbook_agent.py`. `RunbookRepository.search` (line 296) filters on error pattern, service, keyword and incident type in DynamoDB or the filesystem; there is no embedding-based semantic search. The GitHub Actions, Slack/Teams and Jira/ServiceNow integrations under Integration Points are not built, and the `templates/` and `patterns/` subdirectories under File Structure do not exist (templates are inline in `runbook_generator.py`).
 
 ## Context
 

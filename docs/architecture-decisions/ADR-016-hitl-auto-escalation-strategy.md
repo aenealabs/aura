@@ -1,6 +1,9 @@
 # ADR-016: HITL Approval Auto-Escalation Strategy
 
 **Status:** Deployed
+
+> **Status note (2026-10-26).** `HITLApprovalService.process_expirations` (`src/services/hitl_approval_service.py:1649`) implements the warning, escalation and expiry logic, and `src/lambda/expiration_processor.py` runs it from `deploy/cloudformation/hitl-scheduler.yaml`. That schedule defaults to `rate(3 hours)`, not hourly. The MEDIUM/LOW "re-queue" happens in name only: `_expire_request` (line 1967) marks the request EXPIRED and sends a notification and audit entry flagged `requeued=True`, but it creates no new request or queue message, so the patch has to be resubmitted.
+
 **Date:** 2025-12-02
 **Decision Makers:** Project Aura Team
 

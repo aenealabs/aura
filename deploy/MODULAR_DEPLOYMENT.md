@@ -1,5 +1,7 @@
 # Modular Infrastructure Deployment Guide
 
+> **Accuracy note (October 2026):** This document describes the original nested-stack design. The repository no longer contains `deploy/cloudformation/master-stack.yaml`, `deploy/cloudformation/codebuild.yaml`, `deploy/cloudformation/neptune.yaml` (now `neptune-simplified.yaml`) or `deploy/buildspec-modular.yml`, and `deploy/deploy.sh` supports only `deploy <env>`, `redeploy <env>`, `status <env>`, `destroy <env>` and `validate` (no `init`, `outputs`, `--email` or `--delete`). Infrastructure is deployed by per-layer CodeBuild projects (`deploy/cloudformation/codebuild-*.yaml`, `deploy/buildspecs/buildspec-*.yml`) driven by the deployment-pipeline state machine. The canonical, current procedure is `docs/deployment/DEPLOYMENT_GUIDE.md`; treat the commands and file lists below as historical.
+
 ## Overview
 
 This document describes Project Aura's modular CI/CD approach for infrastructure deployment using AWS CodeBuild. The system is designed to scale from small teams (1-3 people) to larger organizations with multiple teams owning different infrastructure layers.

@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (All 3 Phases Implemented)
+Implemented (library, all 3 phases); not integrated -- deployed Lambdas are placeholders and the HITL API is synthetic
+
+> **Status note (2026-10-26).** `src/services/model_assurance/` (7,504 LOC, 474 tests collected in `tests/services/test_model_assurance/`) and `src/services/supply_chain/model_provenance/` contain the logic described below. The HITL UI and CloudFormation that this section calls deferred now exist (`frontend/src/components/modelAssurance/`, `deploy/cloudformation/model-assurance-{pipeline,sandbox,storage,monitoring}.yaml`), but the 7 pipeline Lambdas in `model-assurance-pipeline.yaml` carry inline placeholder handlers that return a canned `statusCode: 200`, and no buildspec packages `src/services/model_assurance/` into them. `src/api/model_assurance_endpoints.py` does not import the package: it serves a seeded in-memory queue, and approve/reject only remove the item without writing a revision, quarantine entry or audit event.
 
 Phase 3 deployed (issue #112): five sub-phases committed across
 6d27219 → 38eca9d → 64985bc → f29882c → 5f4e840. New

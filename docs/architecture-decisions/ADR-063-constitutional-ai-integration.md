@@ -2,7 +2,9 @@
 
 ## Status
 
-Deployed
+Deployed (services and Lambdas; agent integration not enabled)
+
+> **Status note (2026-10-26).** Critique, revision, tiered critique, judge, golden-set, and audit-queue services exist in `src/services/constitutional_ai/` with 535 test functions in `tests/services/test_constitutional_ai/`, plus the `constitutional_evaluation` and `constitutional_audit` Lambdas and their CloudFormation. No agent class inherits `ConstitutionalMixin` (`src/agents/constitutional_mixin.py`), and outside the package only the mixin and the evaluation Lambda use the critique/revision services, so Phase 5 (enable for agents) is not done. `contracts.py`, `metrics.py`, `preference_principles.yaml`, and `tests/fixtures/constitutional_ai_dataset/` do not exist.
 
 ## Date
 
@@ -463,7 +465,7 @@ def assert_semantic_match(
 2. **Non-Evasive Engagement:** Agents explain concerns constructively
 3. **Transparent Reasoning:** CoT reasoning visible in audit logs
 4. **Cost-Effective:** Optimized architecture reduces costs by ~85%
-5. **Compliance-Ready:** Full audit trail for CMMC/SOX requirements
+5. **Audit Support:** Full audit trail supporting CMMC/SOX-aligned controls (not certified)
 
 ### Negative
 

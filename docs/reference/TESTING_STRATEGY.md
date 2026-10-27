@@ -243,11 +243,11 @@ def critical_threat():
 
 | Test Category | Minimum Coverage |
 |---------------|-----------------|
-| Unit tests (`src/`) | 80% |
+| Unit tests (`src/`) | 70% enforced (`fail_under = 70` in `pyproject.toml`; `--cov-fail-under=70` in `.github/workflows/code-quality.yml`); 80% target |
 | Integration tests | N/A (workflow focus) |
-| Security-critical code | 90% |
+| Security-critical code | 90% target (not separately enforced) |
 
-The 80% coverage target applies to unit tests measuring line coverage of `src/`. Integration tests focus on workflow validation rather than line coverage.
+The enforced gate is 70% line coverage of `src/` and must not be lowered. The 80% and 90% figures are targets only; no CI step enforces them. Integration tests focus on workflow validation rather than line coverage.
 
 ---
 
@@ -261,6 +261,8 @@ The 80% coverage target applies to unit tests measuring line coverage of `src/`.
 | **Failed** | 0 |
 | **Backend (Python)** | 18,515 tests across 470+ files |
 | **Frontend (Vitest)** | 1,651 tests across 63 files |
+
+The table above is the January 2026 execution snapshot. As of October 2026 the repository defines 26,049 Python test functions across 759 `test_*.py` files and 1,905 frontend `it`/`test` calls across 89 test files (static counts; pass and skip totals have not been re-run since January 2026).
 
 ### Why Tests Are Skipped
 

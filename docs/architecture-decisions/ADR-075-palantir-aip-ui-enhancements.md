@@ -2,7 +2,14 @@
 
 ## Status
 
-Deployed
+In Progress (Phase 1-2 components and Phase 3 settings wizard built; other Phase 3 items not built)
+
+> **Status note (2026-10-26).** The Phase 1-2 widgets, `frontend/src/components/palantir/`
+> indicators, `PalantirIntegrationSettings.jsx`, `palantirApi.js`, and
+> `usePalantirSync.js` exist. `AttackSurfaceMap`, `ComplianceDriftTimeline`,
+> and the four use-case workflow pages do not. Because the backend
+> dependencies return 503 (see ADR-074), `palantirApi.js` falls back to its
+> `MOCK_*` constants, and `EPSSTrendWidget.jsx` draws `Math.random()` data.
 
 ## Date
 

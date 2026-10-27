@@ -4,10 +4,12 @@
 
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-26%2C559-brightgreen.svg)](tests/)
-[![Lines of Code](https://img.shields.io/badge/Lines_of_Code-408%2C377-informational.svg)](docs/PROJECT_STATUS.md)
+[![Tests](https://img.shields.io/badge/Tests-27%2C161-brightgreen.svg)](tests/)
+[![Lines of Code](https://img.shields.io/badge/Lines_of_Code-411%2C771-informational.svg)](docs/PROJECT_STATUS.md)
 
-Project Aura detects vulnerabilities, generates production-ready patches, validates fixes in isolated sandboxes, and queues them for human approval -- all autonomously. Unlike traditional security scanners that stop at detection, Aura provides end-to-end remediation through a multi-agent AI system built for regulated industries.
+Project Aura is building end-to-end security remediation for regulated industries: detect vulnerabilities, generate patches with a multi-agent AI system, validate them in isolated sandboxes, and queue them for human approval.
+
+> **Current status (October 2026).** The agent loop runs today: Coder, Reviewer and Validator agents call Claude on AWS Bedrock, repair failed patches, and create a human-approval request. Several stages are not yet connected end to end: jobs start from a free-text prompt against a configured project rather than from scanner findings, the sandbox step is skipped unless a sandbox is configured and does not yet receive the patch, and approval records a decision without opening a pull request. Many capabilities described below are built and tested as libraries but not yet invoked by the running service. [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) records the verified status of each capability.
 
 [Documentation](docs/product/getting-started/index.md) | [Quick Start](#quick-start) | [Architecture](#architecture) | [Contributing](CONTRIBUTING.md)
 
@@ -34,14 +36,14 @@ Then what?                                   Awaiting human approval for deploym
 
 **Key differentiators:**
 
-- **Full remediation, not just detection** -- generates context-aware patches using deep codebase understanding
+- **Remediation, not just detection** -- generates context-aware patches using codebase context (the detection-to-patch hand-off is in progress)
 - **Hybrid GraphRAG architecture** -- combines structural analysis (call graphs, dependencies) with semantic search for comprehensive code context
 - **Multi-agent collaboration** -- specialized Coder, Reviewer, and Validator agents with checks and balances
 - **Human-in-the-loop governance** -- configurable approval workflows with industry-specific policy presets
-- **Sandbox-first validation** -- every patch is tested in network-isolated environments before reaching human reviewers
-- **Constitutional AI guardrails** -- 16-principle critique-revision pipeline ensures safe, compliant agent behavior
-- **Aerospace / safety-critical verification** -- Deterministic Verification Envelope (ADR-085) provides DO-178C-aligned output verification via N-of-M consensus, MC/DC structural coverage, and Z3 formal verification with DAL-A/DAL-B policy profiles
-- **Continuous model assurance** -- Automated provenance verification, frozen reference oracle, anti-Goodhart controls, shadow deployment, and one-click rollback for every model swap (ADR-088)
+- **Sandbox validation** -- container-isolated ECS Fargate test environments (infrastructure built; passing the patch into the sandbox is in progress)
+- **Constitutional AI guardrails** -- 16-principle critique-revision pipeline (built and evaluated nightly; inline agent integration pending)
+- **Aerospace / safety-critical verification** -- Deterministic Verification Envelope (ADR-085): DO-178C-aligned output verification via N-of-M consensus, MC/DC structural coverage, and Z3 formal verification with DAL-A/DAL-B policy profiles (implemented as a library; not yet integrated into the pipeline)
+- **Continuous model assurance** -- provenance verification, frozen reference oracle, anti-Goodhart controls, shadow deployment, and rollback for model swaps (ADR-088; implemented as a library, not yet integrated)
 
 ## Platform View
 
@@ -97,7 +99,7 @@ A look inside the Aura Platform.
   <img src="assets/logo/Platform Settings.png" alt="Platform Settings" width="800">
 </p>
 
-The screenshots and clip are generated from the running frontend (dev mode, no backend) by the
+The screenshots and clip are generated from the running frontend in dev mode with no backend, so the data shown is sample data. They are produced by the
 scripts in [`scripts/readme_media/`](scripts/readme_media/): `capture_screenshots.py`,
 `record_demo.py`, then `make_highlights.py` (and `make_social_clip.py` for a square social clip).
 
@@ -149,12 +151,12 @@ flowchart TD
 
 | Component | Purpose | Technology |
 |-----------|---------|------------|
-| **Agent Orchestrator** | Coordinates remediation workflows; the job server runs the full HITL workflow (sandbox tests, then an approval request) | Python, FastAPI |
-| **Hybrid GraphRAG** | Deep code understanding via graph + vector retrieval | Neptune (Gremlin), OpenSearch (k-NN) |
+| **Agent Orchestrator** | Coordinates remediation workflows; the job server runs the HITL workflow (code, review, validation, a sandbox step that reports SKIPPED unless `SANDBOX_ENABLED=true`, then an approval request) | Python, FastAPI |
+| **Hybrid GraphRAG** | Code context via graph + vector retrieval | Neptune (Gremlin), OpenSearch (k-NN) |
 | **Multi-Agent System** | Specialized agents for code gen, review, validation | LLMs via AWS Bedrock |
-| **Constitutional AI** | Principled safety guardrails for agent outputs | Critique-revision pipeline |
-| **Sandbox Network** | Isolated environments for patch validation | ECS Fargate, network isolation |
-| **HITL Workflows** | Configurable human approval gates | 4 autonomy levels, 7 policy presets |
+| **Constitutional AI** | Principled safety guardrails for agent outputs (library; not yet applied inline) | Critique-revision pipeline |
+| **Sandbox Network** | Isolated environments for patch validation | ECS Fargate, container-level network isolation |
+| **HITL Workflows** | Human approval gates (every patch requires approval today) | 4 autonomy levels, 7 policy presets (policy service built; not yet applied to the pipeline) |
 
 ### Technology Stack
 
@@ -165,7 +167,7 @@ flowchart TD
 | **Graph Database** | AWS Neptune (Gremlin query language) |
 | **Vector Search** | AWS OpenSearch with k-NN |
 | **Container Orchestration** | AWS EKS with EC2 Managed Node Groups |
-| **Infrastructure as Code** | AWS CloudFormation (183 templates) |
+| **Infrastructure as Code** | AWS CloudFormation (181 templates, excluding 13 archived) |
 | **Frontend** | React 19, JavaScript (JSX), Vite, Tailwind CSS v4 |
 | **Service Discovery** | dnsmasq (3-tier architecture with DNSSEC) |
 
@@ -175,13 +177,13 @@ flowchart TD
 
 ### Hybrid GraphRAG
 
-Aura's retrieval architecture combines three methods for comprehensive code understanding:
+Aura's retrieval architecture is designed around three methods:
 
 - **Graph traversal** (Neptune) -- call graphs, dependency chains, inheritance hierarchies
 - **Semantic search** (OpenSearch k-NN) -- embedding-based similarity for related patterns
 - **Keyword search** (BM25) -- exact identifier and function name matching
 
-Results are fused using Reciprocal Rank Fusion (RRF), achieving 22-25% improvement in retrieval accuracy compared to single-method approaches.
+The three-way design fuses results with Reciprocal Rank Fusion (RRF); published research reports a 22-25% MRR improvement over single-method retrieval, which has not been measured on Aura. The RRF service is implemented but not yet wired in: the agent workflow currently combines one graph traversal with one k-NN vector search. Graph entities are extracted for Python and JavaScript/TypeScript; other languages are indexed for vector search only.
 
 ### Multi-Agent System
 
@@ -193,44 +195,46 @@ Specialized agents collaborate through structured message passing:
 | **Coder** | Generates patches as a tool-use agent with read-only project tools (`search_code`, `read_file`, `list_directory`), then submits code through a `submit_code` tool |
 | **Reviewer** | Validates patches against OWASP Top 10 and security policies; reports its verdict through a `report_security_review` tool |
 | **Validator** | Executes 5-layer validation pipeline in sandboxed environments |
-| **Monitor** | Tracks health, performance, token costs, and security metrics |
+| **Monitor** | Records per-run token estimates, generated lines and security findings (health tracking, alerting and CloudWatch publishing are planned) |
 
-Neural memory guidance from past remediations (ADR-029 Phase 2.1) is included in both the Coder and Reviewer prompts. A patch must pass both the security review and validation; when either fails, the findings (validation issues include line numbers) go back to the Coder for another attempt, up to `max_remediation_attempts` (default 3). In the HITL workflow, a patch that fails its sandbox tests gets up to `max_sandbox_repairs` (default 1) repair runs in which the Coder sees the failing tests and errors. Code the Coder submits always goes through review, validation, sandbox tests, and human approval; its tools cannot write to the project.
+Neural memory guidance from past remediations (ADR-029 Phase 2.1) is included in both the Coder and Reviewer prompts. A patch must pass both the security review and validation; when either fails, the findings (validation issues include line numbers) go back to the Coder for another attempt, up to `max_remediation_attempts` (default 3). In the HITL workflow, a patch that fails its sandbox tests gets up to `max_sandbox_repairs` (default 1) repair runs in which the Coder sees the failing tests and errors. Code the Coder submits always goes through review, validation, the sandbox step (runtime tests are skipped unless a sandbox is configured, and do not yet receive the patched code), and human approval; its tools cannot write to the project. Approval records the decision; opening a pull request after approval is planned.
 
 ### Configurable Autonomy
 
-Organizations configure HITL requirements based on compliance needs:
+The autonomy policy service (ADR-032) defines HITL requirements per organization. Applying these policies to the remediation pipeline is planned; today every patch requires human approval.
 
 | Autonomy Level | Behavior | Use Case |
 |----------------|----------|----------|
-| `FULL_HITL` | All changes require approval | CMMC Level 3, maximum oversight |
-| `HITL_FINAL` | Approve deployment only | SOX compliance |
-| `HITL_CRITICAL` | Approve critical/high severity only | Balanced automation |
+| `FULL_HITL` | All changes require approval | Maximum oversight |
+| `CRITICAL_HITL` | Approve critical/high severity only | Balanced automation |
+| `AUDIT_ONLY` | No approval; all actions logged | Low-risk changes with an audit trail |
 | `FULL_AUTONOMOUS` | No approval required | Development environments |
 
 **7 industry presets:** `defense_contractor`, `financial_services`, `healthcare`, `fintech_startup`, `enterprise_standard`, `internal_tools`, `fully_autonomous`
 
-**Guardrails that always require humans:** Production deployments, credential modifications, access control changes, database migrations, infrastructure changes.
+**Guardrails that always require humans (defined in the policy service):** production deployments and credential modifications cannot be bypassed by any preset (`IMMUTABLE_GUARDRAILS`); access control changes, database migrations and infrastructure changes are guarded by default.
 
 ### Constitutional AI
 
-All agent outputs pass through a critique-revision pipeline based on [Anthropic's Constitutional AI research](https://arxiv.org/abs/2212.08073):
+Aura includes a critique-revision pipeline based on [Anthropic's Constitutional AI research](https://arxiv.org/abs/2212.08073). It is built and tested (463 tests) and runs in the nightly evaluation Lambda; applying it inline to production agent output is planned:
 
 - **16 principles** across Safety, Compliance, Anti-Sycophancy, Transparency, Helpfulness, and Code Quality
-- **Cost-optimized**: Haiku for critique, Sonnet for revision (~85% cost savings)
+- **Cost-optimized design**: a fast model for critique and a more capable model for revision
 - **Constructive engagement**: Issues are revised, not just blocked
-- **Trust Center dashboard**: Real-time metrics for critique accuracy, revision convergence, and cache hit rate
+- **Trust Center dashboard**: UI for critique accuracy, revision convergence, and cache hit rate (currently shows sample data unless DynamoDB-backed mode is enabled)
 
 ### AI Optimizations
 
-| Technique | Impact |
-|-----------|--------|
-| Chain of Draft prompting | 92% token reduction vs. Chain of Thought |
-| Semantic caching (OpenSearch k-NN) | 68% cache hit rate |
-| Self-reflection (Reflexion-style) | 30% reduction in false positives |
-| Selective decoding (JEPA) | 2.85x inference efficiency for routing tasks |
-| Titan Neural Memory | Continuous learning from remediation outcomes |
-| Recursive context scaling (RLM) | 100x context window expansion for large codebases |
+Figures in this table are design targets or published research results, not measurements of Aura workloads.
+
+| Technique | Status in Aura |
+|-----------|----------------|
+| Chain of Draft prompting | Used in Coder, Reviewer, Validator and planner prompts (published research reports up to 92% token reduction vs. Chain of Thought) |
+| Semantic caching (OpenSearch k-NN) | Implemented and reachable from the API |
+| Self-reflection (Reflexion-style) | Implemented in the Reviewer (up to 3 iterations); design target of 30% fewer false positives, not measured |
+| Selective decoding (JEPA) | Prototype; untrained scaffold, not wired |
+| Titan Neural Memory | Implemented as a library (PyTorch test-time learning); off by default and wired with mock stores |
+| Recursive context scaling (RLM) | Prototype; not wired (design target: 100x context expansion) |
 
 ---
 
@@ -265,7 +269,7 @@ Local development and the test suite run the Bedrock service in MOCK mode: no AW
 ALERT_EMAIL=ops@example.com ./deploy/deploy.sh deploy dev
 ```
 
-The single command runs bootstrap (24 layer CodeBuild projects + private ECR base images + deployment-pipeline state machine) and then triggers the state machine to deploy every layer in dependency order.
+The single command runs bootstrap (23 layer CodeBuild projects + private ECR base images + deployment-pipeline state machine) and then triggers the state machine to deploy every layer in dependency order.
 
 See the [Installation Guide](docs/product/getting-started/installation.md) for SaaS, Kubernetes, and Podman deployment options, and the [Deployment Guide](docs/deployment/DEPLOYMENT_GUIDE.md) for the canonical AWS infrastructure deploy reference.
 
@@ -304,13 +308,13 @@ A configured model with no known pricing is refused at startup, and that tier ke
 
 ## Deployment Options
 
-| Option | Setup Time | Best For |
-|--------|-----------|----------|
-| **Cloud (SaaS)** | Same day | Teams wanting immediate value without infrastructure overhead |
-| **Self-Hosted (Kubernetes)** | 1-2 weeks | Organizations with data residency requirements or existing EKS clusters |
-| **Self-Hosted (Podman)** | 1 day | Air-gapped deployments, small teams, proof-of-concept |
+| Option | Status | Best For |
+|--------|--------|----------|
+| **AWS (CloudFormation)** | Deployed to DEV and QA in AWS Commercial; currently spun down for cost | Aura-managed environments |
+| **Self-Hosted (Kubernetes)** | Partial: Helm charts and installers in `deploy/`; not validated with a customer | Organizations with data residency requirements or existing EKS clusters |
+| **Self-Hosted (Podman)** | Partial: Podman Compose file not yet in the repository | Air-gapped deployments, small teams, proof-of-concept |
 
-All deployment options support AWS GovCloud regions for government workloads.
+Templates use partition-aware ARNs for AWS GovCloud compatibility; no GovCloud deployment exists yet.
 
 ---
 
@@ -320,8 +324,8 @@ All deployment options support AWS GovCloud regions for government workloads.
 
 | Control | Implementation |
 |---------|----------------|
-| Encryption at rest | AES-256 via AWS KMS customer-managed keys |
-| Encryption in transit | TLS 1.3 for all communications |
+| Encryption at rest | AES-256 via AWS KMS (customer-managed keys on part of the estate; coverage is partial) |
+| Encryption in transit | TLS (minimum TLS 1.2 on public and OpenSearch endpoints) |
 | Network isolation | VPC endpoints, no public internet exposure |
 | Secrets management | AWS Secrets Manager, no hardcoded credentials |
 | Container security | Private ECR base images, vulnerability scanning |
@@ -330,20 +334,24 @@ All deployment options support AWS GovCloud regions for government workloads.
 
 | Framework | Status |
 |-----------|--------|
-| NIST 800-53 | Technical controls implemented |
-| SOX | Controls implemented |
-| GovCloud Ready | 100% (all deployed services compatible) |
-| CMMC Level 2 | Infrastructure complete, organizational controls pending |
-| FedRAMP High | Authorization path available |
+| NIST 800-53 | Technical controls aligned; not audited |
+| SOX | Change-approval controls aligned; not audited |
+| GovCloud Ready | 19/19 deployed services compatible; no GovCloud deployment yet |
+| CMMC Level 2 | Not yet pursued |
+| FedRAMP High | Not yet pursued (roadmap) |
 
 ### Security Services
 
+Running on the request path today: an LLM prompt sanitizer and Bedrock Guardrails on every model call, A2AS screening at orchestrator entry, and semantic-guardrail Layers 1-2 on ingested repository content.
+
+Built and tested as libraries, not yet wired onto API routes:
+
 - Input validation (SQL injection, XSS, SSRF, prompt injection detection)
-- Secrets detection (30+ secret types with entropy-based detection)
+- Secrets detection (entropy-based, multiple secret types)
 - Security audit logging with CloudWatch and DynamoDB persistence
-- Real-time threat intelligence with daily blocklist updates
-- Semantic guardrails engine (6-layer threat detection)
-- Agent capability governance (4-tier tool classification, runtime enforcement)
+- Threat intelligence with blocklist updates
+- Semantic guardrails engine (full 6-layer engine; Layers 3-5 currently mock-backed)
+- Agent capability governance (4-tier tool classification; enforcement not yet wired)
 
 ---
 
@@ -368,7 +376,7 @@ All deployment options support AWS GovCloud regions for government workloads.
 ### Operations and Support
 
 - [System Architecture](docs/SYSTEM_ARCHITECTURE.md) -- Technical design and deployment topology
-- [API Reference](docs/support/api-reference/index.md) -- REST, GraphQL, and webhooks
+- [API Reference](docs/support/api-reference/index.md) -- REST API (GraphQL and outbound webhooks planned)
 - [Troubleshooting](docs/support/troubleshooting/index.md) -- Common issues and solutions
 - [Monitoring and Operations](docs/support/operations/index.md) -- Observability, logging, scaling
 - [FAQ](docs/support/faq.md) -- Frequently asked questions
@@ -393,23 +401,23 @@ The project maintains [Architecture Decision Records](docs/architecture-decision
 
 | Metric | Value |
 |--------|-------|
-| Lines of Code | 408,377 (`src/` + `deploy/`; tests counted separately at 308,337). Reproduce: `cloc src/ deploy/ --md` |
-| Test Suite | 26,559 tests (0 failures, main CI green). Reproduce: `pytest --collect-only -q tests/` |
-| Architecture Decision Records | 93 ADRs |
-| CloudFormation Templates | 176 templates (excluding archive) |
-| Infrastructure Phases | 9 of 9 complete |
+| Lines of Code | 411,771 (`src/` + `deploy/`; tests counted separately at 315,845). Reproduce: `cloc src/ deploy/ --md` |
+| Test Suite | 27,161 tests collected on 2026-10-26. Reproduce: `pytest --collect-only -q tests/` |
+| Architecture Decision Records | 95 ADRs (plus 1 reserved number) |
+| CloudFormation Templates | 181 templates (excluding 13 archived) |
+| Infrastructure Phases | 9 of 9 layers templated and deployed to DEV (environments currently spun down) |
 
 ---
 
 ## Security Architecture
 
-Aura's security posture has been assessed against known agentic AI attack vectors including command injection, prompt injection, dependency confusion, and agent execution escape. Key architectural controls:
+Aura's design addresses known agentic AI attack vectors including command injection, prompt injection, dependency confusion, and agent execution escape. Key architectural controls (status as of October 2026):
 
 - **Command Execution:** Allowlist-based filtering with `shell=False` enforcement via `SecureCommandExecutor` — eliminates shell metacharacter and Unicode bypass attacks
-- **Prompt Injection Defense:** 6-layer Semantic Guardrails Engine (Unicode normalization, pattern matching, embedding similarity, LLM-as-judge, session tracking, decision engine) applied to both user input and ingested repository content
-- **Supply Chain:** Purpose-built dependency confusion detector (typosquatting, namespace hijacking, version confusion), SBOM attestation with Sigstore signing, private ECR base images
-- **Agent Isolation:** 4-tier tool classification with default-deny policy, container + network sandboxing with eBPF escape detection, restricted Python execution namespace
-- **Agent Governance:** Configurable HITL autonomy levels (0-5), time-bounded dynamic grants, shadow agent detection with behavioral baselines and quarantine
+- **Prompt Injection Defense:** LLM prompt sanitizer and Bedrock Guardrails on every model call, A2AS screening at orchestrator entry, and semantic-guardrail Layers 1-2 (Unicode normalization, pattern matching) on ingested repository content; the full 6-layer engine (adding embedding similarity, LLM-as-judge, session tracking and a decision engine) is built but not yet on the request path
+- **Supply Chain:** Private ECR base images; dependency confusion detector (typosquatting, namespace hijacking, version confusion) and SBOM attestation with Sigstore signing are built as libraries, not yet wired
+- **Agent Isolation:** Container-level ECS Fargate sandboxing (no inbound rules, no public IP, egress limited to DNS and HTTPS); 4-tier tool classification with default-deny policy and eBPF escape detection are built as libraries, not yet wired
+- **Agent Governance:** Human approval required for every patch today; configurable autonomy levels, time-bounded dynamic grants, and shadow agent detection with behavioral baselines and quarantine are built as libraries, not yet wired
 
 For details, see [Security Architecture](docs/support/architecture/security-architecture.md).
 
@@ -447,4 +455,4 @@ The BSL allows you to use the source code for non-production purposes. Productio
 
 ## About
 
-Project Aura is designed for security teams that need to remediate vulnerabilities at scale while maintaining full compliance audit trails. The platform is purpose-built for regulated industries — defense, financial services, healthcare, and government contracting — where AI-generated code, AI agents, and software supply chains all require continuous security oversight.
+Project Aura is designed for security teams that need to remediate vulnerabilities at scale while maintaining compliance audit trails. The platform is purpose-built for regulated industries — defense, financial services, healthcare, and government contracting — where AI-generated code, AI agents, and software supply chains all require continuous security oversight.

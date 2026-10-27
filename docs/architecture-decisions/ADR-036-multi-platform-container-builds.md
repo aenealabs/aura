@@ -285,7 +285,7 @@ docker-compose -f deploy/docker/docker-compose.dev.yml up memory-service
 ### Kubernetes Deployment (Production with GPU)
 
 ```yaml
-# deploy/kubernetes/memory-service/deployment.yaml
+# deploy/kubernetes/memory-service/base/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:

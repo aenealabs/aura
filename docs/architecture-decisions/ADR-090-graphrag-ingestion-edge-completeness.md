@@ -1,6 +1,6 @@
 # ADR-090: GraphRAG Ingestion Edge Completeness
 
-**Status:** Accepted
+**Status:** Implemented (Phases 0-5 wired into ingestion; Phase 4c.2 partial -- see status note)
 **Date:** 2026-05-08
 **Accepted:** 2026-05-08
 **Author:** Project Aura Team
@@ -13,6 +13,8 @@ ADR-077 (Cloud Runtime Security), ADR-083 (Runtime Agent Security Platform),
 ADR-084 (Native Vulnerability Scanning Engine)
 
 ---
+
+> **Status note (2026-10-26).** Phases 0-5 are wired into `src/services/git_ingestion_service.py` (Tier 1/2/3 resolvers, `ConfigDependencyAgent`) and `src/agents/ast_parser_agent.py` (tree-sitter JS), and the closeout tests in `tests/integration/graph/` and `tests/architecture/test_abac_chokepoint.py` pass (18 passed on 2026-10-26). Phase 4c.2 is partial: the request/response schema (`src/services/graph/symbol_resolver_queue.py`) and `deploy/cloudformation/symbol-resolver-tier3.yaml` exist, but no SQS-backed `ResolutionPublisher` implementation, worker consumer or worker image is in the repo.
 
 ## Context
 
@@ -78,7 +80,7 @@ contract test that prevents recurrence.
 | 4a -- Tier 1 deterministic resolver | Delivered | `019332e` |
 | 4b -- Tier 2 self-method + Pyright LSP | Delivered | `d8d5413` |
 | 4c.1 -- Tier 3 in-process LLM | Delivered | `698e310` |
-| 4c.2 -- Tier 3 distributed (SQS + ECS) | Delivered | `c429348` |
+| 4c.2 -- Tier 3 distributed (SQS + ECS) | Partial (schema + infra template; no SQS publisher or worker) | `c429348` |
 | 5 -- Config-layer dependencies + ABAC filter | Delivered | `d712371` |
 | 5.3 wrapper integration + chokepoint contract | Delivered | (closeout) |
 | 6 -- Runtime edges | Out of scope (ADR-083) | n/a |

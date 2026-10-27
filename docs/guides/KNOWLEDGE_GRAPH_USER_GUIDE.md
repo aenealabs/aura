@@ -2,6 +2,15 @@
 
 The Knowledge Graph (formerly GraphRAG Explorer) provides an interactive visualization of your codebase as a knowledge graph. Access it from the **Intelligence** section in the sidebar. This guide explains how to navigate the graph, query for insights, and interpret the visual representation of your code relationships.
 
+> **Current status (October 2026).** The Knowledge Graph page
+> (`frontend/src/components/CKGEConsole.jsx`) renders a built-in sample graph
+> and does not yet call a backend API. The nodes, edges, descriptions, and
+> query results you see are sample data, not your ingested repository. Your
+> ingested code graph is stored in Neptune by repository ingestion, but
+> connecting this page to it is planned. The navigation, filtering, and
+> panel behavior described below are implemented and work against the sample
+> data.
+
 ---
 
 ## Interface Overview
@@ -104,12 +113,12 @@ When you hover over a node:
 
 ## Query Interface
 
-The query panel at the top-right allows you to search the knowledge graph using natural language.
+The query panel at the top-right is designed for searching the knowledge graph using natural language. Today, queries are matched by keyword ("vulnerability" or "cve", "class", "function" or "complexity", "dependency") against the sample nodes on the page; natural-language and graph-query execution against Neptune is planned.
 
 ### Entering Queries
 
 1. Click the search input field
-2. Type your query (natural language or Cypher)
+2. Type your query
 3. Click **Execute** or press Enter
 
 ### Suggested Queries
@@ -198,7 +207,7 @@ The enhanced Node Detail Panel contains six sections:
 | Section | Description |
 |---------|-------------|
 | **Header** | Node icon, name, type, and close button |
-| **Description** | AI-generated summary and impact analysis |
+| **Description** | Summary and impact analysis (sample text today; generated summaries are planned) |
 | **Properties** | Type-specific metadata (methods, complexity, etc.) |
 | **Documentation** | External documentation link (dependencies and vulnerabilities only) |
 | **Action Bar** | Quick actions for Center, Copy ID, Filter, and Open |

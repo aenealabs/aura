@@ -277,7 +277,7 @@ aws cloudformation deploy \
   --stack-name aura-account-bootstrap-qa \
   --parameter-overrides \
     Environment=qa \
-    AdminRoleArn=arn:aws:iam::ACCOUNT:role/AWSAdministratorAccess \
+    AdminRoleArn=arn:aws:iam::ACCOUNT:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AuraBreakGlass_XXXXXXXX \
     AlertEmail=alerts-qa@aenealabs.com \
     CodeConnectionsArn=arn:aws:codeconnections:us-east-1:ACCOUNT:connection/xxx \
   --capabilities CAPABILITY_NAMED_IAM \

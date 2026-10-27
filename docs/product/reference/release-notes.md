@@ -341,7 +341,7 @@ For the complete security advisory history, see [Security Advisories](../../supp
 
 ### v1.5.0 (Expected: March 2026)
 
-- FedRAMP High certification (GovCloud)
+- FedRAMP High authorization (GovCloud) -- planned; no filing submitted and not scheduled
 - Expanded language support (Rust, Swift)
 - Real-time collaboration features
 - Advanced ML model customization

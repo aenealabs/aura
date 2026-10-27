@@ -254,19 +254,19 @@
 <div class="header">
   <h1>Comprehensive Testing Overview</h1>
   <div class="subtitle">Project Aura — Test Suite, Coverage &amp; Quality Assurance</div>
-  <div class="meta">Aenea Labs &middot; 23,165+ Tests &middot; 0 Failures &middot; 70% Minimum Coverage &middot; February 2026</div>
+  <div class="meta">Aenea Labs &middot; 27,954 Tests Defined &middot; 70% Minimum Coverage &middot; Counts as of October 2026 (pass/skip results: February 2026 run)</div>
 </div>
 
 <!-- ===== STATS BAR ===== -->
 <div class="stats-bar">
-  <div class="stat"><div class="number">23,165+</div><div class="label">Total Tests</div></div>
-  <div class="stat"><div class="number">16,499</div><div class="label">Passed</div></div>
-  <div class="stat"><div class="number purple">6,666</div><div class="label">Skipped</div></div>
-  <div class="stat"><div class="number red">0</div><div class="label">Failed</div></div>
-  <div class="stat"><div class="number blue">626</div><div class="label">Test Files (Python)</div></div>
-  <div class="stat"><div class="number blue">74</div><div class="label">Test Files (Frontend)</div></div>
+  <div class="stat"><div class="number">27,954</div><div class="label">Total Tests Defined</div></div>
+  <div class="stat"><div class="number">16,499</div><div class="label">Passed (Feb 2026 run)</div></div>
+  <div class="stat"><div class="number purple">6,666</div><div class="label">Skipped (Feb 2026 run)</div></div>
+  <div class="stat"><div class="number red">0</div><div class="label">Failed (Feb 2026 run)</div></div>
+  <div class="stat"><div class="number blue">759</div><div class="label">Test Files (Python)</div></div>
+  <div class="stat"><div class="number blue">89</div><div class="label">Test Files (Frontend)</div></div>
   <div class="stat"><div class="number">70%</div><div class="label">Coverage Minimum</div></div>
-  <div class="stat"><div class="number">45,663</div><div class="label">Assertions</div></div>
+  <div class="stat"><div class="number">51,978</div><div class="label">Assertions</div></div>
 </div>
 
 <!-- ===== NAVIGATION ===== -->
@@ -335,7 +335,7 @@
 <!-- ============================================================ -->
 <section id="status">
   <h2>Test Status Dashboard</h2>
-  <p class="section-desc">Current test suite status as of February 2026. Zero failures across 23,165+ tests.</p>
+  <p class="section-desc">Current test suite status as of February 2026. Zero failures across the 23,165 tests executed in the February 2026 run.</p>
 
   <div class="progress-row">
     <span class="progress-label">Passed (16,499)</span>
@@ -351,7 +351,7 @@
   </div>
 
   <div class="callout" style="margin-top: 20px;">
-    <strong>Zero Failures</strong> — The entire test suite runs cleanly. Skipped tests are intentional: optional dependencies not installed (PyTorch, Redis, scikit-learn, cairosvg), external services unavailable (Neptune, OpenSearch), E2E tests gated by environment variable, or GPU hardware not available.
+    <strong>Zero Failures (February 2026 run)</strong> — The entire test suite ran cleanly. Skipped tests are intentional: optional dependencies not installed (PyTorch, Redis, scikit-learn, cairosvg), external services unavailable (Neptune, OpenSearch), E2E tests gated by environment variable, or GPU hardware not available.
   </div>
 
   <h3>Test Function Distribution</h3>
@@ -365,11 +365,11 @@
         </tr>
       </thead>
       <tbody>
-        <tr><td>Total Test Functions</td><td><strong>22,506</strong></td><td>100%</td></tr>
-        <tr><td>Synchronous Tests (<code>def test_*</code>)</td><td>16,588</td><td>73.7%</td></tr>
-        <tr><td>Asynchronous Tests (<code>async def test_*</code>)</td><td>5,918</td><td>26.3%</td></tr>
-        <tr><td>Test Classes (<code>class Test*</code>)</td><td>5,811</td><td>—</td></tr>
-        <tr><td>Assertion Statements</td><td>45,663</td><td>~2 per test</td></tr>
+        <tr><td>Total Test Functions</td><td><strong>26,049</strong></td><td>100%</td></tr>
+        <tr><td>Synchronous Tests (<code>def test_*</code>)</td><td>19,692</td><td>75.6%</td></tr>
+        <tr><td>Asynchronous Tests (<code>async def test_*</code>)</td><td>6,357</td><td>24.4%</td></tr>
+        <tr><td>Test Classes (<code>class Test*</code>)</td><td>6,383</td><td>—</td></tr>
+        <tr><td>Assertion Statements</td><td>51,978</td><td>~2 per test</td></tr>
         <tr><td>Mock Usages (AsyncMock/MagicMock)</td><td>5,743+</td><td>—</td></tr>
       </tbody>
     </table>
@@ -640,7 +640,7 @@
     <div class="card">
       <div class="card-title">CloudFormation Linting (cfn-lint)</div>
       <div class="card-body">
-        <strong>155 templates</strong> validated continuously.<br><br>
+        <strong>181 templates</strong> validated continuously.<br><br>
         <strong>Tools:</strong> <code>cfn-lint</code> + custom wrapper (<code>scripts/cfn-lint-wrapper.sh</code>)<br>
         <strong>Config:</strong> <code>.cfnlintrc</code> (ignores W3002, W1020)<br>
         <strong>Exit Codes:</strong> 0 = pass, 4 = warnings (non-blocking), 2/6/8 = errors (blocking)
@@ -695,11 +695,11 @@
     <div class="card">
       <div class="card-title">Vitest Test Suite</div>
       <div class="card-body">
-        <strong>1,815 tests</strong> across <strong>74 test files</strong><br><br>
+        <strong>1,905 tests</strong> across <strong>89 test files</strong><br><br>
         <strong>Framework:</strong> Vitest with happy-dom<br>
         <strong>Coverage:</strong> v8 provider (text, JSON, HTML reporters)<br>
-        <strong>Patterns:</strong> <code>src/**/*.test.ts</code>, <code>src/**/*.spec.ts</code><br>
-        <strong>Setup:</strong> <code>./src/__tests__/setup.ts</code>
+        <strong>Patterns:</strong> <code>src/**/*.{test,spec}.{js,jsx,ts,tsx}</code><br>
+        <strong>Setup:</strong> <code>./src/test/setup.js</code>
       </div>
     </div>
     <div class="card">
@@ -930,7 +930,7 @@ precision = 2</div>
       <div class="card-body">
         <strong>Schedule:</strong> Daily at 2 AM UTC<br>
         <strong>File:</strong> <code>.github/workflows/nightly-iam-validation.yml</code><br><br>
-        Validates all 155 CloudFormation templates, checks IAM actions, generates JSON report, and creates GitHub issues for any failures discovered.
+        Validates all 181 CloudFormation templates, checks IAM actions, generates JSON report, and creates GitHub issues for any failures discovered.
       </div>
     </div>
   </div>
@@ -1091,26 +1091,26 @@ precision = 2</div>
     <div class="card card-accent" style="border-left-color: var(--success);">
       <div class="card-title">Strengths</div>
       <div class="card-body">
-        <strong>Zero test failures</strong> — All 23,165+ tests either pass or skip gracefully<br>
+        <strong>Zero test failures</strong> — All 23,165 tests in the February 2026 run either passed or skipped gracefully<br>
         <strong>70% minimum coverage enforced</strong> — Hard threshold, non-negotiable<br>
         <strong>5,743+ mock instances</strong> — Comprehensive isolation<br>
         <strong>Deterministic execution</strong> — No real I/O, sleeps, or randomness<br>
         <strong>Multi-layer security testing</strong> — Guardrails, sandbox escape, red team (75 ATT&CK techniques)<br>
         <strong>Performance SLA validation</strong> — k6 load testing with defined p95/p99 targets<br>
-        <strong>Infrastructure-as-code testing</strong> — 155 CloudFormation templates validated nightly<br>
+        <strong>Infrastructure-as-code testing</strong> — 181 CloudFormation templates validated nightly<br>
         <strong>CI/CD integration</strong> — Automated in GitHub Actions + CodeBuild
       </div>
     </div>
     <div class="card card-accent" style="border-left-color: var(--brand);">
       <div class="card-title">By the Numbers</div>
       <div class="card-body">
-        <strong>23,165+</strong> total tests (Python + Frontend)<br>
-        <strong>22,506</strong> Python test functions across 626 files<br>
-        <strong>1,815</strong> frontend tests across 74 files<br>
-        <strong>45,663</strong> assertion statements<br>
-        <strong>5,811</strong> test classes<br>
-        <strong>5,918</strong> async tests (26.3%)<br>
-        <strong>155</strong> CloudFormation templates validated<br>
+        <strong>27,954</strong> total tests defined (Python + Frontend)<br>
+        <strong>26,049</strong> Python test functions across 759 files<br>
+        <strong>1,905</strong> frontend tests across 89 files<br>
+        <strong>51,978</strong> assertion statements<br>
+        <strong>6,383</strong> test classes<br>
+        <strong>6,357</strong> async tests (24.4%)<br>
+        <strong>181</strong> CloudFormation templates validated<br>
         <strong>3</strong> k6 load test scenarios<br>
         <strong>8</strong> mock factory functions<br>
         <strong>1,162+</strong> lines in shared conftest.py
@@ -1125,7 +1125,7 @@ precision = 2</div>
         <span class="badge badge-security">Security</span> 131+ dedicated + 848 runtime<br><br>
         <span class="badge badge-load">Load</span> 3 scenarios (smoke → soak)<br><br>
         <span class="badge badge-smoke">Smoke</span> 21 pre-deployment checks<br><br>
-        <span class="badge badge-infra">Infrastructure</span> 155 templates nightly
+        <span class="badge badge-infra">Infrastructure</span> 181 templates nightly
       </div>
     </div>
   </div>
@@ -1135,7 +1135,7 @@ precision = 2</div>
 
 <!-- ===== FOOTER ===== -->
 <div style="text-align:center; padding:32px; color:var(--text-muted); font-size:12px; border-top:1px solid var(--border);">
-  Project Aura &middot; Aenea Labs &middot; Comprehensive Testing Overview &middot; 23,165+ Tests &middot; February 2026
+  Project Aura &middot; Aenea Labs &middot; Comprehensive Testing Overview &middot; 27,954 Tests Defined &middot; October 2026
 </div>
 
 </body>

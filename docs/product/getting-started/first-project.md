@@ -18,6 +18,8 @@ By the end of this tutorial, you will be able to:
 - Approve or reject patches through the HITL workflow
 - Monitor remediation status and verify deployment
 
+> **Implementation status:** This tutorial describes the target end-to-end console experience. Parts 6 and 7 (reviewing and deciding on patches in **Approvals**) match the current console. Parts 2-5 rely on console screens that are planned: there is no **Projects** view, **Run Scan** button, vulnerability results or detail view, or **Generate Patch** button yet; repositories are onboarded from **Repositories**, and ingestion jobs started from the onboarding wizard currently remain `pending`. Several dashboard panels referenced in Part 1 show demo data (marked with a **Demo data** badge) or an error state because their backend routes do not exist yet. Patches reach **Approvals** today through the agent workflow (repository ingestion, the GitHub push webhook, or `POST /api/v1/orchestrate`).
+
 ---
 
 ## Prerequisites
@@ -130,7 +132,7 @@ After adding the repository:
 
 ---
 
-## Part 3: Running Your First Scan
+## Part 3: Running Your First Scan (Planned UI)
 
 Now let's scan the repository for vulnerabilities.
 
@@ -177,7 +179,7 @@ Wait for the scan to complete before proceeding. This typically takes 5-15 minut
 
 ---
 
-## Part 4: Interpreting Vulnerability Findings
+## Part 4: Interpreting Vulnerability Findings (Planned UI)
 
 Once the scan completes, you will see a summary of findings.
 
@@ -252,7 +254,7 @@ def get_user(user_id):
 
 ---
 
-## Part 5: Generating an AI Patch
+## Part 5: Generating an AI Patch (Planned UI)
 
 Now let's have Aura generate a patch for one of the vulnerabilities.
 

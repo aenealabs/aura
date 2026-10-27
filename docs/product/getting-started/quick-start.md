@@ -5,6 +5,8 @@
 
 This guide walks you through connecting your first repository and running your initial security scan with Project Aura.
 
+> **Implementation status:** Steps 1, 2, and 6 match the current console: Cognito sign-in, GitHub/GitLab repository onboarding (**Repositories**), and patch review in **Approvals**. Steps 3-5 describe planned console flows: the console has no **Projects** view, **Run Scan** button, vulnerability list, or **Generate Patch** button yet, and the **Security > Scanner** page calls `/api/v1/scanner/*` routes that do not exist yet. Today, analysis runs are started by repository ingestion and the agent workflow (for example the GitHub push webhook or `POST /api/v1/orchestrate`), and the resulting patches arrive in **Approvals**. Repository ingestion jobs started from the onboarding wizard currently remain in `pending` status; see [Repository Onboarding](../user-guides/repository-onboarding.md).
+
 ---
 
 ## Before You Begin
@@ -12,7 +14,7 @@ This guide walks you through connecting your first repository and running your i
 Ensure you have the following:
 
 - [ ] Active Aura account (Cloud SaaS or self-hosted deployment)
-- [ ] Repository access credentials (GitHub, GitLab, or Bitbucket)
+- [ ] Repository access credentials (GitHub or GitLab; Bitbucket is planned)
 - [ ] Admin or Security Engineer role in your Aura organization
 
 If you do not have an account yet, contact your organization administrator or visit [aenealabs.com/signup](https://aenealabs.com/signup) to request access.
@@ -26,8 +28,8 @@ If you do not have an account yet, contact your organization administrator or vi
    - **Self-hosted:** Your organization's configured URL
 
 2. Sign in using your credentials:
-   - SSO (recommended for enterprise)
-   - Email and password
+   - Email and password (Amazon Cognito)
+   - SSO (planned; see [SSO Integration](../admin-guide/sso-integration.md))
 
 3. Complete MFA verification if enabled for your account.
 
@@ -39,13 +41,13 @@ After successful authentication, you will land on the **Dashboard**.
 
 ## Step 2: Connect Your First Repository
 
-1. From the Dashboard, click **Add Repository** in the Quick Actions section, or navigate to **Settings > Integrations**.
+1. Navigate to **Repositories** in the sidebar and start the onboarding wizard.
 
 2. Select your source control provider:
    - GitHub
    - GitLab
-   - Bitbucket
-   - Azure DevOps
+   - Bitbucket (planned)
+   - Azure DevOps (planned)
 
 3. Click **Connect** and authorize Aura to access your repositories.
 
@@ -73,7 +75,7 @@ After successful authentication, you will land on the **Dashboard**.
 
 ---
 
-## Step 3: Run Your First Scan
+## Step 3: Run Your First Scan (Planned UI)
 
 After connecting a repository, Aura automatically initiates an initial scan. You can also trigger a manual scan:
 
@@ -104,7 +106,7 @@ The scan progress indicator shows:
 
 ---
 
-## Step 4: Review Scan Results
+## Step 4: Review Scan Results (Planned UI)
 
 Once the scan completes, review the findings:
 
@@ -125,7 +127,7 @@ Once the scan completes, review the findings:
 
 ---
 
-## Step 5: Generate Your First Patch
+## Step 5: Generate Your First Patch (Planned UI)
 
 Aura can automatically generate patches for many vulnerability types. To initiate patch generation:
 
@@ -170,7 +172,8 @@ After sandbox testing completes successfully, the patch enters the approval queu
 5. Make your decision:
    - **Approve** - Triggers deployment to the target branch
    - **Reject** - Returns the patch with your feedback
-   - **Request Changes** - Ask for specific modifications
+   - **Cancel** - Withdraw the request
+   - **Request Changes** - Ask for specific modifications (planned; no backend route yet)
 
 6. For approval, click **Approve Patch** and confirm.
 
@@ -215,6 +218,8 @@ Set up notifications to stay informed:
    - PagerDuty for incidents
 3. Set notification preferences by severity level
 
+> The notification settings screens currently display canned data from the dev-mock router; saving channel changes is planned.
+
 ### Connect Additional Repositories
 
 Expand coverage by connecting more repositories:
@@ -235,6 +240,8 @@ Adjust HITL approval requirements based on your organization's needs:
 ### Invite Team Members
 
 Add colleagues to your Aura organization:
+
+> The console's invite wizard does not yet send invitations (it simulates sending); until it is wired to the invitation API, administrators add users in the Cognito user pool. See [User Management](../admin-guide/user-management.md).
 
 1. Navigate to **Settings > Team**
 2. Click **Invite Member**

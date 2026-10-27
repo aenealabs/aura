@@ -314,9 +314,17 @@ ESCALATION:
 
 | Endpoint | Check | Frequency |
 |----------|-------|-----------|
-| `/health` | Basic liveness | 10s |
-| `/health/ready` | Full readiness | 30s |
-| `/health/deep` | All dependencies | 60s |
+| `/health` | Basic health | 10s |
+| `/health/live` | Kubernetes liveness probe | 10s |
+| `/health/ready` | Kubernetes readiness probe | 30s |
+| `/health/startup` | Kubernetes startup probe | 10s |
+| `/health/detailed` | Detailed metrics for dashboards | 60s |
+
+The API serves these routes at the root path (`src/api/main.py:541-584`); there is no `/health/deep` route.
+
+> **Readiness is not proof of backend connectivity.** `/health/ready` reports a dependency as `ready: true` with note "Not configured" when Neptune, OpenSearch or Bedrock is not wired (`src/api/health_endpoints.py:305-321`), and the Neptune, OpenSearch, Bedrock and HITL services fall back to MOCK mode when AWS initialisation fails (for example `src/services/neptune_graph_service.py:247-248`), in which case readiness can still pass. Confirm real connectivity from service logs (look for "Falling back to MOCK mode") and the dev-mock settings below.
+>
+> **Dev mocks default on.** `AURA_ENABLE_DEV_MOCKS` (`src/api/main.py:943`), `AURA_DEV_MOCK_ON_AWS_ERROR` (`src/api/dev_mock_fallback.py:25`) and `AURA_SEED_MOCK_*` (for example `src/api/security_incidents_endpoints.py:338`) all default to true, and `USE_AWS_DYNAMODB` is unset (mock) by default. No Kustomize overlay, Helm values file, ConfigMap or buildspec under `deploy/` sets or disables any of them, so a deployment must set them explicitly to serve real data.
 
 **Health Check Response:**
 

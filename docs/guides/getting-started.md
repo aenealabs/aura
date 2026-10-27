@@ -54,8 +54,8 @@ Aura is an enterprise-grade platform that combines multiple AI agents to automat
 
 Navigate to your Aura deployment URL:
 
-- **Development**: `https://app.aenealabs.com`
-- **API Endpoint**: `https://api.aenealabs.com`
+- **Console**: the console URL for your environment (DEV and QA run in AWS Commercial Cloud; ask your administrator)
+- **API Endpoint**: the API host for your environment (all routes under `/api/v1`)
 
 ### Step 2: Sign In
 
@@ -65,7 +65,7 @@ Navigate to your Aura deployment URL:
 
 ### Step 3: Navigate the Dashboard
 
-The main dashboard provides an overview of your platform status:
+The main dashboard provides an overview of your platform status. Some panels call `/api/v1/dashboard/*` routes that are not implemented yet and show an error state, and widgets backed by not-yet-built APIs display a **Demo data** badge:
 
 | Section | Description |
 |---------|-------------|
@@ -111,7 +111,9 @@ Aura supports three deployment configurations:
 
 ---
 
-## Your First Vulnerability Scan
+## Your First Vulnerability Scan (Planned UI)
+
+> The console does not yet have a **Vulnerabilities** page, **New Scan** or **Generate Patch** buttons, or vulnerability detail pages. The **Security > Scanner** page calls `/api/v1/scanner/*` routes that do not exist yet. Analysis currently runs through repository ingestion and the agent workflow, and generated patches appear in **Approvals**. The steps below are the planned flow.
 
 ### From the Dashboard
 
@@ -182,6 +184,8 @@ Aura includes an AI-powered assistant to help you:
 ### Accessing the Assistant
 
 Click the chat icon in the bottom-right corner of any page.
+
+> The assistant is served by a separate API Gateway and Lambda stack (`deploy/cloudformation/chat-assistant.yaml`). If the console was built without `VITE_CHAT_API_URL`, the assistant returns built-in mock responses instead of calling the service.
 
 ### What You Can Ask
 

@@ -2,7 +2,7 @@
 
 **Version:** 1.0
 **Last Updated:** December 15, 2025
-**Status:** Implemented
+**Status:** Partial (settings API implemented; mode changes do not yet change runtime behavior)
 
 ---
 
@@ -25,12 +25,21 @@
 
 Project Aura's Agent Orchestrator supports three deployment modes, enabling organizations to balance cost, latency, and throughput based on their specific requirements. The deployment mode can be configured at the platform level (affecting all organizations) or with per-organization overrides.
 
+> **Implementation status (October 2026).**
+>
+> - **Implemented:** the settings API (`src/api/orchestrator_settings_endpoints.py`, mounted) stores platform and per-organization mode flags and enforces the cooldown. Settings persist to DynamoDB only when `USE_AWS_DYNAMODB` is set; no deployment manifest sets it, so deployed APIs keep settings in memory and lose them on restart.
+> - **Not wired:** `POST /switch` writes settings flags only. `OrchestratorModeService` (`src/services/orchestrator_mode_service.py`), which contains the Kubernetes scale call and the transition state machine, has no caller outside its tests. No pods are scaled and no EKS Jobs are created when the mode changes.
+> - **Runtime today:** the orchestrator runs as the Kubernetes Deployment `aura-agent-orchestrator`, which polls `aura-orchestrator-tasks-{env}` (effectively warm-pool behavior regardless of the setting). The dispatcher Lambda (`src/lambda/orchestrator_dispatcher.py`) is attached to the same queue, so the two compete for messages. In on-demand mode its `_dispatch_to_eks` records the job and returns success without creating a Kubernetes Job; its warm-pool routing fails because `WARM_POOL_QUEUE_URL` is not set in `deploy/cloudformation/orchestrator-dispatcher.yaml`. The Lambda reads the mode from the DynamoDB settings table, which the in-memory settings API does not write.
+> - **Names:** the scaling code targets `agent-orchestrator-warm-pool`, the status endpoint reads `aura-orchestrator-warm-pool` in `aura-system`, RBAC allows `aura-agent-orchestrator-warm-pool`, and the actual Deployment is `aura-agent-orchestrator`. These must be reconciled before mode switching can scale anything.
+>
+> Cost and latency figures below are estimates, not measurements.
+
 **Key Features:**
 
 - **UI-configurable:** Change modes via REST API or management console
 - **Per-organization overrides:** Different orgs can use different modes
 - **Anti-thrashing protection:** 5-minute cooldown between mode changes
-- **Safe transitions:** State machine ensures graceful mode switching
+- **Safe transitions (planned):** State machine for graceful mode switching exists in `OrchestratorModeService` but is not called
 - **Cost transparency:** Clear monthly cost estimates for each mode
 
 ---
@@ -41,7 +50,7 @@ Project Aura's Agent Orchestrator supports three deployment modes, enabling orga
 
 **Cost:** $0/month base cost (pay per job execution)
 
-On-demand mode creates EKS Jobs per orchestration request. Jobs are provisioned when needed and terminated after completion.
+On-demand mode is designed to create EKS Jobs per orchestration request, provisioned when needed and terminated after completion. Planned: the dispatcher does not create the Kubernetes Job yet.
 
 | Attribute | Value |
 |-----------|-------|
@@ -107,7 +116,7 @@ Request -> API -> SQS Queue -> Warm Pool Pod (always running)
 
 **Cost:** ~$28/month + burst job costs
 
-Hybrid mode combines warm pool with burst capacity. The warm pool handles baseline traffic while additional EKS Jobs are spawned during peak loads.
+Hybrid mode is designed to combine the warm pool with burst capacity: the warm pool handles baseline traffic while additional EKS Jobs are spawned during peak loads. Planned: burst jobs depend on the same unimplemented Job creation as on-demand mode.
 
 | Attribute | Value |
 |-----------|-------|
@@ -185,7 +194,7 @@ Request -> API -> SQS Queue
 
 The warm pool deployment uses the following K8s resources:
 
-- **Deployment:** `agent-orchestrator-warm-pool` - The warm pool pods
+- **Deployment:** `agent-orchestrator-warm-pool` - The warm pool pods targeted by the scaling code (the deployed Deployment is named `aura-agent-orchestrator`; see the status note)
 - **Service:** `agent-orchestrator` - ClusterIP service for internal access
 - **ServiceAccount:** `aura-api` - For K8s API authentication
 - **Role/RoleBinding:** `orchestrator-scaler` - Permissions to scale warm pool
@@ -352,7 +361,7 @@ Explicitly switch deployment mode. Requires admin role.
 
 | Code | Description |
 |------|-------------|
-| 200 | Mode switched successfully |
+| 200 | Mode settings updated (no scaling is performed) |
 | 429 | Cooldown active (try later or use force) |
 | 400 | Invalid request |
 | 403 | Admin role required |
@@ -361,7 +370,7 @@ Explicitly switch deployment mode. Requires admin role.
 
 ### GET /api/v1/orchestrator/settings/status
 
-Get current operational status.
+Get current operational status. When the API cannot reach Kubernetes, the replica fields report ready equal to desired rather than an error.
 
 **Response:**
 
@@ -472,7 +481,7 @@ Hybrid Monthly Cost = $28 + (burst_jobs * $0.15)
 
 ### State Machine
 
-Mode transitions follow a state machine to ensure safe, graceful switching:
+Planned: mode transitions follow a state machine to ensure safe, graceful switching. The state machine is implemented in `OrchestratorModeService` but the `/switch` endpoint does not invoke it:
 
 ```text
 ACTIVE -> DRAINING -> COMPLETING -> SCALING -> ACTIVE
@@ -506,8 +515,8 @@ A 5-minute (300 second) cooldown prevents mode thrashing:
 curl -H "Authorization: Bearer $TOKEN" \
   https://api.aenealabs.com/api/v1/orchestrator/settings/status
 
-# Check K8s deployment status
-kubectl get deployment agent-orchestrator-warm-pool -o wide
+# Check K8s deployment status (the deployed orchestrator)
+kubectl get deployment aura-agent-orchestrator -o wide
 ```
 
 ---

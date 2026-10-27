@@ -2,7 +2,15 @@
 
 ## Status
 
-Deployed
+Implemented (library; streaming and sharding simulated); not integrated -- no API or infrastructure templates
+
+> **Status note (2026-10-26).** `src/services/streaming/analysis_engine.py`
+> derives findings from file names rather than file content (lines 179 and
+> 435), and `src/services/polyglot/neptune_sharding.py:186` returns simulated
+> shard results. `src/services/ai_security/` (weight guardian, training data
+> sentinel) has working heuristics over in-memory records. None of these is
+> called outside its package, and none of the seven templates or API endpoints
+> listed below exists.
 
 ## Date
 

@@ -178,7 +178,7 @@ Edit the appropriate CodeBuild template (e.g., `codebuild-serverless.yaml`):
 
 ```bash
 # Redeploy the CodeBuild stack (bootstrap stack)
-export AWS_PROFILE=aura-admin
+export AWS_PROFILE=aura-breakglass-dev
 ./deploy/scripts/deploy-serverless-codebuild.sh
 
 # Or manually:

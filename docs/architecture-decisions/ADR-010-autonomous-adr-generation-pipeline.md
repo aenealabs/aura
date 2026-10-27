@@ -1,6 +1,9 @@
 # ADR-010: Autonomous ADR Generation Pipeline
 
-**Status:** Deployed
+**Status:** Deployed (Phase 1 runs on a schedule; Phases 2-4 agents built as library code; Phase 5 integration not built -- see status note)
+
+> **Status note (2026-10-26).** The four agents exist in `src/agents/` (`threat_intelligence_agent.py`, `adaptive_intelligence_agent.py`, `architecture_review_agent.py`, `adr_generator_agent.py`, which also writes ADR files and updates the README index), and `tests/test_adr_pipeline.py` chains them. The scheduled Lambda (`src/lambda/threat_intelligence_processor.py`, `deploy/cloudformation/threat-intel-scheduler.yaml`) only gathers threats and sends notifications. Its Stages 3 and 4 are placeholders (lines 218-235), and no API, worker or Lambda calls `ADRGeneratorAgent`. Phase 5 (HITL approval of draft ADRs, git commits, sandbox validation, end-to-end run) is not implemented.
+
 **Date:** 2025-12-14
 **Decision Makers:** Project Aura Team
 

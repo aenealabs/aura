@@ -1,7 +1,7 @@
 # Aura Platform - Rapid Prototyping Capabilities
 
 **Last Updated:** December 16, 2025
-**Status:** Production Ready
+**Status:** Partial (environment records API implemented; resource provisioning not yet wired)
 **Related ADRs:** [ADR-032](../architecture-decisions/ADR-032-configurable-autonomy-framework.md), [ADR-039](../architecture-decisions/ADR-039-self-service-test-environments.md), [ADR-004](../architecture-decisions/ADR-004-multi-cloud-architecture.md)
 
 ---
@@ -9,6 +9,8 @@
 ## Executive Summary
 
 Aura provides enterprise teams with self-service rapid prototyping capabilities to spin up isolated test environments in minutes without infrastructure team intervention. The system enforces security guardrails, cost governance, and compliance requirements while enabling developer velocity.
+
+> **Implementation status (October 2026).** The environments API (`src/api/environment_endpoints.py`, mounted at `/api/v1/environments`) supports list, create, get, delete, extend, templates, quota, and health. `EnvironmentProvisioningService.create_environment` writes an environment record in `PROVISIONING` or `PENDING_APPROVAL` status; it does not call Service Catalog, CloudFormation, ECS, or Step Functions, so no cloud resources are created through this API yet, and records never advance to `ACTIVE` on their own. Records persist to DynamoDB only when `USE_AWS_DYNAMODB` is set (no deployment manifest sets it); otherwise they are in memory. Approval falls back to type-based rules because no autonomy service is injected. The Service Catalog, namespace-controller, and approval infrastructure in `deploy/cloudformation/test-env-*.yaml` exists as IaC; the namespace controller is deployed as placeholder inline code. Scheduled provisioning and the template marketplace endpoints are planned. Provisioning times and costs below are targets.
 
 **Key Capabilities:**
 - Self-service environment provisioning (< 5 minutes)
@@ -116,7 +118,7 @@ Organizations configure their approval requirements based on compliance posture:
 
 ### Unbypassable Guardrails
 
-These operations **always** require human approval, regardless of policy settings:
+When a policy is evaluated, these operations require human approval regardless of policy settings (production deployment and credential modification are hard-coded; the others are in every default policy). The environments API does not yet evaluate autonomy policies:
 
 - Production deployment
 - Credential modification
@@ -166,6 +168,8 @@ These operations **always** require human approval, regardless of policy setting
 | `/api/v1/environments/templates` | GET | List available templates |
 | `/api/v1/environments/quota` | GET | Check your quota status |
 | `/api/v1/environments/health` | GET | Service health check |
+
+The create call returns the stored record; resource provisioning behind it is planned.
 
 ### Example: Create Environment
 
@@ -278,7 +282,7 @@ Each environment has a detail dashboard with:
 
 ### Scheduled Provisioning
 
-Pre-provision environments for known events:
+Planned (no `/schedule` endpoint exists yet). Pre-provision environments for known events:
 
 ```bash
 curl -X POST https://api.aura.local/api/v1/environments/schedule \
@@ -300,7 +304,7 @@ For rapid API prototyping (< 5 minute provisioning):
 
 ### Template Marketplace
 
-Submit custom templates:
+Planned (no `/marketplace/submit` endpoint exists yet). Submit custom templates:
 
 ```bash
 curl -X POST https://api.aura.local/api/v1/environments/marketplace/submit \
@@ -345,4 +349,4 @@ Aura's rapid prototyping capabilities enable teams to move fast while maintainin
 | Permission boundaries | Prevent privilege escalation |
 | Production isolation | Explicit deny policies protect production |
 
-**Users cannot create arbitrary cloud resources.** All provisioning flows through pre-approved templates with enforced security guardrails, cost governance, and audit logging.
+**Users cannot create arbitrary cloud resources.** The design routes all provisioning through pre-approved Service Catalog templates with enforced security guardrails, cost governance, and audit logging; the API-to-Service Catalog step is planned.

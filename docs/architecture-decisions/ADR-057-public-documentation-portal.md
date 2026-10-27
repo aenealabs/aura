@@ -1,6 +1,9 @@
 # ADR-057: Public Documentation Portal and Marketing Site Animations
 
-**Status:** Proposed
+**Status:** Retired (2026-10-26)
+
+> **Status note (2026-10-26).** Retired and moved out of this public repository. The infrastructure that existed (`deploy/cloudformation/docs-portal.yaml`, `marketing-site.yaml`, `codebuild-marketing.yaml`, `deploy/buildspecs/buildspec-marketing.yml`, and the two `deploy/scripts/deploy-marketing-*.sh` scripts) was removed from the tree; the buildspec referenced a `marketing/site/` source that was never tracked here. The decision text below is kept as a historical record.
+
 **Date:** 2026-01-08
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-045 (External Documentation Links), ADR-046 (Support Ticketing), ADR-047 (Customer Onboarding), ADR-056 (Documentation Agent)

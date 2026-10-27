@@ -2,7 +2,17 @@
 
 ## Status
 
-Deployed
+Deployed (DynamoDB tables only); admission webhook, event ingestion, and escape detection not deployed
+
+> **Status note (2026-10-26).** `runtime-security-dynamodb.yaml` (Layer 2.17)
+> exists. `AdmissionController`, `RuntimeCodeCorrelator`, and
+> `ContainerEscapeDetector` in `src/services/runtime_security/` are tested
+> libraries with no caller outside the package; there is no webhook server or
+> `ValidatingWebhookConfiguration`, and image signature checks are simulated in
+> mock mode (`admission_controller.py:420`). The mounted router
+> `src/api/runtime_security_endpoints.py` reads a per-process history store
+> that no running code fills. `admission-controller.yaml`, `escape-detector.yaml`,
+> and the other templates listed below do not exist.
 
 ## Date
 
@@ -558,7 +568,7 @@ Use mutating webhooks to auto-remediate issues instead of blocking.
 2. **Proactive Security** - Block vulnerable deployments before they reach production
 3. **Incident Response** - Faster root cause analysis with code context
 4. **Market Differentiation** - Bridges gap between SAST and runtime security
-5. **Compliance** - Meets CMMC/NIST runtime monitoring requirements
+5. **Compliance** - Aligned with CMMC/NIST runtime monitoring controls (not certified)
 6. **Developer Experience** - Clear feedback on why deployments are blocked
 
 ### Negative

@@ -156,7 +156,7 @@ Deploy API to existing EKS cluster, use kubectl port-forward for local access.
    - More realistic integration testing
 
 4. **Security Compliance**
-   - CMMC Level 3: Meets AC.L3-3.1.12 (Remote Access)
+   - CMMC Level 3: Aligned with AC.L3-3.1.12 (Remote Access; not certified)
    - Full audit trail via CloudTrail + Kubernetes audit logs
    - IAM-based authentication via kubectl
    - No persistent credentials on developer machines

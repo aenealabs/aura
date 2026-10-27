@@ -1,9 +1,11 @@
 # ADR-029: Agent Optimization Roadmap - Advanced AI Innovations Integration
 
-**Status:** Deployed
+**Status:** Deployed (Phases 1.1-1.4, 2.2 and 2.3 implemented; 2.1 uses mock stores; Phase 3 not started)
 **Date:** 2025-12-08 (Updated: 2025-12-16)
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-024 (Titan Neural Memory), ADR-015 (Tiered LLM Strategy), ADR-021 (Guardrails Cognitive Architecture), ADR-028 (Foundry Capabilities)
+
+> **Status note (2026-10-26).** The Phase 1-2 modules exist (`src/config/guardrails_config.py`, `src/prompts/cod_templates.py`, `src/services/semantic_cache_service.py`, `src/services/mcp_tool_server.py`, `src/agents/reflection_module.py`, `src/services/a2as_security_service.py`), and `create_system2_orchestrator` (`src/agents/agent_orchestrator.py:2622`) still turns semantic cache, reflection and A2AS on by default. The A2AS filter, verifier and enforcer were consolidated into `a2as_security_service.py`; the separate `a2as_injection_filter.py`, `a2as_command_verifier.py`, `a2as_sandbox_enforcer.py` and `tests/agents/test_cod_prompts.py` listed in Appendix A do not exist. Phase 2.1 wires `TitanCognitiveService` onto `unittest.mock.AsyncMock` stores (lines 2689-2716) and is off by default. None of the Phase 3 Agent0 files in Appendix A (for example `src/agents/curriculum_agent.py`, `src/agents/competition_orchestrator.py`, `deploy/cloudformation/agent0-monitoring.yaml`) exist; Phase 3 remains planned for H2 2026.
 
 ---
 
@@ -1494,7 +1496,7 @@ For GovCloud compliance (CMMC, FedRAMP), Aura implements Agent0 concepts **witho
 │                                                                          │
 │  4. NEURAL MEMORY (ADR-024)                                            │
 │     - TTT at inference time learns task-specific patterns               │
-│     - No model weight changes (compliant with FedRAMP)                  │
+│     - No model weight changes (FedRAMP-aligned design)                  │
 │     - Fast adaptation without redeployment                              │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘

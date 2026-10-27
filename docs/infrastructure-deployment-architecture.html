@@ -341,7 +341,7 @@
 <!-- ============================================================ -->
 <section id="cicd">
   <h2>CI/CD Pipeline</h2>
-  <p class="desc">Modular layer-based CodeBuild cascade with 25 projects, 28 buildspecs, and a 3-gate validation system. CodeBuild is the single source of truth — manual deployments are prohibited.</p>
+  <p class="desc">Modular layer-based CodeBuild cascade with 24 projects, 27 buildspecs, and a 3-gate validation system. CodeBuild is the single source of truth — manual deployments are prohibited.</p>
 
   <div class="callout warn">
     <strong>Critical Rules:</strong> (1) CodeBuild is the ONLY authorized deployment method. (2) Never trigger CodeBuild while another build is running. (3) No manual CloudFormation deployments. (4) Buildspec runtime budget: <code>TimeoutInMinutes</code> &ge; 2&times; cold-start p95 (default <code>480</code> minutes); see <code>deploy/buildspecs/CLAUDE.md</code> Critical Rule 4 for the runtime-budget rule that replaced the prior 600-line cap. (5) No parent &rarr; sub-layer CodeBuild nesting via <code>aws codebuild start-build</code>; only <code>bootstrap &rarr; parent</code> is allowed; sub-layer indirection goes through Step Functions.
@@ -657,7 +657,7 @@
     <div class="card card-accent" style="border-left-color:var(--brand)">
       <div class="card-title">Infrastructure at a Glance</div>
       <div class="card-body">
-        <strong>155</strong> CloudFormation templates (~58K lines IaC)<br>
+        <strong>181</strong> CloudFormation templates (73,798 lines IaC)<br>
         <strong>137</strong> stacks deployed to dev<br>
         <strong>9</strong> deployment layers + bootstrap<br>
         <strong>38</strong> AWS services in use<br>

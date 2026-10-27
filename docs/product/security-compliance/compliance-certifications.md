@@ -1,7 +1,7 @@
 # Compliance Certifications
 
-**Version:** 1.0
-**Last Updated:** January 2026
+**Version:** 1.1
+**Last Updated:** October 2026
 **Product:** Project Aura by Aenea Labs
 
 ---
@@ -10,23 +10,25 @@
 
 Project Aura is designed for regulated industries requiring rigorous compliance certifications. This document details our compliance framework coverage, current certification status, control mappings, and certification roadmap.
 
+> **Status: Planned. No certification filing has been submitted (as of October 2026).** Aura holds no SOC 2, CMMC, FedRAMP, StateRAMP, DoD IL, ISO 27001, PCI-DSS, or HIPAA certification, attestation, or authorization today, and none of these assessments has been started. No Business Associate Agreement (BAA) is offered. Technical controls are aligned with NIST 800-53. Every certification, timeline, and percentage below is an internal planning target or self-assessment, not an audited result.
+
 Our compliance program addresses requirements for defense contractors (CMMC), federal agencies (FedRAMP), financial services (SOX), healthcare (HIPAA), and general enterprise security (SOC 2, NIST 800-53).
 
 ---
 
 ## Certification Status Summary
 
-### Current Status (January 2026)
+### Current Status (October 2026)
 
 | Certification | Level/Type | Status | Target Date | Notes |
 |--------------|------------|--------|-------------|-------|
-| **SOC 2 Type II** | Trust Services Criteria | Audit Scheduled | Q2 2026 | Security, Availability, Confidentiality |
-| **CMMC Level 2** | 110 Controls (NIST 800-171) | In Progress (~55%) | Q4 2026 | C3PAO assessment planned |
-| **CMMC Level 3** | 134 Controls (800-171 + 800-172) | Planned | Q2 2027 | Requires Level 2 first |
-| **FedRAMP High** | 421 Controls (NIST 800-53 Rev 5) | In Process | Q1 2027 | Agency sponsor identified |
-| **NIST 800-53 Rev 5** | High Baseline | 95% Mapped | Ongoing | Foundation for FedRAMP |
-| **HIPAA** | Security Rule | BAA Available | Available | Technical safeguards implemented |
-| **ISO 27001** | ISMS | Planned | Q3 2027 | After SOC 2 completion |
+| **SOC 2 Type II** | Trust Services Criteria | Planned (no auditor engaged) | Not scheduled | Security, Availability, Confidentiality in scope when started |
+| **CMMC Level 2** | 110 Controls (NIST 800-171) | Planned (not yet pursued) | Not scheduled | Internal self-assessment only; no C3PAO engaged |
+| **CMMC Level 3** | 134 Controls (800-171 + 800-172) | Planned | Not scheduled | Requires Level 2 first |
+| **FedRAMP High** | 421 Controls (NIST 800-53 Rev 5) | Planned (not yet pursued) | Not scheduled | No agency sponsor or 3PAO engaged |
+| **NIST 800-53 Rev 5** | High Baseline | Aligned (technical controls) | Ongoing | Not independently assessed |
+| **HIPAA** | Security Rule | Technical safeguards aligned (no attestation) | &mdash; | No BAA is offered |
+| **ISO 27001** | ISMS | Planned | Not scheduled | After SOC 2 |
 
 ### Certification Badges
 
@@ -35,8 +37,8 @@ Our compliance program addresses requirements for defense contractors (CMMC), fe
 |                  |  |                  |  |                  |
 |   SOC 2 Type II  |  |   CMMC Level 2   |  |  FedRAMP High    |
 |                  |  |                  |  |                  |
-|   [SCHEDULED]    |  |   [IN PROGRESS]  |  |   [IN PROCESS]   |
-|     Q2 2026      |  |      Q4 2026     |  |      Q1 2027     |
+|    [PLANNED]     |  |     [PLANNED]    |  |     [PLANNED]    |
+|  Not scheduled   |  |   Not scheduled  |  |   Not scheduled  |
 |                  |  |                  |  |                  |
 +------------------+  +------------------+  +------------------+
 
@@ -44,8 +46,8 @@ Our compliance program addresses requirements for defense contractors (CMMC), fe
 |                  |  |                  |  |                  |
 |   NIST 800-53    |  |      HIPAA       |  |   ISO 27001      |
 |                  |  |                  |  |                  |
-|   [95% MAPPED]   |  |  [BAA AVAILABLE] |  |    [PLANNED]     |
-|     Ongoing      |  |     Available    |  |      Q3 2027     |
+|    [ALIGNED]     |  |    [ALIGNED]     |  |    [PLANNED]     |
+|     Ongoing      |  |     Ongoing      |  |  Not scheduled   |
 |                  |  |                  |  |                  |
 +------------------+  +------------------+  +------------------+
 ```
@@ -56,7 +58,7 @@ Our compliance program addresses requirements for defense contractors (CMMC), fe
 
 ### Overview
 
-CMMC is required for Department of Defense (DoD) contractors handling Federal Contract Information (FCI) or Controlled Unclassified Information (CUI). Project Aura supports CMMC Levels 1, 2, and 3 to enable defense contractor customers.
+CMMC is required for Department of Defense (DoD) contractors handling Federal Contract Information (FCI) or Controlled Unclassified Information (CUI). Project Aura is designed to support CMMC-aligned controls for defense contractor customers; it is not CMMC certified at any level, and no assessment has been filed.
 
 ### CMMC Level 2 (Advanced)
 
@@ -65,34 +67,34 @@ CMMC is required for Department of Defense (DoD) contractors handling Federal Co
 **Assessment:** Certified Third-Party Assessment Organization (C3PAO)
 **Certification Validity:** 3 years
 
-#### Current Implementation Status
+#### Control Domains
 
-| Domain | Code | Total Controls | Implemented | Status |
-|--------|------|----------------|-------------|--------|
-| Access Control | AC | 22 | 18 | 82% |
-| Awareness & Training | AT | 3 | 0 | 0% |
-| Audit & Accountability | AU | 9 | 8 | 89% |
-| Configuration Management | CM | 9 | 9 | 100% |
-| Identification & Authentication | IA | 11 | 9 | 82% |
-| Incident Response | IR | 3 | 1 | 33% |
-| Maintenance | MA | 6 | 6 | 100% |
-| Media Protection | MP | 9 | 8 | 89% |
-| Personnel Security | PS | 2 | 0 | 0% |
-| Physical Protection | PE | 6 | 6 | 100% |
-| Risk Assessment | RA | 3 | 1 | 33% |
-| Security Assessment | CA | 4 | 2 | 50% |
-| System & Communications | SC | 16 | 14 | 88% |
-| System & Information Integrity | SI | 7 | 5 | 71% |
-| **TOTAL** | | **110** | **~60** | **~55%** |
+| Domain | Code | Total Controls |
+|--------|------|----------------|
+| Access Control | AC | 22 |
+| Awareness & Training | AT | 3 |
+| Audit & Accountability | AU | 9 |
+| Configuration Management | CM | 9 |
+| Identification & Authentication | IA | 11 |
+| Incident Response | IR | 3 |
+| Maintenance | MA | 6 |
+| Media Protection | MP | 9 |
+| Personnel Security | PS | 2 |
+| Physical Protection | PE | 6 |
+| Risk Assessment | RA | 3 |
+| Security Assessment | CA | 4 |
+| System & Communications | SC | 16 |
+| System & Information Integrity | SI | 7 |
+| **TOTAL** | | **110** |
 
 #### Control Implementation Highlights
 
-**Fully Implemented Domains:**
+**Aligned Technical Controls (unaudited):**
 - **Configuration Management (CM):** 100% Infrastructure-as-Code with CloudFormation, AWS Config rules for drift detection
 - **Maintenance (MA):** AWS managed services with automated patching
-- **Physical Protection (PE):** Inherited from AWS data centers with SOC 2 attestation
+- **Physical Protection (PE):** Inherited from AWS data centers (AWS's own SOC 2 reports; Aura has no SOC 2 report)
 
-**Strong Implementation:**
+**Additional Aligned Technical Controls (unaudited):**
 - **Audit & Accountability (AU):** CloudTrail, VPC Flow Logs (365-day retention), CloudWatch Logs
 - **System & Communications (SC):** TLS 1.3, KMS encryption, VPC isolation, WAF protection
 - **Media Protection (MP):** S3 encryption, versioning, lifecycle policies
@@ -122,7 +124,7 @@ CMMC is required for Department of Defense (DoD) contractors handling Federal Co
 | Personnel Security | 2 | Enhanced screening |
 | System & Communications | 2 | Advanced encryption, enhanced isolation |
 
-**Timeline:** CMMC Level 3 certification planned for Q2 2027 following Level 2 achievement.
+**Timeline:** CMMC Level 3 is planned after Level 2; no date is set.
 
 ---
 
@@ -130,17 +132,17 @@ CMMC is required for Department of Defense (DoD) contractors handling Federal Co
 
 ### Overview
 
-FedRAMP provides a standardized approach to security assessment for cloud products serving federal agencies. Project Aura targets FedRAMP High authorization to serve agencies processing high-impact data.
+FedRAMP provides a standardized approach to security assessment for cloud products serving federal agencies. Project Aura plans to pursue FedRAMP High authorization to serve agencies processing high-impact data. Status: Planned. No FedRAMP filing has been submitted, and Aura is not FedRAMP authorized at any level.
 
 ### FedRAMP Impact Levels
 
 | Impact Level | Data Sensitivity | Example Agencies | Aura Support |
 |--------------|------------------|------------------|--------------|
-| Low | Publicly available data | General Services Administration | Supported |
-| Moderate | Confidential, not national security | Department of Education | Supported |
-| **High** | National security, critical systems | DoD, DHS, Intelligence | **Primary Target** |
+| Low | Publicly available data | General Services Administration | Planned |
+| Moderate | Confidential, not national security | Department of Education | Planned |
+| **High** | National security, critical systems | DoD, DHS, Intelligence | **Planned (primary target)** |
 
-### FedRAMP High Authorization
+### FedRAMP High Authorization (Planned)
 
 **Baseline:** NIST SP 800-53 Rev 5 High Baseline
 **Total Controls:** 421 controls across 20 families
@@ -149,26 +151,26 @@ FedRAMP provides a standardized approach to security assessment for cloud produc
 
 #### Control Family Coverage
 
-| Family | Code | Controls | Implementation | Status |
-|--------|------|----------|----------------|--------|
-| Access Control | AC | 25 | IAM, RBAC, MFA | 85% |
-| Awareness & Training | AT | 5 | Training platform needed | 0% |
-| Audit & Accountability | AU | 16 | CloudTrail, CloudWatch | 90% |
-| Security Assessment | CA | 9 | Automated testing | 40% |
-| Configuration Management | CM | 11 | IaC, AWS Config | 95% |
-| Contingency Planning | CP | 13 | Multi-AZ, backups | 70% |
-| Identification & Auth | IA | 12 | Argon2id, JWT, MFA | 80% |
-| Incident Response | IR | 10 | GuardDuty, alarms | 40% |
-| Maintenance | MA | 6 | AWS managed | 95% |
-| Media Protection | MP | 8 | KMS, S3 policies | 90% |
-| Physical & Environmental | PE | 20 | AWS inherited | 100% |
-| Planning | PL | 9 | Architecture docs | 60% |
-| Personnel Security | PS | 8 | Process needed | 20% |
-| Risk Assessment | RA | 6 | Inspector deployed | 30% |
-| System & Services Acq | SA | 22 | Procurement process | 50% |
-| System & Comms | SC | 44 | TLS, encryption | 85% |
-| System & Info Integrity | SI | 17 | WAF, GuardDuty | 75% |
-| Program Management | PM | ~30 | Enterprise program | 40% |
+| Family | Code | Controls | Implementation |
+|--------|------|----------|----------------|
+| Access Control | AC | 25 | IAM, RBAC, MFA |
+| Awareness & Training | AT | 5 | Training platform needed |
+| Audit & Accountability | AU | 16 | CloudTrail, CloudWatch |
+| Security Assessment | CA | 9 | Automated testing |
+| Configuration Management | CM | 11 | IaC, AWS Config |
+| Contingency Planning | CP | 13 | Multi-AZ, backups |
+| Identification & Auth | IA | 12 | Cognito-managed credentials, JWT, MFA |
+| Incident Response | IR | 10 | GuardDuty, alarms |
+| Maintenance | MA | 6 | AWS managed |
+| Media Protection | MP | 8 | KMS, S3 policies |
+| Physical & Environmental | PE | 20 | AWS inherited |
+| Planning | PL | 9 | Architecture docs |
+| Personnel Security | PS | 8 | Process needed |
+| Risk Assessment | RA | 6 | Inspector deployed |
+| System & Services Acq | SA | 22 | Procurement process |
+| System & Comms | SC | 44 | TLS, encryption |
+| System & Info Integrity | SI | 17 | WAF, GuardDuty |
+| Program Management | PM | Not counted | Enterprise program |
 
 #### Authorization Pathway
 
@@ -181,8 +183,8 @@ FedRAMP provides a standardized approach to security assessment for cloud produc
 +-------------+     +-------------+     +-------------+     +-------------+
 ```
 
-**Current Phase:** Phase 1 - Gap Analysis and Documentation Foundation
-**Target Agency Authorization:** Q1 2027
+**Current Phase:** Not started. Internal gap analysis only; no agency sponsor, 3PAO, or SSP engagement.
+**Target Agency Authorization:** Not scheduled
 
 ---
 
@@ -199,7 +201,7 @@ SOX Section 404 requires publicly traded companies to maintain internal controls
 | **Access Controls** | RBAC with least privilege, MFA enforcement, access reviews |
 | **Change Management** | All changes through approval workflows, audit trails |
 | **Segregation of Duties** | Role separation in approval workflows, agent isolation |
-| **Audit Trails** | Immutable logs, 7-year retention capability, tamper evidence |
+| **Audit Trails** | CloudTrail and CloudWatch Logs with configurable retention (7-year target); application-level tamper evidence is planned |
 | **IT General Controls** | Configuration management, vulnerability management, patch management |
 
 ### SOX-Relevant Features
@@ -215,8 +217,8 @@ SOX Section 404 requires publicly traded companies to maintain internal controls
 - Privileged access logging
 
 **Audit Support:**
-- Immutable audit logs
-- Configurable retention (default 7 years)
+- CloudTrail and CloudWatch audit logs (application-level tamper evidence planned)
+- Configurable retention (7-year target)
 - Export capabilities for external auditors
 - Segregation of duties documentation
 
@@ -226,7 +228,7 @@ SOX Section 404 requires publicly traded companies to maintain internal controls
 
 ### Control Mapping Overview
 
-Project Aura maps to NIST SP 800-53 Rev 5 controls as the foundation for both CMMC and FedRAMP compliance.
+Project Aura maps to NIST SP 800-53 Rev 5 controls as the foundation for planned CMMC and FedRAMP certification efforts. These mappings are aligned technical controls, not an assessed or certified baseline.
 
 ### High-Impact Control Families
 
@@ -280,23 +282,24 @@ Project Aura maps to NIST SP 800-53 Rev 5 controls as the foundation for both CM
 
 ### Overview
 
-SOC 2 Type II certification demonstrates operational effectiveness of security controls over an audit period (typically 6-12 months).
+SOC 2 Type II attestation demonstrates operational effectiveness of security controls over an audit period (typically 6-12 months). Aura has not started a SOC 2 audit.
 
 ### Trust Services Criteria
 
 | Criteria | Scope | Status |
 |----------|-------|--------|
-| **Security** | Protection against unauthorized access | Implemented |
-| **Availability** | System uptime and performance | Implemented |
-| **Confidentiality** | Protection of confidential information | Implemented |
+| **Security** | Protection against unauthorized access | Controls aligned (unaudited) |
+| **Availability** | System uptime and performance | Controls aligned (unaudited) |
+| **Confidentiality** | Protection of confidential information | Controls aligned (unaudited) |
 | Processing Integrity | Accuracy of system processing | Planned |
 | Privacy | Personal information handling | Planned |
 
 ### Audit Timeline
 
-- **Audit Period Start:** Q1 2026
-- **Audit Period End:** Q2 2026
-- **Report Availability:** Q3 2026
+- **Audit Period:** Not scheduled
+- **Report Availability:** No report exists
+
+The `/api/v1/compliance` evidence endpoints catalog SOC 2 controls, but their evidence collectors currently return fixed sample values rather than querying AWS, so their assessments are not audit evidence.
 
 ### SOC 2 Evidence Sources
 
@@ -315,7 +318,7 @@ SOC 2 Type II certification demonstrates operational effectiveness of security c
 
 ### Overview
 
-Project Aura supports HIPAA compliance for healthcare customers processing Protected Health Information (PHI).
+Project Aura is designed to support HIPAA-aligned technical safeguards for healthcare customers. Aura has no HIPAA attestation, and no Business Associate Agreement (BAA) is offered.
 
 ### HIPAA Safeguards
 
@@ -325,19 +328,7 @@ Project Aura supports HIPAA compliance for healthcare customers processing Prote
 | **Physical** | Facility access, workstation security | AWS inherited controls |
 | **Technical** | Access control, audit controls, encryption | IAM, CloudTrail, KMS |
 
-### Business Associate Agreement (BAA)
-
-Aenea Labs provides a Business Associate Agreement (BAA) for healthcare customers.
-
-**BAA Coverage:**
-- PHI processing in Aura platform
-- Security incident notification
-- Breach notification procedures
-- Subcontractor requirements
-
-**BAA Availability:** Contact sales@aenealabs.com
-
-### PHI Handling
+### PHI Handling Controls (technical, unaudited)
 
 | Control | Implementation |
 |---------|----------------|
@@ -350,7 +341,9 @@ Aenea Labs provides a Business Associate Agreement (BAA) for healthcare customer
 
 ## Certification Roadmap
 
-### 2026 Timeline
+**Status: Planned. No certification filing has been submitted (as of October 2026).** The timelines below were drafted in January 2026 as planning targets. None of the 2026 milestones has started; dates will be reset when a specific contract requires a certification.
+
+### 2026 Timeline (original planning targets)
 
 ```
 Q1 2026:
@@ -374,7 +367,7 @@ Q4 2026:
 +-- FedRAMP full assessment begins
 ```
 
-### 2027 Timeline
+### 2027 Timeline (original planning targets)
 
 ```
 Q1 2027:
@@ -402,12 +395,11 @@ Q4 2027:
 
 | Document | Description | Availability |
 |----------|-------------|--------------|
-| SOC 2 Bridge Letter | Current security posture attestation | Under NDA |
+| SOC 2 Bridge Letter | Current security posture attestation | Not available (no SOC 2 report) |
 | Security White Paper | Architecture and controls overview | Public |
-| Penetration Test Summary | Third-party security assessment | Under NDA |
+| Penetration Test Summary | Third-party security assessment | Not yet available (see [Penetration Testing Program](../../security/PENETRATION_TESTING_PROGRAM.md)) |
 | NIST Control Mapping | Detailed control implementation | Under NDA |
 | Data Processing Agreement | GDPR/privacy compliance | Upon request |
-| Business Associate Agreement | HIPAA compliance | Upon request |
 
 ### Requesting Documentation
 
@@ -438,7 +430,7 @@ Enterprise customers can request compliance documentation by contacting:
 ### Ongoing Support
 
 - Quarterly compliance reviews
-- Certification maintenance support
+- Support for customers maintaining their own certifications
 - Auditor coordination
 - Control update notifications
 
@@ -455,4 +447,4 @@ Enterprise customers can request compliance documentation by contacting:
 
 ---
 
-*Last updated: January 2026 | Version 1.0*
+*Last updated: October 2026 | Version 1.1*

@@ -28,7 +28,7 @@ docs/support/
 ├── api-reference/
 │   ├── index.md                      # API documentation overview
 │   ├── rest-api.md                   # REST endpoints, request/response formats
-│   ├── graphql-api.md                # GraphQL schema and operations
+│   ├── graphql-api.md                # GraphQL schema and operations (planned, not implemented)
 │   └── webhooks.md                   # Webhook events, payloads, retry logic
 ├── architecture/
 │   ├── index.md                      # Architecture documentation overview

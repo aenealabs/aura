@@ -29,10 +29,10 @@ Organizations using Aura typically reduce their Mean Time to Remediate (MTTR) fr
 
 ### Target Industries
 
-- **Defense and Aerospace** - CMMC Level 2/3 compliance, GovCloud deployment
+- **Defense and Aerospace** - CMMC-aligned controls (certification not yet pursued), GovCloud deployment target
 - **Financial Services** - SOX compliance, rapid vulnerability remediation
-- **Healthcare** - HIPAA-compliant security operations
-- **Government Contractors** - FedRAMP authorization path, NIST 800-53 controls
+- **Healthcare** - Security operations for HIPAA-regulated environments (no HIPAA attestation; no BAA is offered)
+- **Government Contractors** - NIST 800-53 aligned controls; FedRAMP authorization not yet pursued
 - **Enterprise Technology** - Large codebase management, multi-repository support
 
 ---
@@ -45,8 +45,8 @@ Aura does not just find vulnerabilities. It generates syntactically correct, con
 ### Human-in-the-Loop Governance
 Every critical change flows through configurable approval workflows. Security teams review AI-generated patches with full visibility into the original vulnerability, the proposed fix, and automated test results. This approach satisfies audit requirements while maintaining the speed of automation.
 
-### Compliance-Ready Architecture
-Built for regulated industries from day one. Aura supports CMMC Level 3, SOX Section 404, NIST 800-53, and FedRAMP High requirements. All actions are logged with 7-year retention, and the platform can deploy to AWS GovCloud for government workloads.
+### Compliance-Aligned Architecture
+Built for regulated industries from day one. Aura implements NIST 800-53 aligned technical controls and SOX-oriented approval and audit requirements; FedRAMP and CMMC certifications have not yet been pursued. Actions are logged for audit, and AWS GovCloud (US) is the planned production deployment target (DEV and QA run in AWS Commercial Cloud).
 
 ### Deep Code Understanding
 The hybrid GraphRAG architecture combines structural analysis (call graphs, dependencies, inheritance) with semantic understanding (natural language queries, similarity search). This enables Aura to generate patches that consider the full context of your codebase.
@@ -209,10 +209,10 @@ hypotheses with confidence scores to shorten root-cause analysis.
 Aura integrates with your existing development and security tools.
 
 ### Source Control
-- GitHub (Cloud and Enterprise)
-- GitLab (SaaS and Self-Managed)
-- Bitbucket (Cloud and Data Center)
-- Azure DevOps Repos
+- GitHub (github.com; GitHub Enterprise Server planned)
+- GitLab (gitlab.com; Self-Managed planned)
+- Bitbucket (planned)
+- Azure DevOps Repos (connector module exists; not yet part of repository onboarding)
 
 ### Notification Channels
 - Email (Amazon SES)
@@ -277,20 +277,21 @@ Run Aura on individual machines or VMs without Kubernetes. Ideal for air-gapped 
 
 ### Access Control
 
-- SAML/OIDC single sign-on integration
-- Role-based access control (RBAC)
-- Multi-factor authentication support
+- Amazon Cognito sign-in (SAML/OIDC single sign-on federation is planned; see [SSO Integration](../admin-guide/sso-integration.md))
+- Role-based access control (RBAC) via Cognito groups
+- Multi-factor authentication support (Cognito MFA, optional in production)
 - Audit logging of all access events
 
 ### Compliance Certifications
 
 | Framework | Status |
 |-----------|--------|
-| **SOC 2 Type II** | Audit scheduled Q2 2026 |
-| **CMMC Level 2** | Certification Q4 2026 |
-| **FedRAMP High** | In-process, authorization Q1 2027 |
-| **NIST 800-53** | 95% controls mapped |
-| **HIPAA** | BAA available |
+| **NIST 800-53** | Technical controls aligned; organizational controls tracked separately |
+| **SOX** | Approval and audit-trail requirements addressed by the HITL workflow |
+| **CMMC** | Not yet pursued (infrastructure controls in place; organizational controls pending) |
+| **FedRAMP High** | Not yet pursued (GovCloud production is the planned target) |
+| **SOC 2 Type II** | Not yet audited |
+| **HIPAA** | No attestation; no BAA is offered |
 
 ---
 

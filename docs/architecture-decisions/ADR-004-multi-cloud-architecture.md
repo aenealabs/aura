@@ -1,6 +1,9 @@
 # ADR-004: Cloud Abstraction Layer for Multi-Cloud Deployment
 
-**Status:** Deployed
+**Status:** Implemented as library code; not used by runtime request paths, and no Azure infrastructure exists (see status note)
+
+> **Status note (2026-10-26).** `src/abstractions/` and `src/services/providers/` define the five interfaces with AWS, Azure and mock implementations, and `tests/test_cloud_abstraction_layer.py` has 46 passing tests. No module outside `src/services/providers/` imports `CloudServiceFactory` or its `get_*_service` helpers: the API and agents still build the Neptune, OpenSearch and Bedrock services directly (`src/services/database_connections.py`). The Azure classes fall back to in-memory dictionaries when the Azure SDK or endpoint is missing, and `deploy/` has no AKS or other Azure templates, so Phases 3-4 (Azure deployment, validation, pilots) are not done.
+
 **Date:** 2025-11-28
 **Deployed:** 2025-12-16
 **Decision Makers:** Project Aura Team

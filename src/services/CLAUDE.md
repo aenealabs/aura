@@ -38,8 +38,8 @@
 
 These packages only import within themselves and are safe for parallel worktree-isolated work:
 
-- `rlm/` - RecursiveContextEngine (100x context scaling)
-- `jepa/` - EmbeddingPredictor (2.85x inference efficiency)
+- `rlm/` - RecursiveContextEngine (library only; not wired into agent flows; 100x is a design target)
+- `jepa/` - EmbeddingPredictor (untrained scaffold; library only, not wired; 2.85x is a design target)
 - `constraint_geometry/` - Deterministic cortical discrimination
 - `gpu_scheduler/` - Self-service GPU job management
 - `env_validator/` - Cross-environment validation

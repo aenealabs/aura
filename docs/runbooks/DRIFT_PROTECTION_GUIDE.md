@@ -431,16 +431,16 @@ aws cloudformation update-stack \
 **Option B: Update Template (If change is intentional)**
 ```bash
 # Edit CloudFormation template to match actual state
-vim deploy/cloudformation/neptune.yaml
+vim deploy/cloudformation/neptune-simplified.yaml
 
 # Commit change
-git add deploy/cloudformation/neptune.yaml
+git add deploy/cloudformation/neptune-simplified.yaml
 git commit -m "fix: update Neptune template to match production state"
 
 # Update stack with new template
 aws cloudformation update-stack \
   --stack-name aura-neptune-dev \
-  --template-body file://deploy/cloudformation/neptune.yaml \
+  --template-body file://deploy/cloudformation/neptune-simplified.yaml \
   --capabilities CAPABILITY_NAMED_IAM \
   --region us-east-1
 ```

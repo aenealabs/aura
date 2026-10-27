@@ -1,7 +1,7 @@
 # ADR-041: AWS-Required Wildcards with Defense-in-Depth Compensating Controls
 
 ## Status
-**Accepted** | December 16, 2025
+**Implemented** | December 16, 2025 (compensating controls present in `deploy/cloudformation/iam.yaml` and `test-env-iam.yaml`; status reviewed 2026-10-26)
 
 ## Context
 

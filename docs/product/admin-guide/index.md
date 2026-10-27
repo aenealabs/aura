@@ -20,8 +20,8 @@ Project Aura is an autonomous AI SaaS platform that enables machines to reason a
 |----------|-------------|----------|
 | [Deployment Options](./deployment-options.md) | Deployment configurations for SaaS, self-hosted, hybrid, and GovCloud | Platform Engineers, DevOps |
 | [Configuration Reference](./configuration-reference.md) | Complete environment variables, feature flags, and settings | Platform Engineers, DevOps |
-| [User Management](./user-management.md) | Users, roles, teams, API keys, and service accounts | IT Admins, Security Teams |
-| [SSO Integration](./sso-integration.md) | Single Sign-On with Okta, Azure AD, Google, and SAML/OIDC | IT Admins, Identity Teams |
+| [User Management](./user-management.md) | Users, roles, teams, API keys, and service accounts (teams, API keys, and service accounts planned) | IT Admins, Security Teams |
+| [SSO Integration](./sso-integration.md) | Single Sign-On with Okta, Azure AD, Google, and SAML/OIDC (partial; not yet enabled in deployments) | IT Admins, Identity Teams |
 
 ---
 
@@ -37,7 +37,7 @@ Project Aura is an autonomous AI SaaS platform that enables machines to reason a
     |  +-------------------+  |     |  +-------------------+  |
     |  |   Web Dashboard   |  |     |  |   GitHub/GitLab   |  |
     |  |   REST API        |  |     |  |   Jira/ServiceNow |  |
-    |  |   GraphQL API     |  |     |  |   Slack/Teams     |  |
+    |  | GraphQL (planned) |  |     |  |   Slack/Teams     |  |
     |  +-------------------+  |     |  +-------------------+  |
     +------------+------------+     +------------+------------+
                  |                               |
@@ -105,9 +105,9 @@ See [Deployment Options](./deployment-options.md) for detailed instructions for 
 ### SaaS Deployment (Recommended)
 
 1. **Sign up** at [aenealabs.com/signup](https://aenealabs.com/signup)
-2. **Configure SSO** (recommended for enterprise) - See [SSO Integration](./sso-integration.md)
-3. **Create users and teams** - See [User Management](./user-management.md)
-4. **Connect repositories** - OAuth integration with GitHub, GitLab, Bitbucket
+2. **Configure SSO** (planned; sign-in currently uses Amazon Cognito) - See [SSO Integration](./sso-integration.md)
+3. **Create users** (Cognito user pool; team management is planned) - See [User Management](./user-management.md)
+4. **Connect repositories** - OAuth integration with GitHub and GitLab (Bitbucket is planned)
 5. **Set security policies** - Configure HITL autonomy levels
 
 ### Self-Hosted Deployment
@@ -126,14 +126,14 @@ Project Aura is designed for regulated industries with comprehensive security co
 
 | Category | Controls |
 |----------|----------|
-| **Compliance** | CMMC Level 3, SOX, HIPAA, FedRAMP, SOC 2 |
+| **Compliance** | NIST 800-53 aligned technical controls, SOX requirements (FedRAMP, CMMC, HIPAA, and SOC 2 certifications not yet pursued) |
 | **Encryption** | AES-256 at rest, TLS 1.3 in transit, customer-managed KMS keys |
-| **Access Control** | RBAC, IRSA, MFA, SSO, API key rotation |
+| **Access Control** | Cognito group-based RBAC, IRSA, MFA (optional in production); SSO federation and API keys planned |
 | **Network** | VPC isolation, private subnets, VPC endpoints, WAF |
 | **Audit** | Full audit trails, 7-year retention, immutable logs |
 | **AI Safety** | Bedrock Guardrails, prompt injection protection, sandboxed execution |
 
-> **Security Best Practice:** Always configure SSO with MFA enforcement for production deployments. Local authentication should be reserved for break-glass scenarios only.
+> **Security Best Practice:** Enable Cognito MFA for production deployments. Once SSO federation ships, configure SSO with MFA enforcement and reserve local authentication for break-glass scenarios.
 
 ---
 
@@ -142,7 +142,7 @@ Project Aura is designed for regulated industries with comprehensive security co
 | Task | Frequency | Guide Section |
 |------|-----------|---------------|
 | Add/remove users | As needed | [User Management](./user-management.md) |
-| Rotate API keys | Quarterly | [User Management](./user-management.md#api-key-management) |
+| Rotate API keys (planned) | Quarterly | [User Management](./user-management.md#api-key-management-planned) |
 | Review audit logs | Weekly | [User Management](./user-management.md#audit-logging) |
 | Update SSO certificates | Annually | [SSO Integration](./sso-integration.md) |
 | Upgrade deployment | Monthly | [Deployment Options](./deployment-options.md#upgrades) |

@@ -4,6 +4,8 @@
 **Market Focus:** Wiz, Google, Microsoft
 **Dependencies:** Phase 1 SBOM services, existing `ResourceTopologyMapper`
 
+> **Status (2026-10-26):** Planning document. Under ADR-077, `src/services/runtime_security/` (admission controller, runtime correlator, escape detector) exists as tested library code and `deploy/cloudformation/runtime-security-dynamodb.yaml` defines the tables; the admission webhook server, event ingestion and escape-detection deployment are not built. See ADR-077 for current status.
+
 ---
 
 ## Service 1: Kubernetes Admission Controller

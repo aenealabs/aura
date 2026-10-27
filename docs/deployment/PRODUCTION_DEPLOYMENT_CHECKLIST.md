@@ -9,6 +9,8 @@
 > baseline.
 
 
+> **Accuracy note (October 2026):** Several artifacts referenced in this checklist are not in the repository: `deploy/cloudformation/eks.yaml` (the EKS template is `eks.yaml` plus `eks-nodegroup-*.yaml`), `deploy/cloudformation/neptune-simplified.yaml` (now `neptune-simplified.yaml`), `deploy/kubernetes/{agent-orchestrator-deployment,context-retrieval-deployment,dnsmasq-exporter,fedramp-compliance-monitor,prometheus-deployment,sandbox-network-orchestrator}.yaml` (Kubernetes manifests are organised as kustomize bases under `deploy/kubernetes/<service>/`) and `deploy/scripts/post-deployment-health-check.sh` (use `deploy/scripts/integration-health-check.sh` or the `/health/detailed` endpoint). Those steps are planned or superseded and are retained for reference only. The canonical procedure is `DEPLOYMENT_GUIDE.md`. Production (GovCloud) has not been deployed.
+
 **Last Updated:** 2026-01-15
 **Target Environment:** AWS Commercial Cloud (dev/qa) → AWS GovCloud (production)
 
@@ -70,7 +72,7 @@ pytest tests/smoke/test_platform_smoke.py -m smoke -v --tb=short -o addopts=""
 
 #### GovCloud (production)
 - [ ] GovCloud account setup
-- [ ] FedRAMP High compliance review
+- [ ] FedRAMP High compliance review (alignment review only; FedRAMP authorization has not been pursued)
 - [ ] DISA STIG hardening applied
 - [ ] FIPS 140-2 mode enabled
 - [ ] Private EKS endpoints configured
@@ -103,7 +105,7 @@ aws cloudformation create-stack \
 # Deploy multi-tier EKS cluster (GovCloud-compatible EC2 nodes)
 aws cloudformation create-stack \
   --stack-name aura-eks-dev \
-  --template-body file://deploy/cloudformation/eks-multi-tier.yaml \
+  --template-body file://deploy/cloudformation/eks.yaml \
   --parameters \
     ParameterKey=Environment,ParameterValue=dev \
     ParameterKey=SystemNodeInstanceType,ParameterValue=t3.medium \
@@ -117,7 +119,7 @@ aws cloudformation create-stack \
 # Deploy Neptune cluster
 aws cloudformation create-stack \
   --stack-name aura-neptune-dev \
-  --template-body file://deploy/cloudformation/neptune.yaml \
+  --template-body file://deploy/cloudformation/neptune-simplified.yaml \
   --parameters \
     ParameterKey=Environment,ParameterValue=dev \
     ParameterKey=InstanceClass,ParameterValue=db.r5.large
@@ -356,7 +358,7 @@ aws cloudformation wait stack-delete-complete --stack-name aura-eks-dev
 # Redeploy from backup
 aws cloudformation create-stack \
   --stack-name aura-eks-dev \
-  --template-body file://deploy/cloudformation/eks-multi-tier.yaml.backup
+  --template-body file://deploy/cloudformation/eks.yaml
 ```
 
 ---
@@ -490,7 +492,10 @@ ssh ec2-user@node-ip "cat /proc/sys/crypto/fips_enabled"
 # Expected output: 1
 ```
 
-### FedRAMP High Compliance
+### FedRAMP High Compliance (Planned)
+
+The `fedramp-compliance-monitor.yaml` manifest below does not exist in the repository; NIST 800-53 aligned controls are deployed, but no FedRAMP authorization has been pursued.
+
 ```bash
 # Deploy compliance monitoring
 kubectl apply -f deploy/kubernetes/fedramp-compliance-monitor.yaml

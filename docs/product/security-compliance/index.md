@@ -61,28 +61,30 @@ Project Aura implements a defense-in-depth security model with multiple overlapp
 
 ## Compliance Certifications Summary
 
-Project Aura supports compliance requirements for regulated industries. Our infrastructure is designed to meet stringent federal and commercial standards.
+Project Aura supports compliance requirements for regulated industries. Our infrastructure is designed to support controls aligned with federal and commercial standards; it is not certified against them.
 
 ### Current Certification Status
 
 | Framework | Target | Status | Timeline |
 |-----------|--------|--------|----------|
-| **SOC 2 Type II** | All customers | Audit Scheduled | Q2 2026 |
-| **CMMC Level 2** | DoD contractors | In Progress | Q4 2026 |
-| **CMMC Level 3** | Critical DoD programs | Planned | Q2 2027 |
-| **FedRAMP High** | Federal agencies | In Process | Q1 2027 |
-| **NIST 800-53 Rev 5** | All customers | 95% Mapped | Ongoing |
-| **HIPAA** | Healthcare | BAA Available | Available |
-| **SOX Section 404** | Financial services | Controls Implemented | Ongoing |
+| **SOC 2 Type II** | All customers | Planned (no auditor engaged) | Not scheduled |
+| **CMMC Level 2** | DoD contractors | Planned (not yet pursued) | Not scheduled |
+| **CMMC Level 3** | Critical DoD programs | Planned | Not scheduled |
+| **FedRAMP High** | Federal agencies | Planned (not yet pursued) | Not scheduled |
+| **NIST 800-53 Rev 5** | All customers | Aligned (technical controls, not independently assessed) | Ongoing |
+| **HIPAA** | Healthcare | Technical safeguards aligned (no attestation; no BAA offered) | Ongoing |
+| **SOX Section 404** | Financial services | Supporting controls aligned (customer's auditor attests) | Ongoing |
+
+Status: Planned. No certification filing has been submitted (as of October 2026). Aura holds no SOC 2, CMMC, FedRAMP, IL5, ISO 27001, PCI-DSS, or HIPAA certification, attestation, or authorization today, and no Business Associate Agreement (BAA) is offered.
 
 ### Compliance Quick Reference
 
-| If Your Industry Is... | Required Certifications | Aura Support |
+| If Your Industry Is... | Frameworks Your Organization May Need | Aura Support |
 |------------------------|------------------------|--------------|
-| Defense / Aerospace | CMMC Level 2/3, NIST 800-171 | GovCloud deployment, full control mapping |
-| Federal Government | FedRAMP High, NIST 800-53 | JAB P-ATO path, agency authorization |
+| Defense / Aerospace | CMMC Level 2/3, NIST 800-171 | GovCloud-compatible templates (GovCloud production deployment planned), control mapping |
+| Federal Government | FedRAMP High, NIST 800-53 | NIST 800-53 aligned controls; FedRAMP authorization on the roadmap |
 | Financial Services | SOX, SOC 2 | Audit trails, change management controls |
-| Healthcare | HIPAA, HITRUST | BAA available, PHI handling procedures |
+| Healthcare | HIPAA, HITRUST | HIPAA-aligned technical safeguards (no BAA offered) |
 | Critical Infrastructure | NIST CSF, CIS Controls | Control framework alignment |
 
 [View Detailed Compliance Certifications](./compliance-certifications.md)
@@ -101,7 +103,7 @@ Project Aura operates under a shared responsibility model where Aenea Labs manag
 - Platform vulnerability management
 - Security monitoring and incident response
 - Encryption key management (platform keys)
-- Compliance certification maintenance
+- Compliance control maintenance (certifications planned, none held today)
 
 **Application Security**
 - Secure software development lifecycle
@@ -177,8 +179,8 @@ Project Aura implements specialized security controls for AI/ML workloads that g
 | Data Exfiltration | Output Filtering | Bedrock Guardrails with content filtering |
 | Model Abuse | Rate Limiting | Per-user and per-organization token limits |
 | Jailbreak Attempts | Content Filtering | Bedrock Guardrails with HIGH sensitivity |
-| Agent Confusion | Tool Validation | Strict tool invocation validation |
-| GraphRAG Poisoning | Data Integrity | Immutable graph versioning, audit trails |
+| Agent Confusion | Tool Validation | A2AS input assessment at orchestrator entry; capability-governance tool enforcement built but not yet wired |
+| GraphRAG Poisoning | Data Integrity | Injection scanning of ingested content and context provenance verification at retrieval |
 
 ### Sandbox Security Model
 

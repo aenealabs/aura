@@ -83,8 +83,6 @@ The words "Password", "PasswordConfirm", "NewPassword", etc., are metadata descr
 
 | File | Line | Trigger |
 |------|------|---------|
-| `deploy/cloudformation/marketing-site.yaml` | 185 | `!Sub` with embedded colons |
-| `deploy/cloudformation/codebuild-marketing.yaml` | 98 | `!Sub` with embedded colons |
 | `deploy/cloudformation/opensearch.yaml` | 46 | `!Sub` with embedded colons |
 | `deploy/cloudformation/codebuild-serverless.yaml` | 88 | `!Sub` with embedded colons |
 | `archive/legacy/cloudformation/codebuild.yaml` | 92 | `!Sub` with embedded colons |

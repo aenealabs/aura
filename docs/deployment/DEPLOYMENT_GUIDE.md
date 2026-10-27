@@ -26,8 +26,10 @@ That command runs:
 
 1. **Bootstrap** (`deploy/scripts/bootstrap-fresh-account.sh`) — preflights
    AWS credentials, GitHub CodeConnection, and Bedrock model access;
-   populates private ECR base images; deploys all 24 layer CodeBuild
-   projects; deploys the deployment-pipeline state machine.
+   deploys the IAM permission boundaries (`aura-iam-permission-boundaries-{env}`,
+   AURA-CTL-004) before any stack that creates a role; populates private
+   ECR base images; deploys all 23 layer CodeBuild projects; deploys the
+   deployment-pipeline state machine.
 2. **Streamlined deploy** — starts the deployment-pipeline Step
    Functions execution and waits for it to complete.
 
@@ -50,11 +52,70 @@ end-to-end.
 | GitHub CodeConnection ARN | CodeBuild source pulls | AWS Console → CodeBuild → Settings → Connections; store ARN at SSM `/aura/global/codeconnections-arn` |
 | Bedrock model access | Application layer LLM calls | AWS Console → Bedrock → Model access (request current Claude Haiku, Sonnet, and Opus models). Tier models default to `auto` (region discovery at startup) unless pinned in `aura/<env>/bedrock-config`; the service role also needs `bedrock:ListFoundationModels` and `bedrock:ListInferenceProfiles`. See [Model Selection](../product/admin-guide/configuration-reference.md#model-selection) |
 | `ALERT_EMAIL` env var | Budget + alarm SNS subscriptions | Set when invoking `./deploy.sh deploy` |
+| SSM `/aura/<env>/alert-email` | Read by the application, observability and other layer builds | Created by the bootstrap preflight from `ALERT_EMAIL` when missing |
+| SSM `/aura/<env>/admin-role-arn` | EKS cluster-admin access entry, read by the compute build | `aws ssm put-parameter --name /aura/<env>/admin-role-arn --type String --value <AuraBreakGlass SSO role ARN>`; the bootstrap preflight stops with these instructions if it is missing |
+| SSM `/aura/<env>/account-id` | Wrong-account guard (`deploy/scripts/validate-account-id.sh`), run by the bootstrap preflight and the k8s-deploy layer | `aws ssm put-parameter --name /aura/<env>/account-id --value <account-id> --type String`. Keeps real account IDs out of the public repository; `deploy/config/account-mapping.env` is the fallback, and its placeholder IDs count as unset |
 
 > **Multi-Account Setup:** For QA/PROD environments in separate AWS
 > accounts, see [MULTI_ACCOUNT_SETUP.md](./MULTI_ACCOUNT_SETUP.md)
 > for the cross-account role setup that must run before `./deploy.sh
 > deploy <env>` in the target account.
+
+### IAM permission boundaries and the scoped deploy role (AURA-CTL-004)
+
+Every IAM role the pipeline creates carries a permission boundary. Build and
+deploy roles use `aura-deployer-boundary-{env}`; runtime roles use
+`aura-workload-boundary-{env}` or an existing purpose-built boundary. The
+deployer boundary refuses to create a role without an approved boundary, so a
+new template whose roles omit `PermissionsBoundary` fails to deploy (and fails
+`tests/architecture/test_iam_escalation_guards.py` in CI first). Conventions:
+`deploy/cloudformation/CLAUDE.md`.
+
+The deployer boundary also stops build roles from assuming same-account roles
+and from reading application data (table items, secrets, queue messages,
+stream records, log events, search and graph queries, and S3 objects outside
+`aura-*` buckets). Builds keep `ReadOnlyAccess` for CloudFormation's describe
+calls; the boundary removes its data-plane half.
+
+**Operator access (AURA-CTL-005).** `deploy/cloudformation/identity-center-permission-sets.yaml`
+defines three IAM Identity Center permission sets, deployed once in the
+management account (the Identity Center instance). An administrator deploys it
+with the instance ARN, the DEV and QA account IDs, and three Identity Store
+group IDs:
+
+| Permission set | Use | Session |
+|---|---|---|
+| `AuraDeployer` | `deploy.sh deploy`, `redeploy`, `status` and the bootstrap scripts, scoped to `aura-*` resources | 4 hours |
+| `AuraReadOnly` | Metadata only (AWS-managed `ViewOnlyAccess`) | 8 hours |
+| `AuraBreakGlass` | `AdministratorAccess` for teardown (`deploy.sh destroy` is manual), kill switches and incidents | 1 hour |
+
+Deploy with `AuraDeployer`: `aws sso login --profile <aura-deployer-dev>` (or `-qa`), then
+`ALERT_EMAIL=ops@example.com ./deploy/deploy.sh deploy dev` (or `qa`).
+Set `/aura/{env}/admin-role-arn` (EKS cluster-admin access entry) to the
+`AWSReservedSSO_AuraBreakGlass_*` role ARN in each account; Kubernetes deploys
+run through the `k8s-deploy` CodeBuild project, not the operator.
+`tests/architecture/test_iam_escalation_guards.py` fails CI if a bootstrap
+stack resource or an operator-script AWS call is not covered by `AuraDeployer`.
+
+**Build-time template linting.** Every buildspec lints with
+`./scripts/cfn-lint-wrapper.sh ... || exit 1` (warnings pass; errors fail the
+build) and installs `cfn-lint==1.57.2`, so a new upstream rule cannot fail a
+deploy that passed before. All 120 former `cfn-lint ... || echo` sites pass on
+1.57.2.
+
+**Scoped CloudFormation service role (opt-in, ADR-092).** By default, stacks
+deploy as their layer CodeBuild role. To deploy through
+`aura-cfn-role-{env}` instead, publish its ARN:
+
+```bash
+aws ssm put-parameter --name /aura/dev/cfn-service-role-arn \
+  --value arn:aws:iam::<ACCOUNT_ID>:role/aura-cfn-role-dev --type String
+```
+
+Every layer buildspec then passes `--role-arn` on each deploy. Delete the
+parameter to switch back. The bootstrap build and the `aura-iam-{env}` stack
+never use it. Enabling it before ADR-092 Phases 3-4 have run means
+AccessDenied errors are likely; that iteration is the purpose of those phases.
 
 ### Other commands
 
@@ -159,14 +220,11 @@ git --version
 
 ### AWS Permissions Required
 
-Your AWS user/role must have:
-- **IAM:** CreateRole, AttachRolePolicy, PassRole
-- **CloudFormation:** CreateStack, UpdateStack, DescribeStacks
-- **CodeBuild:** CreateProject, UpdateProject
-- **S3:** CreateBucket, PutBucketPolicy
-- **CloudWatch:** PutMetricAlarm, CreateLogGroup
-- **Secrets Manager:** CreateSecret, DescribeSecret
-- **SSM Parameter Store:** PutParameter, GetParameter
+Use the `AuraDeployer` IAM Identity Center permission set
+(`deploy/cloudformation/identity-center-permission-sets.yaml`; see "Operator
+access" above). It grants exactly what `deploy.sh deploy|redeploy|status` and
+the bootstrap scripts need, scoped to `aura-*` resources; teardown and kill
+switches need `AuraBreakGlass`.
 
 **Quick Check:**
 ```bash
@@ -189,8 +247,8 @@ If using AWS SSO:
 # Configure AWS SSO profile
 aws configure sso
 
-# Login to AWS SSO
-export AWS_PROFILE=AdministratorAccess-<YOUR_ACCOUNT_ID>
+# Login to AWS SSO with the AuraDeployer permission set (AURA-CTL-005)
+export AWS_PROFILE=aura-deployer-dev   # or aura-deployer-qa
 aws sso login --profile $AWS_PROFILE
 
 # Verify access
@@ -235,7 +293,7 @@ The account-bootstrap stack must be deployed BEFORE other infrastructure:
 ```bash
 # Set environment
 export ENV=dev  # or: qa, prod
-export AWS_PROFILE=aura-admin-${ENV}
+export AWS_PROFILE=aura-deployer-${ENV}
 
 # Login to AWS
 aws sso login --profile $AWS_PROFILE
@@ -275,7 +333,7 @@ aws cloudformation deploy \
   --stack-name aura-account-bootstrap-dev \
   --parameter-overrides \
     Environment=dev \
-    AdminRoleArn="arn:aws:iam::123456789012:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AdministratorAccess_..." \
+    AdminRoleArn="arn:aws:iam::123456789012:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AuraBreakGlass_..." \
     AlertEmail=notifications@aenealabs.com \
     CodeConnectionsArn="arn:aws:codeconnections:us-east-1:123456789012:connection/..." \
     EnableAccountCloudTrail=false \
@@ -480,7 +538,7 @@ aws ssm get-parameter --name "/aura/dev/alert-email" 2>/dev/null
 
 ```bash
 # Set AWS profile (or script will prompt)
-export AWS_PROFILE=AdministratorAccess-<YOUR_ACCOUNT_ID>
+export AWS_PROFILE=aura-deployer-dev   # AuraDeployer permission set
 
 # Deploy Foundation Layer CodeBuild project
 ./deploy-foundation-codebuild.sh dev
@@ -730,7 +788,6 @@ cd /path/to/project-aura
 # Deploying Compute Layer CodeBuild for dev environment...
 # Stack: aura-compute-codebuild-dev
 # ✓ CodeBuild project created: aura-compute-deploy-dev
-# ✓ Deployment script: deploy/scripts/trigger-compute-build.sh
 ```
 
 ### Step 3.2: Trigger Compute Layer Build
@@ -738,10 +795,7 @@ cd /path/to/project-aura
 The CodeBuild project deploys the actual EKS infrastructure to AWS:
 
 ```bash
-# Option 1: Use deployment script (recommended)
-./deploy/scripts/trigger-compute-build.sh dev
-
-# Option 2: Direct CodeBuild trigger
+# Trigger the CodeBuild project directly (there is no trigger-compute-build.sh wrapper in the repository)
 aws codebuild start-build --project-name aura-compute-deploy-dev
 ```
 
@@ -1097,7 +1151,7 @@ Run: aws sso login --profile <your-aws-profile>
 
 **Solution:**
 ```bash
-# Refresh AWS SSO credentials (use your configured profile with AdministratorAccess)
+# Refresh AWS SSO credentials (use your AuraDeployer profile)
 aws sso login --profile <your-aws-profile>
 
 # Verify
@@ -1231,14 +1285,14 @@ aws cloudformation delete-stack --stack-name aura-neptune-dev
 User is not authorized to perform: logs:TagResource
 ```
 
-**Cause:** This was fixed in the recent commit (codebuild.yaml lines 140-144)
+**Cause:** This was fixed in the recent commit (the per-layer `codebuild-*.yaml` templates; the original single `codebuild.yaml` no longer exists)
 
 **Solution:**
 ```bash
 # Update the CodeBuild stack with fixed permissions
 aws cloudformation update-stack \
-  --stack-name aura-codebuild-dev \
-  --template-body file://deploy/cloudformation/codebuild.yaml \
+  --stack-name aura-compute-codebuild-dev \
+  --template-body file://deploy/cloudformation/codebuild-compute.yaml \
   --capabilities CAPABILITY_NAMED_IAM
 
 # Or redeploy Foundation/Data CodeBuild (already has fix)
@@ -1319,7 +1373,7 @@ This section covers deploying the Aura FastAPI application to the EKS cluster. P
 aws eks update-kubeconfig \
   --name aura-cluster-dev \
   --region us-east-1 \
-  --profile aura-admin
+  --profile aura-deployer-dev
 
 # Verify access
 kubectl get nodes
@@ -2108,7 +2162,7 @@ Run integration tests:
 
 ```bash
 # From repository root
-pytest tests/integration/test_ssr_integration.py -v
+pytest tests/test_ssr_self_play.py tests/test_ssr_validation_pipeline.py -v
 ```
 
 ### Troubleshooting

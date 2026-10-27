@@ -22,7 +22,7 @@
 
 ```bash
 # 1. Set your AWS profile
-export AWS_PROFILE=AdministratorAccess-<YOUR_ACCOUNT_ID>
+export AWS_PROFILE=aura-deployer-dev   # AuraDeployer permission set (AURA-CTL-005)
 
 # 2. Deploy all CodeBuild projects (one-time setup)
 cd deploy/scripts
@@ -508,8 +508,11 @@ aws cloudwatch get-metric-statistics \
 ### Future Enhancements
 
 #### 1. Step Functions Orchestration (Optional)
+
+> **Status:** Implemented as `deploy/cloudformation/deployment-pipeline.yaml` (the deployment-pipeline state machine started by `deploy/deploy.sh`). The `cicd-orchestrator.yaml` template sketched below was never created; the snippet is retained as the original design sketch.
+
 ```yaml
-# deploy/cloudformation/cicd-orchestrator.yaml
+# deploy/cloudformation/cicd-orchestrator.yaml (design sketch; not a file in the repository)
 Resources:
   DeploymentStateMachine:
     Type: AWS::StepFunctions::StateMachine

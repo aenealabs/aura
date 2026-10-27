@@ -108,19 +108,19 @@ Navigate to **Settings > HITL Settings** to configure:
 
 ## Compliance Frameworks
 
-Aura supports multiple compliance frameworks with configurable profiles.
+Aura supports multiple compliance frameworks with configurable profiles. "Aligned" means Aura provides settings and technical controls that map to the framework; Aura itself holds no CMMC, FedRAMP, SOC 2, IL5, HIPAA, or PCI-DSS certification, authorization, or attestation. Status: Planned. No certification filing has been submitted (as of October 2026).
 
 ### Supported Frameworks
 
 | Framework | Status | Key Requirements |
 |-----------|--------|------------------|
-| **CMMC Level 2** | Supported | 90-day log retention, access controls |
-| **CMMC Level 3** | Supported | 365-day logs, air-gap deployment |
-| **SOX** | Supported | Audit trails, change management |
-| **NIST 800-53** | Supported | Security controls, monitoring |
-| **FedRAMP High** | Ready | Full isolation, GovCloud deployment |
-| **HIPAA** | Supported | PHI protection, audit logs |
-| **PCI-DSS** | Supported | Cardholder data protection |
+| **CMMC Level 2** | Aligned (certification not yet pursued) | 90-day log retention, access controls |
+| **CMMC Level 3** | Aligned (certification not yet pursued) | 365-day logs, air-gap deployment |
+| **SOX** | Aligned | Audit trails, change management |
+| **NIST 800-53** | Aligned | Security controls, monitoring |
+| **FedRAMP High** | Planned (not yet pursued; GovCloud production deployment planned) | Full isolation, GovCloud deployment |
+| **HIPAA** | Aligned (no attestation; no BAA offered) | PHI protection, audit logs |
+| **PCI-DSS** | Aligned (not certified) | Cardholder data protection |
 
 ### Compliance Profiles
 
@@ -158,7 +158,7 @@ Audit logs are essential for compliance and incident investigation.
 |------------------|------------------|
 | 30 days | Below CMMC minimum |
 | 60 days | Below CMMC minimum |
-| 90 days | CMMC Level 2 compliant |
+| 90 days | Meets CMMC Level 2 retention guidance |
 | 180 days | Enhanced compliance |
 | 365 days | GovCloud/FedRAMP recommended |
 
@@ -265,7 +265,7 @@ Maximum security posture for regulated environments:
 | External tools | Unavailable |
 | Air-gap deployment | Supported |
 
-**Compliance**: CMMC Level 3, NIST 800-53, FedRAMP High
+**Designed for**: CMMC Level 3, NIST 800-53, FedRAMP High environments (aligned controls; Aura is not certified or authorized)
 
 ### Enterprise Mode
 
@@ -278,7 +278,7 @@ Balanced security with productivity features:
 | Slack/Jira/GitHub | Supported |
 | Budget controls | Configurable |
 
-**Compliance**: SOX, CMMC Level 2
+**Designed for**: SOX, CMMC Level 2 environments (aligned controls; Aura is not certified)
 
 ### Hybrid Mode
 
@@ -341,7 +341,7 @@ The Security Alerts panel shows:
 
 1. **Use Enterprise or Hybrid Mode** - Balance security and productivity
 2. **Enable Critical HITL** - Human review for high-severity only
-3. **Set 90-day retention** - CMMC Level 2 compliant
+3. **Set 90-day retention** - meets CMMC Level 2 retention guidance
 4. **Configure budget controls** - Limit MCP costs
 5. **Enable notifications** - Stay informed of approvals
 

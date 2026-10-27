@@ -8,10 +8,12 @@ This guide explains how Aura's multi-agent system works, including the different
 
 Aura uses a coordinated multi-agent system where specialized AI agents work together to analyze code, generate fixes, and validate solutions.
 
+> **Implementation status (October 2026).** The production job server (`src/agents/orchestrator_server.py`) runs `System2Orchestrator`, which calls the Coder, Reviewer, and Validator in-process (plan, context, code, review, validate with a repair loop, sandbox step, approval request). The `MetaOrchestrator` described below, with dynamic spawning of specialized agents, is implemented and tested but has no production entry point: its only caller is `create_patch_validation_workflow`, which nothing in `src/` calls. Specialized agents marked "not wired" below are not reachable from the API or job server.
+
 ```
                     +----------------------------------+
-                    |       MetaOrchestrator           |
-                    |   (Coordinates All Agents)       |
+                    |  System2Orchestrator (job server)|
+                    |  MetaOrchestrator (not wired)    |
                     +-----------------|----------------+
                                       |
           +---------------------------+---------------------------+
@@ -50,10 +52,9 @@ The Coder Agent generates code fixes for identified vulnerabilities.
 
 **Output**:
 ```
-- Code patch (diff format)
-- Explanation of changes
-- Risk assessment
-- Test recommendations
+- Generated code for the target (the orchestrator builds a line diff
+  against the original file for the approval request)
+- Planned: explanation, risk assessment, test recommendations
 ```
 
 ### Reviewer Agent
@@ -68,7 +69,7 @@ The Reviewer Agent performs security analysis of generated patches.
 
 **Features**:
 - **Self-Reflection**: Reviews its own output for false positives
-- **Multi-Pass Analysis**: Iterates until confidence threshold met
+- **Multi-Pass Analysis**: Iterates until confidence threshold met (up to 3 reflection iterations)
 - **Context Awareness**: Understands code relationships via graph
 
 **Review Categories**:
@@ -76,27 +77,28 @@ The Reviewer Agent performs security analysis of generated patches.
 | Category | What It Checks |
 |----------|----------------|
 | Security | OWASP Top 10, injection flaws, auth issues |
-| Quality | Clean code, SOLID principles, readability |
-| Compliance | Framework-specific requirements |
-| Performance | Resource usage, efficiency |
+| Quality | Clean code, SOLID principles, readability (LLM review only) |
+| Compliance | Built-in crypto, secrets, and injection policies |
+| Performance | Planned |
 
 ### Validator Agent
 
-The Validator Agent tests patches in isolated sandbox environments.
+The Validator Agent checks patches statically and is designed to test them in isolated sandbox environments.
 
 **Capabilities**:
-- Sandbox provisioning and management
-- Test execution
-- Result analysis
-- Rollback coordination
+- Static validation: syntax (`ast`), expected symbols, type hints, dangerous-pattern scan
+- Sandbox task launch, status polling, and cleanup through `FargateSandboxOrchestrator` (only when `SANDBOX_ENABLED=true`)
+- Planned: rollback coordination
 
 **Validation Process**:
 1. Provision isolated sandbox
-2. Apply patch to test environment
+2. Apply patch to test environment (planned: the patched code is not yet passed to the task)
 3. Run automated tests
 4. Analyze results
 5. Report findings
 6. Clean up sandbox
+
+Without a sandbox orchestrator, steps 1 to 6 are skipped and the result is reported as `SKIPPED`.
 
 ---
 
@@ -135,16 +137,18 @@ Legacy code modernization:
 
 ### Runtime Incident Agent
 
-Code-aware incident response:
+Code-aware incident response (runs as a container task through `src/agents/runtime_incident_cli.py` and writes investigations to DynamoDB):
 
 - Correlates runtime errors with code changes
-- Performs automated root cause analysis
+- Performs LLM root cause analysis (returns "Unable to generate RCA" without an LLM)
 - Integrates with HITL for remediation approval
 - Generates incident reports
 
+The CLI does not yet pass the context-retrieval service or observability adapters, so graph, vector, and metrics evidence steps are skipped.
+
 ### Browser Tool Agent
 
-Web automation capabilities:
+Web automation capabilities (not wired; without Playwright the agent returns mock sessions and canned results):
 
 - Multi-page navigation
 - Form filling
@@ -153,7 +157,7 @@ Web automation capabilities:
 
 ### Code Interpreter Agent
 
-Multi-language code execution:
+Multi-language code execution (not wired; without a sandbox the agent returns mock output):
 
 | Languages Supported |
 |---------------------|
@@ -209,7 +213,7 @@ Request Received
 
 ### Agent Spawning
 
-The MetaOrchestrator dynamically spawns agents based on:
+The MetaOrchestrator (not yet wired to a production entry point) dynamically spawns agents based on:
 
 - Task complexity
 - Required capabilities
@@ -282,10 +286,12 @@ Agent-to-Agent Security protects against malicious inputs:
 
 Choose how agents are deployed based on your needs:
 
+> **Implementation status.** Selecting a mode in **Settings > Orchestrator** stores the setting only; nothing scales or creates EKS jobs in response. The orchestrator runs as the `aura-agent-orchestrator` Deployment, which polls the `aura-orchestrator-tasks-{env}` queue. See [Orchestrator Deployment Modes](../features/ORCHESTRATOR_MODES.md).
+
 ### On-Demand Mode
 
 - **Cost**: Lowest (pay-per-use)
-- **Behavior**: EKS jobs created per request
+- **Behavior**: EKS jobs created per request (planned: the dispatcher Lambda does not create the Kubernetes Job yet)
 - **Latency**: Cold start delay
 - **Best For**: Low-volume usage
 
@@ -365,10 +371,12 @@ The Agent Registry shows all available agents:
 | Category | Agents |
 |----------|--------|
 | Internal | Coder, Reviewer, Validator, Security, DevOps, Transform |
-| External | Connected via A2A protocol |
-| Marketplace | Community and third-party agents |
+| External | Connected via A2A protocol (planned: the A2A gateway is an in-memory stub and its router is not mounted) |
+| Marketplace | Community and third-party agents (planned) |
 
 ### Connecting External Agents
+
+Planned. The steps below describe the intended flow; the A2A gateway cannot reach external agents yet.
 
 1. Navigate to **Agents > Registry**
 2. Click **Connect External Agent**
@@ -432,6 +440,8 @@ The system automatically detects:
 ### Titan Neural Memory
 
 Agents have access to a cognitive memory system:
+
+> **Implementation status.** Titan memory is off in the job server. When enabled, the orchestrator builds it on placeholder (`AsyncMock`) stores, so nothing persists between runs.
 
 **Features**:
 - Test-time training (TTT) for adaptation

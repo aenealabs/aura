@@ -2,7 +2,7 @@
 
 ## Project Aura - Secure Development Practices
 
-This guide provides security best practices for developers working on Project Aura. Following these guidelines helps maintain CMMC Level 3, SOC 2, and NIST 800-53 compliance.
+This guide provides security best practices for developers working on Project Aura. Following these guidelines keeps Aura's controls aligned with CMMC Level 3, SOC 2, and NIST 800-53 (Aura holds none of these certifications or audit reports).
 
 ---
 

@@ -228,7 +228,6 @@ aws codebuild list-builds-for-project \
 | aura-codebuild-network-services-{env} | aura-network-services-deploy-{env} | 1.7 |
 | aura-codebuild-docker-{env} | aura-docker-deploy-{env} | 1.9 |
 | aura-codebuild-frontend-{env} | aura-frontend-deploy-{env} | 4.7 |
-| aura-codebuild-marketing-{env} | aura-marketing-deploy-{env} | 4.8 |
 | aura-codebuild-chat-assistant-{env} | aura-chat-assistant-deploy-{env} | 6.7 |
 | aura-codebuild-runbook-agent-{env} | aura-runbook-agent-deploy-{env} | 6.8 |
 | aura-codebuild-incident-response-{env} | aura-incident-response-deploy-{env} | 6.9 |

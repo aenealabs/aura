@@ -1,9 +1,29 @@
 # ADR-037: AWS Agent Capability Replication
 
-**Status:** Deployed
+**Status:** Implemented (library); not integrated -- several components and all infrastructure templates not built
 **Date:** 2025-12-11 | **Deployed:** 2025-12-16
 **Decision Makers:** Project Aura Team
 **Related:** ADR-019 (Market Intelligence), ADR-023 (AgentCore Gateway), ADR-025 (RuntimeIncidentAgent), ADR-028 (Foundry Capability Adoption)
+
+> **Status note (2026-10-26) -- library code only; parts not built.** The
+> Phase 1 modules (`src/services/agent_runtime_service.py`,
+> `episodic_memory_service.py`, `cedar_policy_engine.py`,
+> `oauth_delegation_service.py`, `agent_evaluation_service.py`,
+> `semantic_tool_search.py`, `src/agents/browser_tool_agent.py`,
+> `code_interpreter_agent.py`) and the Phase 2-4 orchestrators under
+> `src/services/security/`, `src/services/devops/` and `src/services/transform/`
+> exist with unit tests, but none is imported by `src/api/main.py`, an agent
+> flow or a worker. The Phase 1 services keep state in in-memory dicts with no
+> boto3 path, agent/browser/code execution is mocked
+> (`agent_runtime_service.py:821`, `browser_tool_agent.py:394`,
+> `code_interpreter_agent.py:694`), resource discovery is simulated
+> (`src/services/devops/resource_topology_mapper.py:445`) and deployed-control
+> detection uses `random.sample`
+> (`src/services/security/dynamic_attack_planner.py:1401`). Not built: the
+> Azure/GCP security connectors, the Datadog/Dynatrace/New Relic connectors
+> (only `src/services/splunk_connector.py` exists), business-rule extraction,
+> data lineage, test-plan generation, functional-equivalence validation, and
+> all six CloudFormation templates listed under Infrastructure Requirements.
 
 ## Context
 
@@ -43,7 +63,7 @@ As of December 2025, AWS publicly markets frontier agents as:
 
 Aura's differentiators that must be preserved:
 - **Hybrid GraphRAG** - Code-specific context retrieval
-- **GovCloud Native** - CMMC L3, FedRAMP ready
+- **GovCloud Native** - Designed for CMMC L3 / FedRAMP-aligned controls (certification planned; no filing submitted)
 - **Ephemeral Sandbox Testing** - Per-patch isolation
 - **Domain Expertise** - Security-focused, not generic
 

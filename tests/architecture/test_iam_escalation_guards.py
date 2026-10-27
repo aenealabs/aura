@@ -702,7 +702,10 @@ def _run_account_check(tmp_path, env: str, caller: str, ssm_value: str | None):
     env_vars = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
     return subprocess.run(
         [str(REPO / "deploy" / "scripts" / "validate-account-id.sh"), env, caller],
-        capture_output=True, text=True, env=env_vars, check=False,
+        capture_output=True,
+        text=True,
+        env=env_vars,
+        check=False,
     )
 
 

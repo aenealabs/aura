@@ -5,6 +5,8 @@
 **Decision Makers:** Platform Architecture Team
 **Context:** ADR-049 Phase 0 Prerequisite
 
+> **Implementation status (October 2026):** The scheme is implemented, at different paths than the listings below: `src/services/licensing/license_service.py` (Ed25519 offline validation), `src/services/licensing/hardware_fingerprint.py`, `src/services/licensing/offline_validator.py`, `src/services/licensing/fips_compliance.py`, `src/services/edition_service.py` and the `/api/v1/edition` routes in `src/api/edition_endpoints.py`. Tests: `tests/test_licensing_service.py`, `tests/services/test_licensing/test_license_service.py`, `tests/test_edition_service.py`. The files `src/licensing/feature_gate.py`, `tests/licensing/test_license_service.py` and `tests/integration/test_feature_gating.py` named below do not exist; there is no separate feature-gate module. Note: the HTTP path (`POST /api/v1/edition/license/validate`) calls `EditionService.validate_license` (`src/services/edition_service.py:219-285`), which only checks the key format (`AURA-{edition}-{org}-{signature}`) and does not verify the Ed25519 signature or expiry; cryptographic verification is performed only by the CLI path (`src/cli/main.py:419,605`) through `LicenseService`/`OfflineLicenseValidator`.
+
 ---
 
 ## Executive Summary

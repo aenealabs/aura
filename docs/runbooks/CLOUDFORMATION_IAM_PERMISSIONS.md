@@ -228,12 +228,12 @@ aws cloudformation update-stack \
   --stack-name aura-codebuild-application-dev \
   --template-body file://deploy/cloudformation/codebuild-application.yaml \
   --capabilities CAPABILITY_NAMED_IAM \
-  --profile aura-admin
+  --profile aura-breakglass-dev
 
 # Step 3: Wait for completion
 aws cloudformation wait stack-update-complete \
   --stack-name aura-codebuild-application-dev \
-  --profile aura-admin
+  --profile aura-breakglass-dev
 
 # Step 4: Verify the role policy was updated
 aws iam get-role-policy \
@@ -244,7 +244,7 @@ aws iam get-role-policy \
 # Step 5: Re-run the failed CodeBuild
 aws codebuild start-build \
   --project-name aura-application-deploy-dev \
-  --profile aura-admin
+  --profile aura-breakglass-dev
 ```
 
 ---

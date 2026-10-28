@@ -120,6 +120,7 @@ Resources:
   NeuralMemoryInstanceRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-neural-memory-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

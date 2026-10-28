@@ -6,18 +6,21 @@ This guide provides an overview of the Aura Platform API for developers integrat
 
 ## API Overview
 
-Aura exposes a RESTful API for programmatic access to platform features.
+Aura exposes a RESTful API for programmatic access to platform features. The authoritative list of mounted routes and schemas is the OpenAPI document served by the API at `/docs`, `/redoc`, and `/openapi.json`.
+
+> **Implementation status:** Sections marked **(Planned)** below describe routes that are not mounted today: the `/vulnerabilities` routes and the `/autonomy` routes. The chat assistant is served by a separate API Gateway + Lambda stack, not by the main API. Response bodies are returned without the `status`/`data` envelope shown in some examples; see [Response Format](#response-format).
 
 ### Base URLs
 
 | Environment | URL |
 |-------------|-----|
-| Production | `https://api.aenealabs.com/api/v1` |
-| Development | `https://api.dev.aenealabs.com/api/v1` |
+| Any environment | `https://{your-aura-api-host}/api/v1` |
+
+Hostnames are deployment-specific (DEV and QA run in AWS Commercial Cloud). Health probes are served at the host root (`/health`).
 
 ### Authentication
 
-All API requests require authentication via JWT tokens from AWS Cognito.
+API requests are authenticated with JWT tokens from AWS Cognito. Routers that declare the `get_current_user` dependency (approvals, repositories, OAuth connections, dashboards, and others) reject requests without a valid token; several routers (including settings, environments' admin views, team, onboarding, integrations, and model router) do not yet enforce authentication on every route.
 
 **Headers Required**:
 
@@ -28,7 +31,9 @@ Content-Type: application/json
 
 ### Response Format
 
-All responses follow this structure:
+**Current behavior:** successful responses return the endpoint's response model directly as JSON (no envelope). Errors return `{"error": "...", "status_code": 404, "path": "...", "request_id": "..."}`; request-validation failures return FastAPI's `422` body (`{"detail": [...]}`).
+
+The `status`/`data` envelope used in the examples in this guide is a **Planned** format; read the examples for field meaning, not for the literal wrapper:
 
 ```json
 {
@@ -54,23 +59,17 @@ Check platform health status.
 ```json
 {
   "status": "healthy",
-  "components": {
-    "api": "healthy",
-    "neptune": "healthy",
-    "opensearch": "healthy",
-    "bedrock": "healthy"
-  }
+  "timestamp": "2025-12-16T12:00:00Z"
 }
 ```
 
-| Status Code | Meaning |
-|-------------|---------|
-| 200 | All systems healthy |
-| 503 | One or more systems degraded |
+`/health` is a lightweight load-balancer check. Per-component detail is available at `GET /health/detailed`, and Kubernetes probes at `/health/live`, `/health/ready`, and `/health/startup` (the readiness and startup probes return `503` when the service is not ready).
 
 ---
 
-### Vulnerabilities
+### Vulnerabilities (Planned)
+
+> No `/vulnerabilities` routes are mounted today. Vulnerability details reach users through approval requests (`GET /approvals`, `vulnerability` field). The routes below are a planned design.
 
 #### List Vulnerabilities
 
@@ -172,6 +171,8 @@ Check platform health status.
 #### List Pending Approvals
 
 **Endpoint**: `GET /approvals`
+
+Query parameters: `status` (`pending`, `approved`, `rejected`), `severity`, and `limit` (default 50, max 200). Approve, reject, and cancel require the `security-engineer` or `admin` role; reviewer identity comes from the token, and self-approval is rejected.
 
 **Query Parameters**:
 
@@ -452,7 +453,9 @@ Check platform health status.
 
 ---
 
-### Autonomy Policies
+### Autonomy Policies (Planned)
+
+> The autonomy policy router (`src/api/autonomy_endpoints.py`) exists in the codebase but is not mounted in `src/api/main.py`, so `/autonomy/*` routes return `404` today. HITL approval settings are available at `GET/PUT /settings/hitl`.
 
 #### Get Current Policy
 
@@ -558,6 +561,8 @@ Check platform health status.
 
 ### Chat Assistant
 
+> The chat assistant is served by a separate API Gateway REST API and Lambda functions (`deploy/cloudformation/chat-assistant.yaml`, `src/lambda/chat/`), not by the main `/api/v1` service. Its base URL is the chat API Gateway endpoint configured in the console as `VITE_CHAT_API_URL`; when that variable is not set at build time, the console uses built-in mock chat responses.
+
 #### Send Message
 
 **Endpoint**: `POST /chat/message`
@@ -591,7 +596,7 @@ Check platform health status.
 
 #### WebSocket Connection
 
-**Endpoint**: `wss://api.aenealabs.com/api/v1/chat/ws`
+**Endpoint**: the chat stack's API Gateway WebSocket URL (configured in the console as `VITE_CHAT_WS_URL`)
 
 Connect for real-time streaming responses.
 
@@ -601,7 +606,7 @@ Connect for real-time streaming responses.
 
 ### Job Streaming
 
-**Endpoint**: `wss://api.aenealabs.com/api/v1/orchestrate/{job_id}/stream`
+**Endpoint**: `wss://{your-aura-api-host}/api/v1/orchestrate/{job_id}/stream`
 
 Connect to receive real-time job updates.
 
@@ -635,6 +640,19 @@ Connect to receive real-time job updates.
 
 ### Error Response Format
 
+**Current format:**
+
+```json
+{
+  "error": "Invalid severity value",
+  "status_code": 400,
+  "path": "/api/v1/approvals",
+  "request_id": "6f1c..."
+}
+```
+
+The structured format below, and the string error codes in the next table, are **Planned**:
+
 ```json
 {
   "status": "error",
@@ -666,15 +684,20 @@ Connect to receive real-time job updates.
 
 | Endpoint Category | Limit |
 |-------------------|-------|
+| Public endpoints | 100 requests/minute |
 | Standard endpoints | 60 requests/minute |
-| Critical operations (approve/reject) | 2 requests/minute |
+| Sensitive operations | 10 requests/minute |
 | Admin operations | 5 requests/minute |
+| Critical operations | 2 requests/minute |
+| Webhook endpoints | 200 requests/minute |
+
+Limits apply only to routes that declare a rate-limit dependency, and counters are kept in memory per API replica.
 
 ---
 
 ## Pagination
 
-All list endpoints support pagination:
+**Current behavior:** pagination parameters are endpoint-specific; many list routes accept only `limit` and return the full result set up to that limit (for example `GET /approvals?limit=50`). The `limit`/`offset` scheme below is **Planned** as a uniform convention.
 
 | Parameter | Default | Max |
 |-----------|---------|-----|
@@ -697,6 +720,8 @@ All list endpoints support pagination:
 ---
 
 ## Filtering and Sorting
+
+> The `/vulnerabilities` examples in this section are **Planned**. Filters on implemented routes are endpoint-specific query parameters listed in `/docs`; there is no generic `sort` parameter.
 
 ### Filter Syntax
 
@@ -723,19 +748,18 @@ GET /vulnerabilities?sort=created_at:desc
 
 ### TypeScript/JavaScript SDK
 
+The TypeScript SDK lives in `sdk/typescript/` (package `@aenealabs/aura-sdk`, version 0.2.0). The client exposes `extension`, `approvals`, `incidents`, and `settings` APIs; there is no `vulnerabilities` client because no `/vulnerabilities` route exists. Authenticate with `jwtToken` (the `apiKey` option sends an `X-API-Key` header that the API does not accept).
+
 ```typescript
 import { AuraClient } from '@aenealabs/aura-sdk';
 
 const client = new AuraClient({
-  baseUrl: 'https://api.aenealabs.com/api/v1',
-  token: 'your-jwt-token'
+  baseUrl: 'https://{your-aura-api-host}',
+  jwtToken: 'your-jwt-token'
 });
 
-// List vulnerabilities
-const vulns = await client.vulnerabilities.list({
-  severity: 'HIGH',
-  status: 'OPEN'
-});
+// List approval requests
+const approvals = await client.approvals.list();
 
 // Approve a patch
 await client.approvals.approve('approval-123', {
@@ -744,6 +768,8 @@ await client.approvals.approve('approval-123', {
 ```
 
 ### React Hooks
+
+The hooks are exported from `@aenealabs/aura-sdk/react`. `useVulnerabilities` reads findings from the IDE extension routes (`/api/v1/extension/findings`), which currently return placeholder pattern-matching results.
 
 ```typescript
 import { useApprovals, useVulnerabilities } from '@aenealabs/aura-sdk/react';

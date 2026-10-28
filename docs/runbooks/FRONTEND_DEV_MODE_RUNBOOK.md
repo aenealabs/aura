@@ -272,7 +272,7 @@ VITE_DEV_MODE=false
 
 ```bash
 # Fetch Cognito configuration from SSM Parameter Store (no hardcoded values!)
-export AWS_PROFILE=aura-admin
+export AWS_PROFILE=aura-breakglass-dev
 VITE_COGNITO_USER_POOL_ID=$(aws ssm get-parameter --name /aura/dev/cognito/user-pool-id --query Parameter.Value --output text)
 VITE_COGNITO_CLIENT_ID=$(aws ssm get-parameter --name /aura/dev/cognito/client-id --query Parameter.Value --output text)
 VITE_COGNITO_DOMAIN=$(aws ssm get-parameter --name /aura/dev/cognito/domain --query Parameter.Value --output text)

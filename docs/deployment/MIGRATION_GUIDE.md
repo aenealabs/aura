@@ -100,7 +100,7 @@ Week 6: Cleanup (Optional)
 - [ ] Docker/Podman available for ECR migration
 - [ ] AWS SSO configured for Management Account
 - [ ] Repository cloned with latest code
-- [ ] Sufficient IAM permissions (AdministratorAccess)
+- [ ] `AuraBreakGlass` access to the target account for the one-time migration steps (`AuraDeployer` for routine deploys afterwards; AURA-CTL-005)
 
 ### 0.2 Create Migration Artifacts Directory
 
@@ -113,7 +113,7 @@ cd /path/to/aura
 
 ```bash
 # Set source account profile
-export AWS_PROFILE=aura-admin
+export AWS_PROFILE=aura-breakglass   # organization-level, one-time (AuraBreakGlass)
 export SOURCE_ACCOUNT_ID=123456789012
 
 # Export inventory
@@ -129,7 +129,7 @@ export SOURCE_ACCOUNT_ID=123456789012
 
 ```bash
 # From Management Account
-export AWS_PROFILE=aura-admin
+export AWS_PROFILE=aura-breakglass   # organization-level, one-time (AuraBreakGlass)
 
 # Create account
 aws organizations create-account \
@@ -177,9 +177,8 @@ Via AWS Console (Management Account):
 2. Select **AWS accounts** in left nav
 3. Check the new `aenealabs-dev-workload` account
 4. Click **Assign users or groups**
-5. Select your admin user/group
-6. Select `AdministratorAccess` permission set
-7. Click **Submit**
+5. Add the new account ID to `deploy/cloudformation/identity-center-permission-sets.yaml` (management account) and redeploy it, which assigns `AuraDeployer`, `AuraReadOnly` and `AuraBreakGlass`
+6. Use `AuraBreakGlass` for the one-time migration steps below
 
 ### 1.4 Configure AWS CLI Profile
 
@@ -187,25 +186,25 @@ Via AWS Console (Management Account):
 # Add to ~/.aws/config
 cat >> ~/.aws/config << EOF
 
-[profile aura-admin-target]
+[profile aura-breakglass-target]
 sso_session = aenealabs
 sso_account_id = $NEW_ACCOUNT_ID
-sso_role_name = AdministratorAccess
+sso_role_name = AuraBreakGlass
 region = us-east-1
 output = json
 EOF
 
 # Login to new account
-aws sso login --profile aura-admin-target
+aws sso login --profile aura-breakglass-target
 
 # Verify access
-aws sts get-caller-identity --profile aura-admin-target
+aws sts get-caller-identity --profile aura-breakglass-target
 ```
 
 ### 1.5 Deploy Bootstrap Infrastructure
 
 ```bash
-export AWS_PROFILE=aura-admin-target
+export AWS_PROFILE=aura-breakglass-target
 
 # Get SSO Admin Role ARN
 ADMIN_ROLE_ARN=$(aws iam list-roles \
@@ -273,8 +272,8 @@ aws cloudformation update-stack \
 
 ```bash
 # Set environment variables
-export SOURCE_PROFILE=aura-admin
-export TARGET_PROFILE=aura-admin-target
+export SOURCE_PROFILE=aura-breakglass   # AuraBreakGlass in the source account
+export TARGET_PROFILE=aura-breakglass-target
 export ENVIRONMENT=dev
 
 # Step 1: Create snapshot in source account
@@ -359,7 +358,7 @@ POST _snapshot/migration-repo/migration-snapshot-20260110/_restore
 ### 3.1 Deploy CI/CD Pipeline
 
 ```bash
-export AWS_PROFILE=aura-admin-target
+export AWS_PROFILE=aura-breakglass-target
 
 # Step 1: Migrate ECR images
 ./deploy/scripts/migration/migrate-cicd-pipeline.sh ecr migrate
@@ -428,13 +427,13 @@ aws cloudformation list-stacks \
 
 # Compare with source
 SOURCE_COUNT=$(aws cloudformation list-stacks \
-  --profile aura-admin \
+  --profile aura-breakglass-dev \
   --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE \
   --query 'length(StackSummaries[?contains(StackName, `aura`)])' \
   --output text)
 
 TARGET_COUNT=$(aws cloudformation list-stacks \
-  --profile aura-admin-target \
+  --profile aura-breakglass-target \
   --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE \
   --query 'length(StackSummaries[?contains(StackName, `aura`)])' \
   --output text)
@@ -454,7 +453,7 @@ echo "Target stacks: $TARGET_COUNT"
 aws eks update-kubeconfig \
   --name aura-cluster-dev \
   --region us-east-1 \
-  --profile aura-admin-target
+  --profile aura-breakglass-target
 
 # Generate environment-specific overlays
 ./deploy/scripts/generate-k8s-config.sh dev us-east-1
@@ -474,8 +473,8 @@ kubectl get pods -n aura-dev
 # Trigger integration test CodeBuild
 aws codebuild start-build --project-name aura-integration-test-dev
 
-# Or run locally
-./deploy/scripts/run-integration-tests.sh dev
+# Or run the integration health check locally (the integration CodeBuild project runs the same scripts)
+./deploy/scripts/integration-health-check.sh
 ```
 
 ---
@@ -521,7 +520,7 @@ aws codebuild start-build --project-name aura-integration-test-dev
    aws codebuild update-project \
      --name aura-coordinator-deploy-dev \
      --environment-variables name=DEPLOYMENT_FROZEN,value=true \
-     --profile aura-admin
+     --profile aura-breakglass-dev
    ```
 
 2. **Final Data Sync**
@@ -553,7 +552,7 @@ aws codebuild start-build --project-name aura-integration-test-dev
 
 ```bash
 # After validation period, delete non-critical resources first
-export AWS_PROFILE=aura-admin
+export AWS_PROFILE=aura-breakglass   # organization-level, one-time (AuraBreakGlass)
 
 # 1. Delete test/temporary stacks
 aws cloudformation delete-stack --stack-name aura-test-env-state-dev
@@ -586,7 +585,7 @@ If issues occur before cutover:
 # Source environment is still active
 # Simply stop using target account and delete stacks
 
-export AWS_PROFILE=aura-admin-target
+export AWS_PROFILE=aura-breakglass-target
 
 # Delete all stacks in reverse order
 for stack in security sandbox serverless observability application compute data foundation; do
@@ -614,14 +613,14 @@ If issues occur after cutover:
 # Verify cross-account role exists
 aws iam get-role \
   --role-name aura-cross-account-migration-dev \
-  --profile aura-admin-target
+  --profile aura-breakglass-target
 
 # Test assume role from source
 aws sts assume-role \
   --role-arn "arn:aws:iam::${TARGET_ACCOUNT_ID}:role/aura-cross-account-migration-dev" \
   --role-session-name migration-test \
   --external-id "aura-migration-dev" \
-  --profile aura-admin
+  --profile aura-breakglass-dev
 ```
 
 #### Neptune Snapshot Copy Fails
@@ -630,7 +629,7 @@ aws sts assume-role \
 # Check if snapshot is shared correctly
 aws neptune describe-db-cluster-snapshot-attributes \
   --db-cluster-snapshot-identifier "your-snapshot-id" \
-  --profile aura-admin
+  --profile aura-breakglass-dev
 ```
 
 #### KMS Key Access Denied
@@ -640,7 +639,7 @@ aws neptune describe-db-cluster-snapshot-attributes \
 aws kms get-key-policy \
   --key-id "alias/aura/dev/migration" \
   --policy-name default \
-  --profile aura-admin-target
+  --profile aura-breakglass-target
 ```
 
 #### CodeBuild GitHub Connection Failed

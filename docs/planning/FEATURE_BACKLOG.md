@@ -2,7 +2,7 @@
 
 This document captures feature ideas, autonomous agent capabilities, and future enhancements for the Project Aura platform.
 
-**Last Updated:** December 1, 2025
+**Last Updated:** December 1, 2025 (status labels reviewed against code 2026-10-26)
 
 ---
 
@@ -113,7 +113,9 @@ This document captures feature ideas, autonomous agent capabilities, and future 
 
 ## Platform Enhancements
 
-### [IDEA] Multi-Model Orchestration
+### [IN PROGRESS] Multi-Model Orchestration
+
+> **Status (2026-10-26):** `ModelRouter` (`src/services/model_router.py`, ADR-015 / ADR-028) implements complexity-based routing, per-model pricing, and SSM-unavailable fallback, and is exposed via `src/api/model_router_endpoints.py`. Outside the diagram generator (`src/services/diagrams/ai_diagram_generator.py`) it is not yet in the main agent LLM call path.
 
 Support multiple LLM providers with intelligent routing based on task complexity and cost.
 
@@ -122,7 +124,9 @@ Support multiple LLM providers with intelligent routing based on task complexity
 - Automatic fallback on rate limits or errors
 - Cost tracking per model/task
 
-### [IDEA] Agent Memory & Learning
+### [IN PROGRESS] Agent Memory & Learning
+
+> **Status (2026-10-26):** Episodic and neural memory services exist (ADR-024, ADR-080: `src/services/episodic_memory_service.py`, `src/services/titan_memory_service.py`, `src/services/memory_evolution/`). HITL approve/reject outcomes are recorded as memory episodes. See those ADRs for what is wired into production request paths.
 
 Enable agents to learn from past interactions and improve over time.
 
@@ -131,7 +135,9 @@ Enable agents to learn from past interactions and improve over time.
 - Track false positives/negatives for calibration
 - Feedback loop from HITL decisions
 
-### [IDEA] Real-Time Streaming Analysis
+### [IN PROGRESS] Real-Time Streaming Analysis
+
+> **Status (2026-10-26):** An incremental streaming analysis engine exists as a library (`src/services/streaming/analysis_engine.py`, ADR-079) and a GitHub webhook handler exists (`src/api/webhook_handler.py`), but the streaming engine is not yet called from any API route or worker.
 
 Support real-time analysis of code changes as they're committed.
 
@@ -144,7 +150,9 @@ Support real-time analysis of code changes as they're committed.
 
 ## Integration Ideas
 
-### [IDEA] IDE Plugin
+### [IN PROGRESS] IDE Plugin
+
+> **Status (2026-10-26):** A VS Code extension (`vscode-extension/`: findings, diagnostics, code lens, patches, approvals, graph-context providers) and a PyCharm plugin (`pycharm-plugin/`: scan-file action, findings and graph-context services) exist; see ADR-048.
 
 VS Code / JetBrains plugin for real-time Aura integration.
 
@@ -154,6 +162,8 @@ VS Code / JetBrains plugin for real-time Aura integration.
 - One-click patch application
 
 ### [IDEA] Slack/Teams Bot
+
+> **Status (2026-10-26):** Outbound Slack notifications and approval-request messages exist (`src/services/integrations/slack_adapter.py`); the conversational bot interface described below is not built.
 
 Chat-based interface for common operations.
 

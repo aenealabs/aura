@@ -21,10 +21,17 @@ phases:
     commands:
       - echo "Installing build dependencies..."
       - python -m pip install --upgrade pip
-      - pip3 install cfn-lint setuptools wheel
+      - pip3 install cfn-lint==1.57.2 setuptools wheel
 
   pre_build:
     commands:
+      # ADR-092: deploy through the scoped CloudFormation service role when the
+      # environment opts in by publishing the role ARN in SSM. Unset means the
+      # stacks deploy as this CodeBuild role (the default).
+      - |
+        CFN_ROLE_ARN=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/cfn-service-role-arn" --query Parameter.Value --output text 2>/dev/null || echo "")
+        if [ -n "$CFN_ROLE_ARN" ] && [ "$CFN_ROLE_ARN" != "None" ]; then export CFN_ROLE_ARG="--role-arn $CFN_ROLE_ARN"; else export CFN_ROLE_ARG=""; fi
+        echo "CloudFormation service role: ${CFN_ROLE_ARN:-none, deploying as the CodeBuild role}"
       - echo "=========================================="
       - echo "Serverless Layer Deployment"
       - echo "=========================================="
@@ -32,24 +39,24 @@ phases:
 
       # Validate templates
       - echo "Validating serverless layer templates..."
-      - cfn-lint deploy/cloudformation/threat-intel-scheduler.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/hitl-scheduler.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/hitl-callback.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/a2a-infrastructure.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/agent-queues.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/orchestrator-dispatcher.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/codebuild-runbook-agent.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/dns-blocklist-lambda.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/runbook-agent.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/checkpoint-dynamodb.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/checkpoint-websocket.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/serverless-permission-boundary.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/threat-intel-scheduler.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/hitl-scheduler.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/hitl-callback.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/a2a-infrastructure.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/agent-queues.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/orchestrator-dispatcher.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/codebuild-runbook-agent.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/dns-blocklist-lambda.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/runbook-agent.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/checkpoint-dynamodb.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/checkpoint-websocket.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/serverless-permission-boundary.yaml --ignore-checks W3002,W1020 || exit 1
       # cloudtrail.yaml removed - Organization CloudTrail deployed to management account (ADR-059)
-      - cfn-lint deploy/cloudformation/iam-security-alerting.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/scheduling-infrastructure.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/gpu-scheduler-infrastructure.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/constitutional-audit-queue.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/constitutional-ai-evaluation.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/iam-security-alerting.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/scheduling-infrastructure.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/gpu-scheduler-infrastructure.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/constitutional-audit-queue.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/constitutional-ai-evaluation.yaml --ignore-checks W3002,W1020 || exit 1
       - echo "Template validation complete"
 
       # Source CloudFormation deployment helpers
@@ -85,7 +92,7 @@ phases:
       - echo "Deploying Serverless Permission Boundary (prerequisite for Lambda roles)..."
       - PERMISSION_BOUNDARY_STACK="${PROJECT_NAME}-serverless-permission-boundary-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $PERMISSION_BOUNDARY_STACK \
           --template-file deploy/cloudformation/serverless-permission-boundary.yaml \
           --parameter-overrides \
@@ -203,7 +210,7 @@ phases:
           PARAM_OVERRIDES="$PARAM_OVERRIDES SNSTopicArn=$SNS_TOPIC_ARN"
         fi
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $THREAT_INTEL_STACK \
           --template-file deploy/cloudformation/threat-intel-scheduler.yaml \
           --parameter-overrides $PARAM_OVERRIDES \
@@ -219,7 +226,7 @@ phases:
       - |
         if [ -f "deploy/cloudformation/hitl-scheduler.yaml" ]; then
           echo "Deploying HITL Expiration Scheduler..."
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $HITL_STACK \
             --template-file deploy/cloudformation/hitl-scheduler.yaml \
             --parameter-overrides \
@@ -242,7 +249,7 @@ phases:
       - |
         if [ -f "deploy/cloudformation/hitl-callback.yaml" ]; then
           echo "Deploying HITL Approval Callback..."
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $CALLBACK_STACK \
             --template-file deploy/cloudformation/hitl-callback.yaml \
             --parameter-overrides \
@@ -272,7 +279,7 @@ phases:
           if [ -n "$SNS_TOPIC_ARN" ]; then
             A2A_PARAM_OVERRIDES="$A2A_PARAM_OVERRIDES AlertEmail=$ALERT_EMAIL"
           fi
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $A2A_STACK \
             --template-file deploy/cloudformation/a2a-infrastructure.yaml \
             --parameter-overrides $A2A_PARAM_OVERRIDES \
@@ -294,7 +301,7 @@ phases:
           AGENT_QUEUES_OVERRIDES="$AGENT_QUEUES_OVERRIDES AlertEmail=$ALERT_EMAIL"
         fi
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $AGENT_QUEUES_STACK \
           --template-file deploy/cloudformation/agent-queues.yaml \
           --parameter-overrides $AGENT_QUEUES_OVERRIDES \
@@ -329,7 +336,7 @@ phases:
           DISPATCHER_OVERRIDES="$DISPATCHER_OVERRIDES OIDCProviderArn=$OIDC_PROVIDER_ARN OIDCProviderURL=$OIDC_PROVIDER_URL"
         fi
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $DISPATCHER_STACK \
           --template-file deploy/cloudformation/orchestrator-dispatcher.yaml \
           --parameter-overrides $DISPATCHER_OVERRIDES \
@@ -352,7 +359,7 @@ phases:
           BLOCKLIST_OVERRIDES="$BLOCKLIST_OVERRIDES EKSOIDCProviderArn=$OIDC_PROVIDER_ARN EKSOIDCProviderURL=$OIDC_PROVIDER_URL"
         fi
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $BLOCKLIST_STACK \
           --template-file deploy/cloudformation/dns-blocklist-lambda.yaml \
           --parameter-overrides $BLOCKLIST_OVERRIDES \
@@ -371,7 +378,7 @@ phases:
           RUNBOOK_OVERRIDES="$RUNBOOK_OVERRIDES AlertEmail=$ALERT_EMAIL"
         fi
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $RUNBOOK_STACK \
           --template-file deploy/cloudformation/runbook-agent.yaml \
           --parameter-overrides $RUNBOOK_OVERRIDES \
@@ -389,7 +396,7 @@ phases:
       - echo "Deploying Checkpoint DynamoDB Tables..."
       - CHECKPOINT_DB_STACK="${PROJECT_NAME}-checkpoint-dynamodb-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $CHECKPOINT_DB_STACK \
           --template-file deploy/cloudformation/checkpoint-dynamodb.yaml \
           --parameter-overrides \
@@ -405,7 +412,7 @@ phases:
       - echo "Deploying Checkpoint WebSocket API..."
       - CHECKPOINT_WS_STACK="${PROJECT_NAME}-checkpoint-websocket-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $CHECKPOINT_WS_STACK \
           --template-file deploy/cloudformation/checkpoint-websocket.yaml \
           --parameter-overrides \
@@ -439,7 +446,7 @@ phases:
           IAM_ALERTING_OVERRIDES="$IAM_ALERTING_OVERRIDES AlertEmail=$ALERT_EMAIL"
         fi
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $IAM_ALERTING_STACK \
           --template-file deploy/cloudformation/iam-security-alerting.yaml \
           --parameter-overrides $IAM_ALERTING_OVERRIDES \
@@ -453,7 +460,7 @@ phases:
       - echo "Deploying Agent Scheduling Infrastructure..."
       - SCHEDULING_STACK="${PROJECT_NAME}-scheduling-infrastructure-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $SCHEDULING_STACK \
           --template-file deploy/cloudformation/scheduling-infrastructure.yaml \
           --parameter-overrides \
@@ -486,7 +493,7 @@ phases:
       - |
         GPU_SCHED_INFRA_STACK="${PROJECT_NAME}-gpu-scheduler-infra-${ENVIRONMENT}"
         echo "Deploying GPU Scheduler Infrastructure (Layer 6.15)..."
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $GPU_SCHED_INFRA_STACK \
           --template-file deploy/cloudformation/gpu-scheduler-infrastructure.yaml \
           --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME \
@@ -500,7 +507,7 @@ phases:
       - |
         CAI_AUDIT_STACK="${PROJECT_NAME}-constitutional-audit-queue-${ENVIRONMENT}"
         echo "Deploying Constitutional AI Audit Queue (Layer 6.18)..."
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $CAI_AUDIT_STACK \
           --template-file deploy/cloudformation/constitutional-audit-queue.yaml \
           --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME LambdaS3Bucket=$LAMBDA_BUCKET LambdaS3Key=$CONSTITUTIONAL_EVAL_S3_KEY \
@@ -519,7 +526,7 @@ phases:
         if [ -n "$ALERT_EMAIL" ]; then
           CAI_EVAL_PARAMS="$CAI_EVAL_PARAMS AlertEmail=$ALERT_EMAIL"
         fi
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $CAI_EVAL_STACK \
           --template-file deploy/cloudformation/constitutional-ai-evaluation.yaml \
           --parameter-overrides $CAI_EVAL_PARAMS \
@@ -537,8 +544,8 @@ phases:
       - |
         MA_PIPELINE_STACK="${PROJECT_NAME}-model-assurance-pipeline-${ENVIRONMENT}"
         echo "Deploying Model Assurance Pipeline (Layer 6.7 / ADR-088)..."
-        cfn-lint deploy/cloudformation/model-assurance-pipeline.yaml --ignore-checks W3002,W1020,W7001 || echo "warnings (non-blocking)"
-        aws cloudformation deploy \
+        ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/model-assurance-pipeline.yaml --ignore-checks W3002,W1020,W7001 || exit 1
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $MA_PIPELINE_STACK \
           --template-file deploy/cloudformation/model-assurance-pipeline.yaml \
           --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME \

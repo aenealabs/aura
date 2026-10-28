@@ -1,10 +1,12 @@
 # ADR-030: Chat Assistant Architecture - AI-Powered Platform Support
 
-**Status:** Deployed
+**Status:** Deployed (4 of the 8 tools return hardcoded data)
 **Date:** 2025-12-08
 **Deployed:** 2025-12-10
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-015 (Tiered LLM Strategy), ADR-024 (Titan Neural Memory), ADR-029 (Agent Optimization Roadmap)
+
+> **Status note (2026-10-26).** The Lambda handlers (`src/lambda/chat/`), `deploy/cloudformation/chat-assistant.yaml` and the frontend chat components (`frontend/src/components/chat/`) exist. In `src/lambda/chat/tools.py`, `get_vulnerability_metrics`, `get_agent_status`, `get_approval_queue` and `search_documentation` query DynamoDB, CloudWatch or OpenSearch (the last three fall back to mock data on error), while `get_incident_details` (line 831), `generate_report` (line 881), `query_code_graph` (line 947) and `get_sandbox_status` (line 1003) return hardcoded data. `_get_vulnerability_metrics` scans the anomalies table without filtering on `tenant_id`, so the tenant-isolation acceptance criterion is not met for that tool.
 
 ---
 
@@ -16,7 +18,7 @@ This ADR defines the architecture for Aura Assistant, a built-in AI chat interfa
 - 24/7 AI-powered platform support without human intervention
 - ~$550/month operating cost for 100 users (30% savings through optimization)
 - Sub-3 second response times for typical queries
-- Complete tenant isolation and CMMC compliance
+- Complete tenant isolation and CMMC-aligned controls (not certified)
 - GovCloud compatible architecture
 - 8 specialized tools for platform queries (metrics, docs, reports, incidents)
 

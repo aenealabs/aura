@@ -28,6 +28,7 @@ Where `N` = layer number (1-8) and `S` = sub-layer number within that layer.
 
 | Layer | Name | Major Services |
 |-------|------|----------------|
+| 0 | Bootstrap | Permission boundaries (0.1), Identity Center permission sets (0.2), bootstrap CodeBuild; deployed by the operator, not the pipeline |
 | 1 | Foundation | VPC, IAM, WAF, VPC Endpoints, Network Services |
 | 2 | Data | Neptune, OpenSearch, DynamoDB, S3 |
 | 3 | Compute | EKS, Node Groups, ECR, IRSA |
@@ -112,6 +113,21 @@ NewPermissionsManagedPolicy:
 
 ---
 
+## IAM Roles - Permission Boundaries Required (AURA-CTL-004)
+
+Every `AWS::IAM::Role` the pipeline creates must declare `PermissionsBoundary`. The deployer boundary on the build roles refuses `iam:CreateRole` without an approved boundary, so a role without one fails to deploy. `tests/architecture/test_iam_escalation_guards.py` fails CI first.
+
+| Role kind | Boundary |
+|---|---|
+| CodeBuild roles (`codebuild-*.yaml`) and the CloudFormation service role (`iam.yaml`) | `!Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-deployer-boundary-${Environment}'` |
+| Runtime roles (EKS, IRSA, ECS tasks, Lambda, Step Functions, service roles) | `...:policy/${ProjectName}-workload-boundary-${Environment}`, or an existing purpose-built boundary (serverless, test-env, ma-sandbox, taint-resolver) |
+
+Both boundaries live in `iam-permission-boundaries.yaml` (Layer 0.1), deployed first by `deploy/scripts/bootstrap-fresh-account.sh`. Adding a new purpose-built boundary means adding it to `DenyRoleWithoutApprovedBoundary` in that template, to `SetApprovedPermissionBoundaryOnProjectRoles` in each `codebuild-*.yaml`, and to `APPROVED_RUNTIME_BOUNDARIES` in the test.
+
+Every `iam:PassRole` grant on a CodeBuild role must be its own statement with an `iam:PassedToService` condition. Do not bundle PassRole with other IAM actions: the condition key exists only on PassRole requests, so it would block the other actions.
+
+---
+
 ## Never Hardcode Environment-Specific Values
 
 - **NEVER hardcode** AWS account IDs, endpoints, cluster names, or other environment-specific values
@@ -166,30 +182,10 @@ non-zero exit fail the step.
 python scripts/validate_iam_actions.py --report
 ```
 
-> **UNRESOLVED CONTRADICTION -- do not treat either half as settled.** This
-> section previously also prescribed, for buildspecs:
-> `cfn-lint template.yaml || echo "cfn-lint warnings (non-blocking)"`.
-> That snippet contradicts the exit-code table directly above it: `|| echo`
-> makes *every* exit code pass, so exit 2 / 6 / 8 ("Fail build" per the table)
-> does not fail the build. The snippet has been removed from the prescription
-> here so the file no longer instructs two incompatible behaviours, but the
-> underlying divergence is real and unresolved in the tree:
->
-> - **PR gate (`.github/workflows/code-quality.yml:145-187`)**: uses the
->   wrapper and fails on non-zero. Matches the table.
-> - **Nightly (`.github/workflows/nightly-iam-validation.yml:47-61`)**: uses
->   the wrapper. Matches the table.
-> - **Buildspecs**: 122 call sites across `deploy/buildspecs/*.yml` still use
->   the bare `cfn-lint ... || echo` form (e.g.
->   `deploy/buildspecs/buildspec-application.yml:50-55`). A template error in a
->   deploy build is therefore swallowed today.
->
-> Deciding which side wins is a real change with real blast radius (converting
-> 122 sites to the wrapper could start failing deploy builds that currently
-> pass), so it is flagged here rather than silently picked. Whoever picks it up
-> should file an issue and either convert the buildspec sites to
-> `./scripts/cfn-lint-wrapper.sh` or amend the table to say buildspec linting is
-> advisory-only -- not leave both statements standing.
+**Buildspecs (resolved 2026-10-26):** every buildspec lints with
+`./scripts/cfn-lint-wrapper.sh <args> || exit 1` and installs `cfn-lint==1.57.2`, so deploy builds
+follow the exit-code table above, like the PR gate and the nightly job. Details and the conversion
+record: `deploy/buildspecs/CLAUDE.md`.
 
 **Known Valid IAM Actions:**
 When cfn-lint reports W3037 for actions not in its database, add verified actions to `scripts/validate_iam_actions.py` KNOWN_VALID_ACTIONS set after confirming they exist in AWS documentation.
@@ -233,7 +229,7 @@ breakdown in `docs/deployment/GITHUB_ACTIONS_SETUP.md`.
 
 ## Fork-Join Parallelism
 
-All 182 CloudFormation templates are independently validatable. When batch-validating templates, each can be linted in an isolated worktree without cross-template dependencies. Use parallel agent work for bulk template updates (e.g., description format migrations, parameter standardization).
+All 181 CloudFormation templates are independently validatable. When batch-validating templates, each can be linted in an isolated worktree without cross-template dependencies. Use parallel agent work for bulk template updates (e.g., description format migrations, parameter standardization).
 
 Reproduce the count (matches `docs/PROJECT_STATUS.md`):
 

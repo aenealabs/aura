@@ -1,8 +1,8 @@
 # Development Assurance for Autonomous Code Remediation
 
 **Product:** Project Aura by Aenea Labs
-**Version:** 1.0
-**Last Updated:** February 2026
+**Version:** 1.1
+**Last Updated:** October 2026
 **Audience:** CTOs, CIOs, Enterprise Security Architects
 
 ---
@@ -13,12 +13,14 @@ Enterprise software organizations face a paradox: the security vulnerabilities a
 
 Project Aura resolves this paradox through a fundamentally different architecture. Rather than bolting governance onto an AI coding tool after the fact, Aura was designed from the ground up as a **governed autonomous remediation platform** -- one in which 10 interlocking governance mechanisms form an unbroken chain from the moment an input enters the system to the moment a patch reaches production. Every AI-generated patch passes through input screening, capability enforcement, autonomy policy evaluation, constitutional output review, deterministic constraint scoring, sandbox validation, human approval, real-time intervention checkpoints, continuous runtime monitoring, and version-controlled policy governance -- before it can modify a single line of production code.
 
+> **Current wiring status (October 2026):** This document describes the target governance chain. Mechanisms wired into the production request path today are Bedrock Guardrails plus the LLM prompt sanitizer on every Bedrock call, A2AS input screening at orchestrator entry, semantic-guardrail Layers 1-2 on ingested repository content, context provenance verification at retrieval, the configurable autonomy framework, sandbox validation, and the HITL approval workflow. Capability governance enforcement, Constitutional AI, the Constraint Geometry Engine on agent output, the runtime agent security platform, and the policy GitOps synchronizer are implemented and tested as libraries but are not yet called from production agent or API paths. Each section below carries its own status line.
+
 **Key Differentiators:**
 
 - **Full-lifecycle governance:** 10 mechanisms spanning pre-execution, post-generation, sandbox validation, and continuous monitoring -- no single point of bypass
 - **Deterministic audit reproducibility:** The Constraint Geometry Engine produces identical scores for identical inputs, satisfying NIST 800-53 forensic requirements
 - **Non-negotiable guardrails:** 5 hardcoded operations (production deployment, credential modification, access control changes, database migrations, infrastructure changes) always require human approval -- enforced via Python `frozenset`, not configuration
-- **Industry-calibrated autonomy:** 7 policy presets map directly to SOX, CMMC, HIPAA, PCI-DSS, and FedRAMP compliance requirements
+- **Industry-calibrated autonomy:** 7 policy presets map to SOX, CMMC, HIPAA, PCI-DSS, and FedRAMP control requirements (aligned controls; Aura holds none of these certifications)
 - **Closed-loop remediation:** Runtime anomalies are detected, traced to source code via Neptune graph traversal, and routed through the full governance pipeline for repair
 
 ---
@@ -97,14 +99,14 @@ Aura implements 10 governance mechanisms organized into four phases of the agent
 **Key Metrics:**
 
 - **Pipeline latency:** ~240ms P95 (6 layers combined)
-- **Threat corpus:** 6,300+ known threat embeddings (2,500+ jailbreaks, 1,500+ prompt injections, 800+ role confusion, 500+ data exfiltration, 600+ indirect injections, 400+ multi-turn attacks)
+- **Threat corpus (planned):** 6,300 target threat embeddings (2,500 jailbreaks, 1,500 prompt injections, 800 role confusion, 500 data exfiltration, 600 indirect injections, 400 multi-turn attacks); the current fallback corpus has 15 entries
 - **Embedding model:** Amazon Titan Embeddings v2 (1024-dim)
 - **Similarity thresholds:** >0.85 cosine similarity = blocked; 0.70-0.85 = escalated to LLM-as-judge
 - **Intent classification:** Claude Haiku classifies into 5 intent categories at 150ms
 - **Multi-turn tracking:** Exponential decay model; manipulation pressure >2.5 triggers HITL escalation
 - **Context Integrity Verifier:** Screens GraphRAG-retrieved code for indirect injection before agent consumption
-- **Test coverage:** 793 tests
-- **Codebase:** ~12,000 lines
+- **Test coverage:** 811 tests
+- **Codebase:** 5,693 lines
 
 **Layer Breakdown:**
 
@@ -117,22 +119,24 @@ Aura implements 10 governance mechanisms organized into four phases of the agent
 | L5 | Multi-Turn Context Analysis (exponential decay manipulation tracking) | 20ms |
 | L6 | Decision and Audit (ThreatAssessment with reasoning + recommended action) | 5ms |
 
-**Enforcement model:** Preventive -- blocked inputs never reach agents.
+**Enforcement model:** Preventive -- blocked inputs never reach agents (target).
+
+**Status (October 2026):** Partial. Layers 1-2 run inline on ingested repository content (`git_ingestion_service.py`). The full 6-layer engine is not yet called on the agent or LLM request path; Layers 3-5 run against in-process mocks unless real OpenSearch, Bedrock, and DynamoDB clients are injected, and no production code injects them. The threat corpus below is the planned target; no corpus loader exists yet. The latency figure is a design target.
 
 ---
 
 ### 3.2 Agent Capability Governance (ADR-066)
 
-**What it does:** Enforces per-agent, per-tool, per-context access control through a capability matrix and runtime enforcement middleware. Every tool invocation by every agent is intercepted, validated against the agent's explicit permission set, and either allowed, denied, or escalated. The system implements a 4-tier tool classification (SAFE, MONITORING, DANGEROUS, CRITICAL) with context-aware permissions -- the same tool may be allowed in a sandbox context but denied in production.
+**What it does:** Enforces per-agent, per-tool, per-context access control through a capability matrix and runtime enforcement middleware. When invoked, the middleware validates a tool call against the agent's explicit permission set and allows, denies, or escalates it. The system implements a 4-tier tool classification (SAFE, MONITORING, DANGEROUS, CRITICAL) with context-aware permissions -- the same tool may be allowed in a sandbox context but denied in production.
 
 **Key Metrics:**
 
 - **Tool classification tiers:** 4 levels (Level 1 SAFE through Level 4 CRITICAL)
-- **Runtime enforcement:** CapabilityEnforcementMiddleware intercepts every tool invocation
+- **Runtime enforcement:** CapabilityEnforcementMiddleware (not yet called from agent or MCP tool paths)
 - **Parent-child inheritance:** Non-escalatory -- child agents cannot exceed parent permissions
 - **Anti-spoofing:** `caller_agent_id` validated against registered session
-- **Test coverage:** 322 tests
-- **Codebase:** ~5,400 lines
+- **Test coverage:** 981 tests
+- **Codebase:** 10,837 lines
 
 **Tool Classification:**
 
@@ -143,7 +147,9 @@ Aura implements 10 governance mechanisms organized into four phases of the agent
 | 3 | DANGEROUS | Deny | Full | `destroy_sandbox`, `commit_changes` |
 | 4 | CRITICAL | Deny + HITL | Full | `deploy_to_production`, `modify_iam_policy` |
 
-**Enforcement model:** Preventive -- denied invocations raise `CapabilityDeniedError` synchronously before execution.
+**Enforcement model:** Preventive -- denied invocations raise `CapabilityDeniedError` synchronously before execution (once wired).
+
+**Status (October 2026):** Library built, not wired. No production module calls the middleware, and the capability-graph API router is not mounted.
 
 ---
 
@@ -176,15 +182,15 @@ Aura implements 10 governance mechanisms organized into four phases of the agent
 
 ### 3.4 Constitutional AI Integration (ADR-063)
 
-**What it does:** A post-generation quality gate that evaluates every agent output against 16 constitutional principles organized by severity. The pipeline uses semantic caching for repeat evaluations, Bedrock Guardrails for fast-fail content filtering, batched Claude Haiku critique for principle violation detection, and Claude Sonnet revision for automated correction. Outputs with unresolvable CRITICAL violations are blocked and escalated to HITL review. An anti-sycophancy principle prevents agents from being manipulated through user pressure.
+**What it does:** A post-generation quality gate that evaluates agent output against 16 constitutional principles organized by severity. The pipeline uses semantic caching for repeat evaluations, Bedrock Guardrails for fast-fail content filtering, batched Claude Haiku critique for principle violation detection, and Claude Sonnet revision for automated correction. Outputs with unresolvable CRITICAL violations are blocked and escalated to HITL review. An anti-sycophancy principle prevents agents from being manipulated through user pressure.
 
 **Key Metrics:**
 
-- **Constitutional principles:** 16 (3 CRITICAL Safety, 2 HIGH Compliance, 1 HIGH Anti-Sycophancy, 2 MEDIUM Transparency, 2 MEDIUM Helpfulness, 4 LOW Code Quality, 1 HIGH Meta/Conflict Resolution)
-- **Pipeline latency:** ~410ms P95
+- **Constitutional principles:** 16 (3 CRITICAL Safety; 2 HIGH Compliance; 1 HIGH and 1 MEDIUM Transparency; 2 MEDIUM and 1 LOW Helpfulness; 1 HIGH and 2 MEDIUM Anti-Sycophancy; 2 MEDIUM Code Quality; 1 HIGH Meta/Conflict Resolution)
+- **Pipeline latency:** 410ms P95 design target
 - **Revision attempts:** Up to 3 iterations (ConstitutionalRevisionService, Claude Sonnet)
 - **CRITICAL violation handling:** Unresolvable violations trigger BLOCK_FOR_HITL
-- **Test coverage:** 463 tests
+- **Test coverage:** 535 tests
 
 **Pipeline Stages:**
 
@@ -197,11 +203,13 @@ Aura implements 10 governance mechanisms organized into four phases of the agent
 
 **Enforcement model:** Corrective (auto-revision of violations) + Preventive (blocks unresolvable CRITICAL violations for HITL review).
 
+**Status (October 2026):** Library built, not wired inline. Agents opt in through `ConstitutionalMixin`, which no production agent class uses yet. The nightly evaluation Lambda (`src/lambda/constitutional_evaluation/`) runs the LLM-as-judge and golden-set checks offline.
+
 ---
 
 ### 3.5 Constraint Geometry Engine (ADR-081)
 
-**What it does:** The sole deterministic decision boundary in the entire agent execution pipeline. The CGE measures every agent output against a 7-axis constraint space using frozen constraint embeddings, SHA-256 cached output embeddings, and pure arithmetic -- guaranteeing that the same input always produces the same Constraint Coherence Score (CCS). This determinism is essential for audit reproducibility under NIST 800-53 forensic requirements. Configurable policy profiles set per-context thresholds, and provenance-aware weighting automatically tightens security constraints when context originates from low-trust sources.
+**What it does:** Designed as the deterministic decision boundary in the agent execution pipeline. The CGE measures agent output against a 7-axis constraint space using frozen constraint embeddings, SHA-256 cached output embeddings, and pure arithmetic -- guaranteeing that the same input always produces the same Constraint Coherence Score (CCS). This determinism is essential for audit reproducibility under NIST 800-53 forensic requirements. Configurable policy profiles set per-context thresholds, and provenance-aware weighting automatically tightens security constraints when context originates from low-trust sources.
 
 **Key Metrics:**
 
@@ -210,8 +218,8 @@ Aura implements 10 governance mechanisms organized into four phases of the agent
 - **Policy profiles:** 4 (default, dod-il5, developer-sandbox, sox-compliant)
 - **Provenance-aware weighting:** Low-trust context raises C3 (Security Policy) weight by 35% and auto-execute threshold from 0.80 to 0.88
 - **Neptune Constraint Graph:** Models REQUIRES, TIGHTENS, RELAXES relationships between constraints
-- **Test coverage:** 358 tests (including 153 parametrized determinism tests)
-- **Codebase:** ~4,500 lines
+- **Test coverage:** 190 tests
+- **Codebase:** 2,976 lines
 
 **Policy Profile Thresholds:**
 
@@ -222,6 +230,8 @@ Aura implements 10 governance mechanisms organized into four phases of the agent
 | developer-sandbox | CCS >= 0.60 | 0.35 - 0.60 | < 0.35 |
 
 **Enforcement model:** Preventive + Deterministic -- below-threshold outputs are blocked, and the same score is produced every time for audit reproducibility.
+
+**Status (October 2026):** Partial. The engine is used by model-assurance scoring and the verification-envelope library; it is not yet applied to agent output in the orchestrator.
 
 ---
 
@@ -281,15 +291,17 @@ Aura implements 10 governance mechanisms organized into four phases of the agent
 
 **Key Metrics:**
 
-- **Traffic interception:** 8 interception points, >99.5% capture rate, <5ms P95 overhead
+- **Traffic interception:** 8 interception points (capture-rate and overhead targets not yet measured in a deployed environment)
 - **Shadow agent detection:** Unregistered agents detected within 60 seconds
 - **Behavioral baselines:** Per-agent statistical profiles across 1h/24h/7d windows; drift alerted within 5 minutes
 - **Automated red teaming:** AURA-ATT&CK taxonomy -- 97 adversarial techniques across 11 MITRE-style categories
 - **Runtime-to-code correlation:** Neptune CALL_GRAPH traversal traces anomalies to source code, generates patches, routes through HITL approval
-- **Test coverage:** 1005 tests
-- **Codebase:** ~10,300 lines
+- **Test coverage:** 1,077 tests
+- **Codebase:** 14,191 lines
 
 **Enforcement model:** Detective (behavioral monitoring and anomaly detection) + Corrective (closed-loop detect, trace, fix, verify pipeline).
+
+**Status (October 2026):** Library built, not wired. No admission webhook, Falco/eBPF feed, or CloudTrail consumer calls these services yet, so the `/api/v1/runtime-security` endpoints return an empty in-memory history.
 
 ---
 
@@ -305,9 +317,11 @@ Aura implements 10 governance mechanisms organized into four phases of the agent
 - **Graph synchronization:** Neptune capability graph updated within 30 seconds of deployment
 - **Drift detection:** Daily PolicyGraphReconciler compares repository to runtime
 - **Rollback:** Instant rollback on anomaly detection
-- **Test coverage:** 98 tests
+- **Test coverage:** Not separately tracked
 
 **Enforcement model:** Preventive (CI blocks bad policy changes) + Detective (drift detection between repository and runtime).
+
+**Status (October 2026):** Partial. Policy validation and graph-sync code exists in `src/services/capability_governance/`, but no CI workflow runs the 3-stage policy pipeline and the synchronizer is not reachable from a deployed entry point.
 
 ---
 
@@ -321,24 +335,24 @@ The following matrix shows when each governance mechanism acts and how it enforc
 
 | # | Mechanism | Preventive | Detective | Corrective | When It Acts |
 |---|-----------|:----------:|:---------:|:----------:|--------------|
-| 1 | Semantic Guardrails Engine | Yes | -- | -- | Before input reaches any agent |
-| 2 | Agent Capability Governance | Yes | -- | -- | On every tool invocation |
+| 1 | Semantic Guardrails Engine | Yes | -- | -- | Before input reaches any agent (Layers 1-2 on ingested content today) |
+| 2 | Agent Capability Governance | Yes | -- | -- | On every tool invocation (target; not yet wired) |
 | 3 | Configurable Autonomy Framework | Yes | Yes | -- | Before execution of governed operations |
-| 4 | Constitutional AI Integration | Yes | -- | Yes | After agent output generation |
-| 5 | Constraint Geometry Engine | Yes | -- | -- | After constitutional revision, before delivery |
+| 4 | Constitutional AI Integration | Yes | -- | Yes | After agent output generation (target; not yet wired) |
+| 5 | Constraint Geometry Engine | Yes | -- | -- | After constitutional revision, before delivery (target; not yet wired) |
 | 6 | Sandbox Security | Yes | -- | -- | Before patch reaches human reviewers |
 | 7 | HITL Approval Workflow | Yes | -- | -- | Before deployment to production |
 | 8 | Real-Time Agent Intervention | Yes | -- | Yes | Per-action during agent execution |
-| 9 | Runtime Agent Security Platform | -- | Yes | Yes | Continuously during and after execution |
-| 10 | Policy-as-Code GitOps | Yes | Yes | -- | On policy changes and daily reconciliation |
+| 9 | Runtime Agent Security Platform | -- | Yes | Yes | Continuously during and after execution (target; not yet wired) |
+| 10 | Policy-as-Code GitOps | Yes | Yes | -- | On policy changes and daily reconciliation (target; partial) |
 
-**Defense-in-depth property:** An unauthorized change must bypass all 7 preventive mechanisms, evade 3 detective mechanisms, and resist 2 corrective mechanisms to reach production undetected. No single mechanism failure creates a viable bypass path.
+**Defense-in-depth property (target design):** When all mechanisms are wired, an unauthorized change must bypass all 7 preventive mechanisms, evade 3 detective mechanisms, and resist 2 corrective mechanisms to reach production undetected. Today the HITL approval workflow, sandbox validation, autonomy framework, and input screening carry the preventive load; mechanisms marked "not yet wired" above do not yet contribute.
 
 ---
 
 ## 5. Compliance Mapping
 
-The following matrix maps each governance mechanism to the specific compliance framework controls it satisfies.
+The following matrix maps each governance mechanism to the compliance framework controls it is designed to support. These are aligned control mappings, not certifications or attestations: Aura holds no CMMC, HIPAA, PCI-DSS, or FedRAMP certification, and no certification filing has been submitted (as of October 2026).
 
 | # | Mechanism | SOX 404 | NIST 800-53 | CMMC Level 3 | HIPAA | PCI-DSS 4.0 | FedRAMP |
 |---|-----------|:-------:|:-----------:|:------------:|:-----:|:-----------:|:-------:|
@@ -353,7 +367,7 @@ The following matrix maps each governance mechanism to the specific compliance f
 | 9 | Runtime Security | Monitoring | SI-4 (Monitoring) | AU.L2-3.3.1 | 164.312(b) | 10.6 | SI-4 |
 | 10 | Policy GitOps | Config Mgmt | CM-2 (Baseline Config) | CM.L2-3.4.1 | 164.312(c) | 6.5.1 | CM-2 |
 
-**Audit retention:** All governance decisions are logged to DynamoDB with 7-year retention, satisfying SOX record retention requirements, HIPAA audit controls, and PCI-DSS log retention mandates.
+**Audit retention:** All governance decisions are logged to DynamoDB with 7-year retention, designed to support SOX record retention requirements, HIPAA audit controls, and PCI-DSS log retention mandates.
 
 ---
 
@@ -409,7 +423,7 @@ AI coding assistants generate code suggestions but operate without governance in
 | Output quality gate | None | Constitutional AI (16 principles) + deterministic CGE |
 | Sandbox validation | None | 4-layer isolated environment, 5-category pipeline |
 | Human approval workflow | None | 5-stage sequential approval with escalation |
-| Compliance certification | None | SOX, CMMC, HIPAA, PCI-DSS, FedRAMP mapping |
+| Compliance control mapping | None | SOX, CMMC, HIPAA, PCI-DSS, FedRAMP control mapping (no certifications held) |
 | Audit reproducibility | Not applicable | Deterministic Constraint Coherence Scoring |
 
 ### vs. AI Security Platforms (Emerging Competitors)
@@ -441,25 +455,25 @@ All deployment models support the full governance pipeline. Air-gapped deploymen
 
 | # | Mechanism | ADR | Tests | Lines of Code |
 |---|-----------|-----|------:|------:|
-| 1 | Semantic Guardrails Engine | ADR-065 | 793 | ~12,000 |
-| 2 | Agent Capability Governance | ADR-066 | 322 | ~5,400 |
+| 1 | Semantic Guardrails Engine | ADR-065 | 811 | 5,693 |
+| 2 | Agent Capability Governance | ADR-066 | 981 | 10,837 |
 | 3 | Configurable Autonomy Framework | ADR-032 | -- | -- |
-| 4 | Constitutional AI Integration | ADR-063 | 463 | -- |
-| 5 | Constraint Geometry Engine | ADR-081 | 358 | ~4,500 |
+| 4 | Constitutional AI Integration | ADR-063 | 535 | 6,913 |
+| 5 | Constraint Geometry Engine | ADR-081 | 190 | 2,976 |
 | 6 | Sandbox Security | -- | -- | -- |
 | 7 | HITL Approval Workflow | -- | -- | -- |
 | 8 | Real-Time Agent Intervention | ADR-042 | -- | -- |
-| 9 | Runtime Agent Security Platform | ADR-083 | 848 | ~10,300 |
-| 10 | Policy-as-Code GitOps | ADR-070 | 98 | ~1,200 |
-| | **Totals (governance mechanisms with tracked metrics)** | | **2,882+** | **~33,400+** |
+| 9 | Runtime Agent Security Platform | ADR-083 | 1,077 | 14,191 |
+| 10 | Policy-as-Code GitOps | ADR-070 | -- | -- |
+| | **Totals (governance mechanisms with tracked metrics, October 2026)** | | **3,594** | **40,610** |
 
 ### Platform-Wide Metrics
 
-- **Total platform tests:** 23,165+ (16,499 passed, 6,666 skipped, 0 failed)
+- **Total platform tests:** 27,161 collected (`pytest --collect-only`, 2026-10-26)
 - **Total lines of code:** 439,000+ (193K Python, 142K Tests, 53K JS/JSX, 68K Config/Infrastructure)
 - **Architecture Decision Records:** 83 deployed/accepted
 - **CloudFormation stacks:** 137 deployed (dev), 111 deployed (QA)
-- **Threat corpus size:** 6,300+ curated threat embeddings across 6 attack categories
+- **Threat corpus size:** 6,300 curated threat embeddings planned across 6 attack categories (not yet loaded)
 - **Industry policy presets:** 7 (defense, financial services, healthcare, government, fintech, enterprise, internal tools)
 - **Autonomy levels:** 4 configurable + 5 hardcoded non-configurable guardrails
 - **Compliance frameworks mapped:** SOX 404, NIST 800-53, CMMC Level 3, HIPAA, PCI-DSS 4.0, FedRAMP

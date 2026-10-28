@@ -1,9 +1,11 @@
 # ADR-032: Configurable Autonomy Framework
 
-**Status:** Deployed
+**Status:** Deployed (policy service in use; REST API not mounted)
 **Date:** 2025-12-10
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-005 (HITL Sandbox Architecture), ADR-018 (MetaOrchestrator Dynamic Agent Spawning)
+
+> **Status note (2026-10-26).** `src/api/autonomy_endpoints.py` (prefix `/api/v1/autonomy`) is not included in `src/api/main.py`, so none of the endpoints in the API Endpoints table are reachable in the deployed API; only `tests/test_autonomy_endpoints.py` exercises them. `frontend/src/services/autonomyApi.js` catches the resulting 404 and returns a built-in `DEFAULT_POLICY` (line 170), which hides the missing backend. The `AutonomyPolicy` model with `IMMUTABLE_GUARDRAILS` (used by the MetaOrchestrator) and the DynamoDB-backed `AutonomyPolicyService` in `src/services/autonomy_policy_service.py` are implemented; `tests/test_autonomy_policy_service.py` has 41 test functions, not 37.
 
 ---
 

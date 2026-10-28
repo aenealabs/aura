@@ -1,6 +1,9 @@
 # ADR-052: AI Alignment Principles and Human-Machine Collaboration Framework
 
-**Status:** In Progress (Phase 1-2 Implemented)
+**Status:** Implemented (library, Phases 1-3); not integrated -- router not mounted, UI not routed
+
+> **Status note (2026-10-26).** The services in `src/services/alignment/` are real logic backed by in-process dicts only (for example `trust_calculator.py:333`, `audit_logger.py:289`, `rollback_service.py:196`), with 646 test functions across 11 `tests/test_alignment_*.py` files. `src/api/alignment_endpoints.py` (`/api/v1/alignment`) is not included in `src/api/main.py`, no `src/` module outside the package and that router imports `src.services.alignment`, and `frontend/src/components/alignment/AlignmentDashboard.jsx` and `OverridePanel.jsx` are not imported by any route. `deploy/cloudformation/alignment-alerts.yaml` exists.
+
 **Date:** 2026-01-04
 **Decision Makers:** Project Aura Platform Team, Ethics Review Board
 **Related:** ADR-032 (Autonomy Framework), ADR-042 (Real-Time Agent Intervention), ADR-039 (Self-Service Environments)

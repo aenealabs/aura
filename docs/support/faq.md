@@ -50,7 +50,7 @@ Project Aura is an autonomous AI SaaS platform that enables machines to reason a
 +----------+       +----------+       +----------+
 ```
 
-1. **Connect** repositories via GitHub, GitLab, or Bitbucket OAuth
+1. **Connect** repositories via GitHub or GitLab OAuth (Bitbucket is planned)
 2. **Analyze** code to build a comprehensive knowledge graph (functions, dependencies, call flows)
 3. **Detect** vulnerabilities using AI-powered semantic analysis
 4. **Generate** patches using LLM agents with full codebase context
@@ -88,14 +88,13 @@ Aura detects vulnerabilities across multiple categories:
 ### How do I create an account?
 
 1. Visit [app.aenealabs.com](https://app.aenealabs.com)
-2. Click "Sign Up" and choose authentication method:
-   - Email/password
-   - SSO via Google, Microsoft, or GitHub
-   - Enterprise SAML/OIDC (contact sales)
+2. Click "Sign Up" and register with email and password (Amazon Cognito). Social sign-in and enterprise SAML/OIDC single sign-on are planned.
 3. Verify your email address
 4. Complete the onboarding wizard
 
 ### How do I enable two-factor authentication (2FA)?
+
+> MFA is provided by Amazon Cognito and is configured per environment by administrators (optional in production, off in DEV/QA). The self-service steps below are planned.
 
 ```
 1. Go to Settings > Security > Two-Factor Authentication
@@ -110,7 +109,7 @@ Aura detects vulnerabilities across multiple categories:
 
 ### How do I configure SSO for my organization?
 
-Enterprise customers can configure SAML 2.0 or OIDC:
+SAML 2.0 and OIDC federation is planned and not yet available: the identity routers are written but not mounted, and sign-in currently uses Amazon Cognito. The planned steps are:
 
 1. Go to **Admin Settings > Authentication > SSO**
 2. Select your identity provider (Okta, Azure AD, etc.)
@@ -139,19 +138,20 @@ For detailed SSO setup, see [Security Issues - SSO Authentication](./troubleshoo
 ```bash
 # Via UI:
 1. Navigate to Repositories > Connect Repository
-2. Select your Git provider (GitHub, GitLab, Bitbucket)
+2. Select your Git provider (GitHub or GitLab; Bitbucket is planned)
 3. Authorize Aura to access your repositories
 4. Select the repository to connect
 5. Configure scan settings (branch, schedule, languages)
 
 # Via API:
-curl -X POST https://api.aenealabs.com/v1/repositories \
+curl -X POST https://{your-aura-api-host}/api/v1/repositories \
   -H "Authorization: Bearer ${AURA_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "my-repo",
-    "url": "https://github.com/org/my-repo",
-    "default_branch": "main"
+    "clone_url": "https://github.com/org/my-repo",
+    "token": "${GITHUB_PAT}",
+    "branch": "main"
   }'
 ```
 
@@ -159,9 +159,9 @@ curl -X POST https://api.aenealabs.com/v1/repositories \
 
 | Provider | Required Permissions | Purpose |
 |----------|---------------------|---------|
-| GitHub | `repo` (read), `pull_request` (write) | Clone code, create PRs |
-| GitLab | `read_repository`, `write_repository` | Clone code, create MRs |
-| Bitbucket | `repository:read`, `pullrequest:write` | Clone code, create PRs |
+| GitHub | `repo`, `admin:repo_hook` | Clone code, create PRs, register the push webhook |
+| GitLab | `api`, `read_repository` | Clone code, create MRs |
+| Bitbucket (planned) | `repository:read`, `pullrequest:write` | Clone code, create PRs |
 
 Aura never stores your code permanently. Code is processed in memory and only metadata (graph structure, embeddings) is persisted.
 
@@ -229,6 +229,8 @@ Each vulnerability includes:
 - **References**: Links to documentation and resources
 
 ### How do I mark a vulnerability as a false positive?
+
+> **Planned.** There is no vulnerability detail page or `/vulnerabilities` API yet. Today, reject the corresponding patch in **Approvals** with a reason. The steps below are the planned design.
 
 ```bash
 # Via UI:
@@ -373,31 +375,31 @@ Configurable timeout behavior:
 
 ### How do I get an API token?
 
-```bash
-# Option 1: Login to get temporary token
-curl -X POST https://api.aenealabs.com/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com", "password": "your-password"}'
+API requests use Amazon Cognito JWTs. Sign in to the console (Cognito Hosted UI) to obtain a token, and verify it with `GET /api/v1/auth/me`. A password-login API endpoint and API keys for automation are **Planned**; the API does not currently accept API keys.
 
-# Option 2: Create API key (for automation)
-# Go to Settings > API Keys > Create New Key
-# Select scopes and expiration
-# Copy the key (only shown once)
+```bash
+curl -X GET https://{your-aura-api-host}/api/v1/auth/me \
+  -H "Authorization: Bearer ${AURA_TOKEN}"
 ```
 
 ### What are the API rate limits?
 
-| Tier | Requests/Minute | Burst | Headers |
-|------|-----------------|-------|---------|
-| Free | 100 | 10 | X-RateLimit-* |
-| Professional | 1000 | 100 | X-RateLimit-* |
-| Enterprise | 10000 | 1000 | X-RateLimit-* |
+Limits are per endpoint category, not per plan, and apply to routes that declare a rate-limit dependency:
+
+| Endpoint category | Requests/Minute | Headers |
+|-------------------|-----------------|---------|
+| Public | 100 | X-RateLimit-* |
+| Standard (authenticated) | 60 | X-RateLimit-* |
+| Sensitive | 10 | X-RateLimit-* |
+| Admin | 5 | X-RateLimit-* |
+| Critical (HITL, deployments) | 2 | X-RateLimit-* |
+| Webhook | 200 | X-RateLimit-* |
 
 See [API Reference - Rate Limiting](./api-reference/index.md#rate-limiting) for handling 429 errors.
 
 ### Does Aura integrate with my CI/CD pipeline?
 
-Yes, via multiple integration options:
+Partially. The GitHub push webhook (`POST /webhook/github`) triggers incremental ingestion today. The CI plugins and actions below (`aenealabs/aura-action`, Jenkins plugin, CircleCI orb, API-key authentication) are **Planned**:
 
 | Integration | Use Case |
 |-------------|----------|
@@ -424,7 +426,7 @@ jobs:
 
 ### Can I integrate Aura with Slack/Teams?
 
-Yes, configure notifications in Settings > Integrations:
+Yes. HITL approval notifications are sent through Slack and Microsoft Teams incoming webhooks configured on the API (`SLACK_WEBHOOK_URL`, `TEAMS_WEBHOOK_URL`). In-console channel management under Settings is planned; those screens currently show canned data.
 
 **Slack:**
 1. Create a Slack app or use incoming webhook
@@ -541,22 +543,24 @@ For very large codebases, we recommend:
 
 ### Is Aura SOC 2 compliant?
 
-Yes, Aura maintains SOC 2 Type II certification. Contact sales for audit reports.
+No. Aura implements NIST 800-53 aligned technical controls, but it holds no SOC 2 report. SOC 2 Type II is planned; no audit has started and no certification filing has been submitted (as of October 2026).
 
 ### What compliance frameworks does Aura support?
 
 | Framework | Status | Notes |
 |-----------|--------|-------|
-| SOC 2 Type II | Certified | Annual audit |
-| ISO 27001 | Certified | Annual audit |
-| HIPAA | Available | BAA required |
-| GDPR | Compliant | EU data residency option |
-| FedRAMP | In Progress | GovCloud deployment |
-| CMMC Level 3 | Supported | Self-hosted required |
+| NIST 800-53 | Aligned | Technical controls implemented |
+| SOX | Supported | HITL approvals and audit trail |
+| SOC 2 Type II | Not yet audited | - |
+| ISO 27001 | Not yet certified | - |
+| HIPAA | Not yet attested | No BAA is offered |
+| GDPR | Not yet assessed | Consent-management screens exist in the console without a backend API |
+| FedRAMP | Planned (no filing submitted) | GovCloud (US) is the planned production target |
+| CMMC | Planned (no filing submitted) | Infrastructure controls in place; organizational controls pending |
 
 ### Can I run Aura in my AWS GovCloud account?
 
-Yes, self-hosted deployment is available for GovCloud (US) regions. Contact sales for FedRAMP-compliant deployment options.
+GovCloud (US) is the planned production deployment target, and the infrastructure templates are GovCloud-compatible. A packaged customer self-hosted GovCloud offering is planned; contact Aenea Labs for status.
 
 ---
 

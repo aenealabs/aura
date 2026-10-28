@@ -13,15 +13,22 @@ phases:
     runtime-versions:
       python: 3.11
     commands:
-      - pip3 install cfn-lint --quiet
+      - pip3 install cfn-lint==1.57.2 --quiet
 
   pre_build:
     commands:
+      # ADR-092: deploy through the scoped CloudFormation service role when the
+      # environment opts in by publishing the role ARN in SSM. Unset means the
+      # stacks deploy as this CodeBuild role (the default).
+      - |
+        CFN_ROLE_ARN=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/cfn-service-role-arn" --query Parameter.Value --output text 2>/dev/null || echo "")
+        if [ -n "$CFN_ROLE_ARN" ] && [ "$CFN_ROLE_ARN" != "None" ]; then export CFN_ROLE_ARG="--role-arn $CFN_ROLE_ARN"; else export CFN_ROLE_ARG=""; fi
+        echo "CloudFormation service role: ${CFN_ROLE_ARN:-none, deploying as the CodeBuild role}"
       - echo "=========================================="
       - echo "Environment Validator Deployment (ADR-062)"
       - echo "=========================================="
       - echo "Environment $ENVIRONMENT | Project $PROJECT_NAME"
-      - cfn-lint deploy/cloudformation/env-validator-drift-lambda.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/env-validator-drift-lambda.yaml --ignore-checks W3002,W1020 || exit 1
       - mkdir -p /tmp/lambda-packages
       - LAMBDA_BUCKET="${PROJECT_NAME}-serverless-artifacts-${AWS_ACCOUNT_ID}-${ENVIRONMENT}"
       - TIMESTAMP=$(date +%Y%m%d-%H%M%S)
@@ -43,7 +50,7 @@ phases:
       # Deploy Drift Lambda Stack (Layer 6.17)
       - echo "Deploying Environment Validator Drift Lambda..."
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name ${PROJECT_NAME}-env-drift-lambda-${ENVIRONMENT} \
           --template-file deploy/cloudformation/env-validator-drift-lambda.yaml \
           --parameter-overrides \

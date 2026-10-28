@@ -4,6 +4,8 @@
 
 This document contains technical specifications, expert review findings, and appendices for ADR-049.
 
+> **Implementation status (October 2026):** The code listings in this document are design specifications. The shipped self-hosted adapters live in `src/services/providers/self_hosted/` (`neo4j_graph_adapter.py`, `local_llm_adapter.py` for vLLM/TGI/Ollama, `postgres_document_adapter.py`, `minio_storage_adapter.py`, `selfhosted_opensearch_adapter.py`, `file_secrets_adapter.py`) and are selected through `src/services/providers/factory.py` when the provider is `CloudProvider.SELF_HOSTED`; the files named `src/services/providers/graph/neo4j_adapter.py`, `src/services/providers/llm/base.py` and `src/services/providers/llm/vllm_provider.py` do not exist. The Podman Compose file `deploy/self-hosted/podman-compose.yml` is **Planned**: no compose file for self-hosted Aura exists in the repository. Kubernetes self-hosted deployment is provided by the Helm chart in `deploy/helm/aura/` and the manifests in `deploy/self-hosted/`.
+
 ---
 
 ## Table of Contents
@@ -78,7 +80,7 @@ class VLLMProvider(LLMProvider):
 ### 3. Podman Compose Configuration
 
 ```yaml
-# deploy/self-hosted/podman-compose.yml
+# deploy/self-hosted/podman-compose.yml (planned -- not yet in the repository)
 version: "3.8"
 
 services:

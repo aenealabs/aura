@@ -1,9 +1,11 @@
 # ADR-028: Microsoft Foundry Capability Adoption Plan
 
-**Status:** Deployed
+**Status:** Deployed (partial: every phase has code; several components unwired)
 **Date:** 2025-12-07
 **Decision Makers:** Project Aura Team
 **Related:** ADR-022 (GitOps), ADR-023 (AgentCore Gateway), ADR-025 (RuntimeIncidentAgent)
+
+> **Status note (2026-10-26).** Each phase has code in the repository: `deploy/cloudformation/otel-collector.yaml` and `src/services/otel_instrumentation.py`, `src/services/model_router.py` (with its own endpoints), `src/services/query_analyzer.py`, `vscode-extension/`, `sdk/typescript/`, `src/services/a2a_gateway.py`, `src/agents/red_team_agent.py` and `src/services/external_tool_connectors.py`; the per-phase checklists below were never updated. Several pieces are not reachable: `src/api/a2a_endpoints.py` is not included in `src/api/main.py`; `query_analyzer` and `otel_instrumentation` are imported only by `src/services/parallel_query_executor.py`, which only tests import; `ModelRouter` is not used by `BedrockLLMService`; and `src/api/red_team_endpoints.py` serves seeded mock data (`_init_mock_data`, `random.seed(42)`) instead of `RedTeamAgent` results.
 
 ## Context
 

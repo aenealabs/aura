@@ -35,7 +35,7 @@ Project Aura uses GitHub Actions for automated CI/CD workflows to:
 
 ## Workflows
 
-`.github/workflows/` contains ten workflows. The three pull-request quality gates all live in a
+`.github/workflows/` contains twelve workflows (`ls .github/workflows | wc -l`). The three pull-request quality gates all live in a
 single file, `code-quality.yml` -- there is **no** separate frontend or CloudFormation workflow, and
 there is no `lint-markdown.yml`. Markdown linting is the `markdownlint` pre-commit hook
 (`.pre-commit-config.yaml:301-305`), run in CI by the diff-scoped `pre-commit` step described below.
@@ -218,7 +218,7 @@ implements the exit-code contract (4 -> pass, 2/6/8 -> fail).
 
 ```bash
 pip install cfn-lint
-./scripts/cfn-lint-wrapper.sh deploy/cloudformation/template.yaml
+./scripts/cfn-lint-wrapper.sh deploy/cloudformation/iam.yaml
 ```
 
 **Frontend:** requires Node 22 (see `frontend/CLAUDE.md`).

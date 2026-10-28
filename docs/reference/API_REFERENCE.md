@@ -16,7 +16,7 @@ ASTParserAgent()  # No parameters
 ### Key Methods
 ```python
 # Parse file (NOT parse_code) - Returns list of CodeEntity objects
-parse_file(self, file_path: Path) -> list[CodeEntity]
+parse_file(self, file_path: str | Path) -> list[CodeEntity]
 
 # Supported extensions
 supported_extensions: set = {".py", ".js", ".jsx", ".ts", ".tsx"}
@@ -46,6 +46,7 @@ class ContextSource(Enum):
     REMEDIATION = "remediation"
     USER_PROMPT = "user_prompt"
     COMPLIANCE = "compliance"
+    NEURAL_MEMORY = "neural_memory"
 ```
 
 ### ContextItem
@@ -53,8 +54,10 @@ class ContextSource(Enum):
 ContextItem(
     content: str,
     source: ContextSource,
-    confidence: float,
-    metadata: dict
+    confidence: float = 1.0,
+    entity_id: str | None = None,
+    timestamp: float = <now>,      # default factory
+    metadata: dict = {}            # default factory
 )
 ```
 
@@ -63,7 +66,9 @@ ContextItem(
 HybridContext(
     items: list[ContextItem],
     query: str,
-    target_entity: str
+    target_entity: str,
+    session_id: str | None = None,
+    created_at: float = <now>      # default factory
 )
 ```
 
@@ -115,10 +120,13 @@ add_code_entity(
 ) -> str
 
 # Search (returns list of dicts, NOT entities)
-search_by_name(self, pattern: str) -> list[dict]
+search_by_name(self, name_pattern: str, limit: int = 10) -> list[dict]
 
-# Query by file
-query_by_file(self, file_path: str) -> list[dict]
+# Related code traversal
+find_related_code(self, entity_name: str, max_depth: int = 2, relationship_types: list[str] | None = None) -> list[dict]
+
+# There is no query_by_file method; per-file operations are
+# delete_entities_by_file(file_path) and delete_outgoing_edges_for_file(file_path)
 ```
 
 **Example:**

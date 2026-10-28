@@ -301,7 +301,7 @@ Is this a new environment?
 All deployments expect these environment variables:
 
 ```bash
-export AWS_PROFILE=aura-admin      # AWS credentials profile
+export AWS_PROFILE=aura-deployer-dev      # AWS credentials profile
 export AWS_REGION=us-east-1        # Target region
 export ENVIRONMENT=dev             # Environment (dev/qa/prod)
 export PROJECT_NAME=aura           # Project name prefix
@@ -343,4 +343,4 @@ aws logs tail /aws/codebuild/aura-{layer}-deploy-dev --follow
 | 8 - Security | 2 | `aura-security-deploy-dev` | `deploy-security-codebuild.sh` |
 | Frontend | - | `aura-frontend-deploy-dev` | `deploy-frontend-codebuild.sh` |
 
-**Total: 36 stacks across 8 layers + frontend**
+**Total: 36 stacks across 8 layers + frontend** (historical summary of the original layer deployments; the repository now holds 181 CloudFormation templates, including 24 `codebuild-*.yaml` project templates, and the per-layer buildspecs deploy substantially more stacks than this table lists)

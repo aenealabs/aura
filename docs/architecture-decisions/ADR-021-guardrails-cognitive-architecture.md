@@ -1,9 +1,11 @@
 # ADR-021: Guardrails Cognitive Architecture for Specialized Agents
 
-**Status:** Deployed
+**Status:** Deployed (partial: memory algorithms built; no persistent memory stores)
 **Date:** 2025-12-04
 **Decision Makers:** Project Aura Team
 **Related:** `agent-config/schemas/cognitive-memory-schema.md`, `src/services/cognitive_memory_service.py`
+
+> **Status note (2026-10-26).** `CognitiveMemoryService` and its confidence, strategy, retrieval and consolidation logic exist in `src/services/cognitive_memory_service.py` (line 1547) with tests such as `tests/test_cognitive_memory_service.py`, and the seed guardrails live at `agent-config/GUARDRAILS.md`, not the repository root. `EpisodicStore`, `SemanticStore` and `ProceduralStore` (lines 508-563) are Protocols with no concrete DynamoDB, Neptune or vector implementation in `src/`; only test doubles implement them. The one production wiring, `create_system2_orchestrator` in `src/agents/agent_orchestrator.py` (lines 2689-2716), builds the memory service on `unittest.mock.AsyncMock` stores and is off by default (`ENABLE_TITAN_MEMORY` is `false` in `src/agents/orchestrator_server.py:72` and `deploy/kubernetes/agent-orchestrator/base/configmap.yaml:25`), so the Phase 3 vector retrieval is not reachable.
 
 ## Context
 

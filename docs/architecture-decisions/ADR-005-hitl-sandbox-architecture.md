@@ -1,6 +1,9 @@
 # ADR-005: Human-in-the-Loop Sandbox Testing for Autonomous Remediation
 
-**Status:** Deployed
+**Status:** Deployed (core HITL path; dedicated sandbox VPC, IAM approver roles and emergency bypass not built -- see status notes)
+
+> **Status note (2026-10-26).** The 2026-08-28 and 2026-10-14 notes below are still accurate. Since then, a failed sandbox run first goes back to the coder for up to `max_sandbox_repairs` repair runs (default 1, `src/agents/agent_orchestrator.py:473`) before the approval request is blocked, and the job server calls the HITL workflow (`src/agents/orchestrator_server.py:342`). The IAM roles in the Approval Roles table (`AuraPatchApprover`, `AuraSecurityManager`, `AuraCISO`) are not in any template; approval rights come from the application roles `security-engineer` and `admin` (`src/api/approval_endpoints.py:68`). The CISO emergency bypass is not implemented, and sandbox tasks default to a 3600-second limit (`src/services/sandbox_network_service.py:701`), not 2 hours.
+
 **Date:** 2025-11-28
 **Decision Makers:** Project Aura Team
 

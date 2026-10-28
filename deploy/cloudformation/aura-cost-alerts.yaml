@@ -278,6 +278,7 @@ Resources:
   CalculateThresholdRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/aura-workload-boundary-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -448,6 +449,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: EnableEnforcement
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/aura-workload-boundary-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:

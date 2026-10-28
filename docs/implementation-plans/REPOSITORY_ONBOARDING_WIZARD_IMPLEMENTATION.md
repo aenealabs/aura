@@ -2,7 +2,9 @@
 
 **Related ADR:** ADR-043
 **Date:** 2025-12-17
-**Status:** Ready for Implementation
+**Status:** Implemented (wizard and API); ingestion-job processing not yet wired
+
+> **Implementation note:** The wizard components (`frontend/src/components/repositories/RepositoryOnboardWizard.jsx` and `steps/`), the OAuth and repository routers (`src/api/oauth_endpoints.py`, `src/api/repository_endpoints.py`), and `src/services/repository_onboard_service.py` are in place. Ingestion jobs created by `POST /api/v1/repositories/ingest` are written with status `pending`, but no worker calls `update_job_progress`, so the Cloning -> Parsing -> Indexing stages described in this plan are not reached from the wizard. Repository content is ingested through `POST /api/v1/ingest` and the GitHub push webhook.
 
 ---
 

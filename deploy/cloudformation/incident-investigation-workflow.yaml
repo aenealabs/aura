@@ -75,6 +75,7 @@ Resources:
   StateMachineExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-incident-sfn-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -174,6 +175,7 @@ Resources:
   ECSTaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-incident-task-exec-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -206,6 +208,7 @@ Resources:
   ECSTaskRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-incident-task-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -325,6 +328,7 @@ Resources:
   EventBridgeInvokeStepFunctionsRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-eventbridge-sfn-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

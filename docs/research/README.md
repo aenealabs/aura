@@ -12,7 +12,12 @@ docs/research/
 ├── papers/                      # Academic paper analysis
 │   └── neural-memory-2025/      # Titans & MIRAS research
 ├── proposals/                   # Architecture proposals (pre-ADR)
-│   └── ADR-024-TITAN-NEURAL-MEMORY.md (Deployed - see ADR-024)
+│   ├── ADR-024-TITAN-NEURAL-MEMORY.md (converted to ADR-024)
+│   ├── RLM-JEPA-INTEGRATION-PROPOSAL.md (converted to ADR-051)
+│   ├── CONSTITUTIONAL-AI-PROPOSAL.md (converted to ADR-063)
+│   ├── customizable-dashboard-widgets.md (converted to ADR-064)
+│   ├── aerospace-defense-systems-engineer-agent.md (proposed; not scheduled)
+│   └── stress-test-synthetic-codebase.md (proposal; not built)
 └── experiments/                 # Proof-of-concept implementations
     └── hybrid-memory-architecture/  # Performance analysis & scaling guide
 ```
@@ -36,7 +41,7 @@ docs/research/
 - Test-time training enables inference-time learning
 - Huber loss provides outlier robustness
 
-**Architecture Decision:** [ADR-024](../architecture-decisions/ADR-024-titan-neural-memory.md) (Deployed - 237 tests, 5 phases complete)
+**Architecture Decision:** [ADR-024](../architecture-decisions/ADR-024-titan-neural-memory.md) (Implemented as a library with a CPU backend; not active in agent flows by default -- see the ADR status note)
 
 **Experiment:** [Hybrid Memory Architecture](experiments/hybrid-memory-architecture/)
 - Performance Analysis: Hybrid vs GPU-Only comparison
@@ -145,4 +150,4 @@ To contribute research:
 
 ---
 
-*Last Updated: December 6, 2025*
+*Last Updated: December 6, 2025 (proposal and ADR statuses reviewed 2026-10-26)*

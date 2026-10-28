@@ -20,13 +20,20 @@ phases:
     commands:
       - echo "Installing build dependencies..."
       - python -m pip install --upgrade pip
-      - pip3 install cfn-lint setuptools wheel
+      - pip3 install cfn-lint==1.57.2 setuptools wheel
       # Configure ECR credential helper (eliminates password storage warnings)
       - chmod +x deploy/scripts/configure-ecr-credential-helper.sh
       - ./deploy/scripts/configure-ecr-credential-helper.sh
 
   pre_build:
     commands:
+      # ADR-092: deploy through the scoped CloudFormation service role when the
+      # environment opts in by publishing the role ARN in SSM. Unset means the
+      # stacks deploy as this CodeBuild role (the default).
+      - |
+        CFN_ROLE_ARN=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/cfn-service-role-arn" --query Parameter.Value --output text 2>/dev/null || echo "")
+        if [ -n "$CFN_ROLE_ARN" ] && [ "$CFN_ROLE_ARN" != "None" ]; then export CFN_ROLE_ARG="--role-arn $CFN_ROLE_ARN"; else export CFN_ROLE_ARG=""; fi
+        echo "CloudFormation service role: ${CFN_ROLE_ARN:-none, deploying as the CodeBuild role}"
       - echo "=========================================="
       - echo "Sandbox Layer Deployment (Layer 7)"
       - echo "=========================================="
@@ -34,19 +41,19 @@ phases:
 
       # Validate templates
       - echo "Validating sandbox layer templates..."
-      - cfn-lint deploy/cloudformation/sandbox.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/test-env-state.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/test-env-iam.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/test-environment-catalog.yaml --ignore-checks W3002,W1020,W2001,W1031 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/test-env-approval.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/test-env-monitoring.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/test-env-budgets.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/sandbox.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/test-env-state.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/test-env-iam.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/test-environment-catalog.yaml --ignore-checks W3002,W1020,W2001,W1031 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/test-env-approval.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/test-env-monitoring.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/test-env-budgets.yaml --ignore-checks W3002,W1020 || exit 1
       # Phase 4: Advanced Features templates
-      - cfn-lint deploy/cloudformation/test-env-scheduler.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/test-env-namespace.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/test-env-marketplace.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/test-env-scheduler.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/test-env-namespace.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/test-env-marketplace.yaml --ignore-checks W3002,W1020 || exit 1
       - echo "Validating Service Catalog product templates..."
-      - cfn-lint deploy/service-catalog/products/*.yaml --ignore-checks W3002,W1020,W2001,W3045 || echo "cfn-lint warnings (non-blocking)"
+      - ./scripts/cfn-lint-wrapper.sh deploy/service-catalog/products/*.yaml --ignore-checks W3002,W1020,W2001,W3045 || exit 1
       - echo "Template validation complete"
 
       # Retrieve VPC and subnet information from Networking stack
@@ -130,7 +137,7 @@ phases:
       # Deploy sandbox stack
       - |
         set +e
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $SANDBOX_STACK \
           --template-file deploy/cloudformation/sandbox.yaml \
           --parameter-overrides $OVERRIDES \
@@ -154,7 +161,7 @@ phases:
       - echo "Deploying Test Environment State Table..."
       - TEST_ENV_STATE_STACK="${PROJECT_NAME}-test-env-state-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $TEST_ENV_STATE_STACK \
           --template-file deploy/cloudformation/test-env-state.yaml \
           --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME \
@@ -167,7 +174,7 @@ phases:
       - echo "Deploying Test Environment IAM Roles..."
       - TEST_ENV_IAM_STACK="${PROJECT_NAME}-test-env-iam-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $TEST_ENV_IAM_STACK \
           --template-file deploy/cloudformation/test-env-iam.yaml \
           --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME \
@@ -254,7 +261,7 @@ phases:
         # without first verifying the EarlyValidation behaviour has changed.
         if [ "$STACK_STATUS" = "DOES_NOT_EXIST" ]; then
           echo "Creating new Service Catalog stack..."
-          aws cloudformation create-stack \
+          aws cloudformation create-stack ${CFN_ROLE_ARG:-} \
             --stack-name $TEST_ENV_CATALOG_STACK \
             --template-body file://deploy/cloudformation/test-environment-catalog.yaml \
             --parameters \
@@ -268,7 +275,7 @@ phases:
           aws cloudformation wait stack-create-complete --stack-name $TEST_ENV_CATALOG_STACK --region $AWS_DEFAULT_REGION
         else
           echo "Updating existing Service Catalog stack..."
-          aws cloudformation update-stack \
+          aws cloudformation update-stack ${CFN_ROLE_ARG:-} \
             --stack-name $TEST_ENV_CATALOG_STACK \
             --template-body file://deploy/cloudformation/test-environment-catalog.yaml \
             --parameters \
@@ -329,7 +336,7 @@ phases:
         fi
         echo "Approval Workflow parameters: $APPROVAL_PARAMS"
 
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $TEST_ENV_APPROVAL_STACK \
           --template-file deploy/cloudformation/test-env-approval.yaml \
           --parameter-overrides $APPROVAL_PARAMS \
@@ -347,7 +354,7 @@ phases:
         if [ -n "$ALERT_EMAIL" ] && [ "$ALERT_EMAIL" != "None" ]; then
           MONITORING_PARAMS="$MONITORING_PARAMS AlertEmail=$ALERT_EMAIL"
         fi
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $TEST_ENV_MONITORING_STACK \
           --template-file deploy/cloudformation/test-env-monitoring.yaml \
           --parameter-overrides $MONITORING_PARAMS \
@@ -364,7 +371,7 @@ phases:
         if [ -n "$ALERT_EMAIL" ] && [ "$ALERT_EMAIL" != "None" ]; then
           BUDGETS_PARAMS="$BUDGETS_PARAMS AlertEmail=$ALERT_EMAIL"
         fi
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $TEST_ENV_BUDGETS_STACK \
           --template-file deploy/cloudformation/test-env-budgets.yaml \
           --parameter-overrides $BUDGETS_PARAMS \
@@ -435,7 +442,7 @@ phases:
           if [ -n "$DATA_KMS_KEY_ARN" ] && [ "$DATA_KMS_KEY_ARN" != "None" ]; then
             SCHEDULER_PARAMS="$SCHEDULER_PARAMS DataKMSKeyArn=$DATA_KMS_KEY_ARN"
           fi
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $TEST_ENV_SCHEDULER_STACK \
             --template-file deploy/cloudformation/test-env-scheduler.yaml \
             --parameter-overrides $SCHEDULER_PARAMS \
@@ -462,7 +469,7 @@ phases:
             NAMESPACE_PARAMS="$NAMESPACE_PARAMS NotificationTopicArn=$NOTIFICATION_TOPIC_ARN"
           fi
           # Note: KubectlLayerS3Bucket left empty - layer will be created separately
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $TEST_ENV_NAMESPACE_STACK \
             --template-file deploy/cloudformation/test-env-namespace.yaml \
             --parameter-overrides $NAMESPACE_PARAMS \
@@ -495,7 +502,7 @@ phases:
           if [ -n "$APPROVAL_STATE_MACHINE_ARN" ] && [ "$APPROVAL_STATE_MACHINE_ARN" != "None" ]; then
             MARKETPLACE_PARAMS="$MARKETPLACE_PARAMS ApprovalStateMachineArn=$APPROVAL_STATE_MACHINE_ARN"
           fi
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $TEST_ENV_MARKETPLACE_STACK \
             --template-file deploy/cloudformation/test-env-marketplace.yaml \
             --parameter-overrides $MARKETPLACE_PARAMS \
@@ -556,7 +563,7 @@ phases:
           STEPFUNCTIONS_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $SANDBOX_STACK \
             --query 'Stacks[0].Outputs[?OutputKey==`StepFunctionsRoleArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
 
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $HITL_WORKFLOW_STACK \
             --template-file deploy/cloudformation/hitl-workflow.yaml \
             --parameter-overrides \

@@ -296,6 +296,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: IsProduction
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-dr-two-person-approval-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -571,6 +572,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: IsProduction
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-dr-evidence-package-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -807,6 +809,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: IsProduction
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-dr-drill-cadence-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

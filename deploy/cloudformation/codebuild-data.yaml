@@ -92,6 +92,7 @@ Resources:
   DataCodeBuildRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-deployer-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-data-codebuild-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -455,13 +456,6 @@ Resources:
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-dashboard-*'
 
               # IAM PassRole (for Neptune/OpenSearch/Dashboard service roles)
-              - Effect: Allow
-                Action:
-                  - iam:PassRole
-                Resource:
-                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-neptune-*'
-                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-opensearch-*'
-                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-dashboard-*'
 
               # IAM CreateServiceLinkedRole (required for Neptune/OpenSearch first-time setup)
               - Effect: Allow
@@ -645,6 +639,53 @@ Resources:
             Effect: Allow
             Action: [sqs:CreateQueue, sqs:DeleteQueue, sqs:GetQueueAttributes, sqs:SetQueueAttributes, sqs:TagQueue, sqs:UntagQueue, sqs:ListQueueTags, sqs:GetQueueUrl]
             Resource: !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*'
+
+  # ADR-092: lets this layer deploy through the scoped CloudFormation service
+  # role (--role-arn, opt-in per environment) and set approved permission
+  # boundaries on the roles its stacks own.
+  CfnServiceRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-data-cfn-access-${Environment}'
+      Description: Pass the scoped CloudFormation service role and set approved permission boundaries
+      Roles:
+        - !Ref DataCodeBuildRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ReadCfnServiceRoleOptIn
+            Effect: Allow
+            Action: ssm:GetParameter
+            Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/cfn-service-role-arn'
+          - Sid: PassScopedCloudFormationServiceRole
+            Effect: Allow
+            Action: iam:PassRole
+            Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cfn-role-${Environment}'
+            Condition:
+              StringEquals:
+                iam:PassedToService: cloudformation.amazonaws.com
+          - Sid: SetApprovedPermissionBoundaryOnProjectRoles
+            Effect: Allow
+            Action: iam:PutRolePermissionsBoundary
+            Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-${Environment}'
+            Condition:
+              StringEquals:
+                iam:PermissionsBoundary:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-test-env-permission-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-ma-sandbox-permissions-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-taint-resolver-writer-boundary-${Environment}'
+          - Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-neptune-*'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-opensearch-*'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-dashboard-*'
+            Condition:
+              StringEquals:
+                iam:PassedToService: [delivery.logs.amazonaws.com, dynamodb.amazonaws.com, elasticache.amazonaws.com, es.amazonaws.com, events.amazonaws.com, lambda.amazonaws.com, logging.s3.amazonaws.com, rds.amazonaws.com, s3.amazonaws.com, sqs.amazonaws.com]
 
 Outputs:
   DataCodeBuildProjectName:

@@ -1,6 +1,9 @@
 # ADR-002: VPC Endpoints over NAT Gateways for AWS Service Connectivity
 
 **Status:** Deployed
+
+> **Status note (2026-10-26).** `deploy/cloudformation/vpc-endpoints.yaml` defines 10 endpoints: S3 and DynamoDB (gateway) plus ECR API, ECR DKR, CloudWatch Logs, Bedrock Runtime, Secrets Manager, CloudWatch, STS and SSM (interface). It has no OpenSearch interface endpoint: the OpenSearch domain is attached to the VPC directly (`VPCOptions` in `deploy/cloudformation/opensearch.yaml`), so the OpenSearch row in the Service-Specific Notes table describes no deployed endpoint. No template in `deploy/cloudformation/` creates a NAT gateway.
+
 **Date:** 2025-11-17
 **Decision Makers:** Project Aura Team
 
@@ -57,7 +60,7 @@ Use VPC Endpoints for all AWS services with no NAT Gateways.
 **Pros:**
 - Lowest cost (free gateway endpoints for S3/DynamoDB)
 - Maximum security (traffic never leaves AWS network)
-- CMMC Level 3, SOX, NIST 800-53 compliant
+- Aligned with CMMC Level 3, SOX and NIST 800-53 network-boundary controls (not certified)
 - Lower latency (1-3ms vs 5-15ms)
 
 **Cons:**
@@ -79,12 +82,12 @@ Use VPC Endpoints for all AWS services with no NAT Gateways.
    - Traffic never leaves AWS network (data path stays private)
    - Reduces attack surface (no internet egress point)
    - Enhanced logging (VPC Flow Logs + CloudTrail API logs)
-   - Meets CMMC Level 3 controls SC.3.177, SC.3.191
+   - Aligned with CMMC Level 3 practices SC.3.177, SC.3.191
 
-3. **Compliance**
-   - CMMC Level 3: Compliant (no internet egress required)
-   - SOX: Compliant (reduced audit complexity)
-   - NIST 800-53: Meets AC-4, SC-7, SC-8 controls
+3. **Compliance alignment** (control alignment only; Aura holds no CMMC, SOX audit, or FedRAMP certification)
+   - CMMC Level 3: Aligned (no internet egress required)
+   - SOX: Aligned (reduced audit complexity)
+   - NIST 800-53: Aligned with AC-4, SC-7, SC-8 controls
    - FedRAMP High: AWS PrivateLink is authorized
 
 4. **Performance**
@@ -142,7 +145,7 @@ VPC Endpoints are deployed via CloudFormation as part of the Foundation layer:
 
 ## References
 
-- `docs/ARCHITECTURE_DECISION_VPC_CONNECTIVITY.md` - Full analysis and migration plan
+- `archive/architecture-decisions/ARCHITECTURE_DECISION_VPC_CONNECTIVITY.md` - Full analysis and migration plan
 - `deploy/cloudformation/vpc-endpoints.yaml` - VPC Endpoint CloudFormation template
 - `deploy/cloudformation/networking.yaml` - VPC and subnet configurations
 - `docs/cloud-strategy/GOVCLOUD_READINESS_TRACKER.md` - GovCloud compliance tracking

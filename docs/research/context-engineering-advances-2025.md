@@ -244,7 +244,7 @@ Providing 100+ tools leads to **Context Confusion** (hallucinated parameters, wr
 1. **Hybrid GraphRAG** - Combines structural (Neptune) and semantic (OpenSearch) retrieval
 2. **HITL Workflow** - Human-in-the-loop approval for high-surprise decisions
 3. **Titan Neural Memory** - Test-time learning for 2M+ token contexts
-4. **Security-first architecture** - CMMC Level 3, SOX, NIST compliance
+4. **Security-first architecture** - CMMC Level 3, SOX, NIST-aligned controls (not certified)
 
 ---
 

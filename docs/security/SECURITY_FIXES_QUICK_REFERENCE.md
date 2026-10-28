@@ -130,7 +130,7 @@ NeptuneCluster:
 ```
 
 ✅ Customer-managed KMS key with automatic rotation
-✅ Complies with CMMC Level 3 encryption requirements
+✅ Aligned with CMMC Level 3 encryption practices (not certified)
 
 ---
 
@@ -143,7 +143,7 @@ RetentionInDays: 7  # ❌ Too short for compliance
 
 **After:**
 ```yaml
-RetentionInDays: !If [UseThreeAZs, 365, 90]  # ✅ CMMC compliant
+RetentionInDays: !If [UseThreeAZs, 365, 90]  # ✅ CMMC-aligned retention
 ```
 
 ✅ 365 days for production (NIST 800-53 requirement)

@@ -101,6 +101,7 @@ Resources:
   StateMachineRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-campaign-manager-sfn-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

@@ -1,7 +1,7 @@
 # Capability Graph
 
 **Version:** 1.0
-**Last Updated:** January 2026
+**Last Updated:** October 2026
 **Product:** Project Aura by Aenea Labs
 
 ---
@@ -10,17 +10,25 @@
 
 The Capability Graph is a powerful visualization tool that displays the relationships between agents and their assigned capabilities (tools) in your Project Aura deployment. This interactive graph helps security engineers and administrators understand permission structures, identify potential security risks, and ensure compliance with separation of duties policies.
 
-The Capability Graph implements ADR-071 (Cross-Agent Capability Graph Analysis) and provides real-time insights into your agent ecosystem's security posture.
+The Capability Graph implements ADR-071 (Cross-Agent Capability Graph Analysis) and is designed to provide insight into your agent ecosystem's security posture.
+
+> **Current status (October 2026).** The analysis logic (escalation paths,
+> coverage gaps, toxic combinations, inheritance) is implemented in
+> `src/services/capability_governance/graph_analyzer.py`, and its API routes are
+> defined in `src/api/capability_graph_endpoints.py`. That router is not yet
+> registered in the API application, so the page cannot reach it. When the
+> requests fail, the page falls back to sample data bundled with the frontend
+> (`frontend/src/components/capability/useCapabilityGraph.js`), and the graph you
+> see is that sample data rather than your deployment's agents. Policy sync
+> writes to an in-memory graph by default; persisting the capability graph in
+> Neptune is planned. The interactions described below work against the
+> sample data today.
 
 ---
 
 ## Accessing the Capability Graph
 
-Navigate to **Security > Capability Graph** from the main navigation menu, or access it through:
-
-- The Security Dashboard quick links
-- The Agent Registry detail panel
-- Direct URL: `/security/capability-graph`
+Navigate to **Capability Graph** from the sidebar navigation, or use the direct URL: `/capability-graph`.
 
 **Required Permissions:** Admin or Security Engineer role
 
@@ -227,7 +235,7 @@ The Indicators section only appears when the corresponding filter is enabled.
 
 - Verify you have agents configured in the system
 - Check if agent policies have been synchronized
-- Click **Sync Policies** button to refresh data
+- Click **Sync Policies** button to refresh data (the sync endpoint is not reachable until the capability graph router is registered; see Current status above)
 
 ### Filters Not Working
 

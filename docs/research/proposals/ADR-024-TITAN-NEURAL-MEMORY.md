@@ -1,6 +1,6 @@
 # ADR-024: Titan Neural Memory Architecture Integration
 
-**Status:** Accepted
+**Status:** Accepted (converted to ADR-024; see the ADR for current implementation status)
 **Date:** December 6, 2025
 **Accepted:** December 6, 2025
 **Decision Makers:** Platform Architecture Team

@@ -27,7 +27,7 @@ Air-gapped deployments are fully isolated from the internet, suitable for:
 ### Network Requirements
 
 - Internal DNS (CoreDNS or dnsmasq)
-- No external internet access (validated at install)
+- No external internet access (verify with the on-demand egress validator described under "Network Isolation Validation"; the installer does not probe egress)
 - Internal CA for TLS certificates
 
 ## Creating the Air-Gap Bundle
@@ -250,18 +250,17 @@ kubectl exec -it deploy/aura-api -n aura -- \
 
 ## Network Isolation Validation
 
-Aura validates network isolation at startup:
+Aura includes an egress validator (`src/services/airgap/egress_validator.py`) that probes DNS, TCP and HTTP endpoints to confirm network isolation. It is run on demand as shown below; `require_air_gap_compliance()` is not called from the API startup path (`src/api/main.py`), so isolation is not enforced automatically at startup:
 
 ```bash
-# Check egress validation status
-kubectl logs deploy/aura-api -n aura | grep -i egress
-
 # Manual validation
 kubectl exec -it deploy/aura-api -n aura -- \
   python -c "from src.services.airgap.egress_validator import validate_air_gap_mode; print(validate_air_gap_mode().to_dict())"
 ```
 
 ### Expected Output (Compliant)
+
+The counts below are illustrative: `tests_passed` equals the number of configured probe endpoints times two (DNS and TCP) plus the HTTP probes, so it varies with the endpoint list in `TEST_ENDPOINTS`.
 
 ```json
 {

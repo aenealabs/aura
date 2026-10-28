@@ -5,6 +5,8 @@
 **ADR Reference:** ADR-065
 **Date:** 2026-01-25
 
+> **Implementation status (October 2026):** The engine is implemented in `src/services/semantic_guardrails/` (5,693 lines, 811 tests) as an in-process library, not as the standalone service, REST API, or Kubernetes deployment this specification describes. Layers 1-2 (`normalizer.py`, `pattern_matcher.py`) run inline on ingested repository content in `git_ingestion_service.py`. The full engine is not yet called on the agent or LLM request path. Layers 3-5 fall back to in-process mocks (a 15-entry threat corpus, keyword intent classification, in-memory session state) unless real OpenSearch, Bedrock, and DynamoDB clients are injected, and no production code injects them. The threat corpus in Section 6 has no loader yet. Treat Sections 4, 8, and 13 as planned.
+
 ---
 
 ## Table of Contents

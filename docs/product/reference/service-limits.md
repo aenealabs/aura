@@ -303,6 +303,8 @@ Limits specific to compliance features.
 
 ### Supported Compliance Frameworks
 
+"Supported" means policy profiles and control mappings are available in that tier. It does not mean Aura is certified against the framework; Aura holds no CMMC, FedRAMP, HIPAA, or PCI-DSS certification or attestation.
+
 | Framework | Free | Team | Enterprise |
 |-----------|------|------|------------|
 | OWASP Top 10 | Yes | Yes | Yes |

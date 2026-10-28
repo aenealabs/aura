@@ -5,6 +5,8 @@
 **Assessment Date:** 2025-12-22
 **Test Suite:** 10,027 tests (9,574 passing, 375 failing)
 
+> **Status note (October 2026):** This plan is a point-in-time record from 2025-12-22. The figures above are superseded: the repository now defines 26,049 Python test functions across 759 test files, and the enforced coverage gate is 70% (`fail_under = 70` in `pyproject.toml`; `--cov-fail-under=70` in CI). The 80% target below has not been adopted as an enforced threshold.
+
 ---
 
 ## Executive Summary

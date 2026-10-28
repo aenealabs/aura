@@ -2,7 +2,7 @@
 
 ## What We Built & How to Deploy
 
-**Status:** ✅ Production-ready, tested in mock mode, ready for AWS deployment
+**Status:** ✅ Implemented. Runs in mock mode locally and in AWS mode when boto3 and AWS credentials are available; agents obtain the service through `create_llm_service()`
 **Time to Deploy:** 10-15 minutes
 **Monthly Cost:** ~$1-2 infrastructure + $1-50 API usage
 
@@ -14,12 +14,12 @@
 
 **`src/config/bedrock_config.py`** - Configuration Management
 
-- Environment-based config (dev/staging/prod)
+- Environment-based config (development/qa/staging/production)
 - Budget limits and rate limits
 - Model pricing calculations
 - Automatic validation
 
-**`src/services/bedrock_llm_service.py`** - LLM Service (950 lines)
+**`src/services/bedrock_llm_service.py`** - LLM Service (2,388 lines)
 
 - ✅ Cost tracking and budget enforcement
 - ✅ Rate limiting (per minute/hour/day)
@@ -34,7 +34,7 @@
 
 **`tests/test_bedrock_service.py`** - Comprehensive Test Suite
 
-- 50+ test cases
+- 26 test cases in this file (206 across the six `tests/test_bedrock_*.py` suites: service, LLM service, edge cases, model discovery, model tiers, tool use)
 - Cost calculation tests
 - Budget enforcement tests
 - Rate limiting tests
@@ -65,8 +65,8 @@
 
 - **`deploy/QUICK_START.md`** - 10-minute deployment guide
 - **`deploy/AWS_SETUP_GUIDE.md`** - Detailed step-by-step guide (60 min)
-- **`docs/BEDROCK_INTEGRATION_README.md`** - Integration and usage guide
-- **`docs/bedrock_integration_plan.md`** - Complete architecture (600 lines)
+- **`docs/integrations/BEDROCK_INTEGRATION_README.md`** - Integration and usage guide
+- **`docs/integrations/BEDROCK_INTEGRATION_PLAN.md`** - Original design record (950 lines)
 - **`deploy/validate_aws_setup.py`** - Infrastructure validation script
 
 ### 5. Dependencies
@@ -222,7 +222,7 @@ python3 -m pytest tests/test_bedrock_service.py -v
 ### Basic Usage
 
 ```python
-from services.bedrock_llm_service import create_llm_service
+from src.services.bedrock_llm_service import create_llm_service
 
 # Create service (auto-detects AWS or mock mode)
 llm = create_llm_service()
@@ -243,11 +243,11 @@ print(f"Tokens: {result['input_tokens']} + {result['output_tokens']}")
 ### Cost Optimization
 
 ```python
-# Use Haiku for simple tasks (12x cheaper)
+# Use the fallback (fast-tier) model for simple tasks
 result = llm.invoke_model(
     prompt="Format this string...",
     agent="UtilityAgent",
-    use_fallback=True  # Use Haiku instead of Sonnet
+    use_fallback=True  # Use the configured fallback model (fast tier by default)
 )
 
 # Enable caching for repeated queries
@@ -271,12 +271,14 @@ print(f"Requests: {summary['total_requests']}")
 
 ### Integration with Orchestrator
 
+> **Already integrated.** The orchestrator and agents obtain the service through `create_llm_service()` (for example `src/agents/agent_orchestrator.py:2782` and `src/agents/coder_agent.py:535`). The snippet below is an illustrative pattern, not the current code.
+
 ```python
 # In src/agents/agent_orchestrator.py
 
 class System2Orchestrator:
     def __init__(self):
-        from services.bedrock_llm_service import create_llm_service
+        from src.services.bedrock_llm_service import create_llm_service
         self.llm_service = create_llm_service()
 
     def _call_llm(self, prompt: str, agent_name: str) -> str:
@@ -302,7 +304,7 @@ class System2Orchestrator:
 
 ```bash
 # Set environment
-export AURA_ENV=development  # or staging, production
+export AURA_ENV=development  # or qa, staging, production
 
 # Optional: Override AWS region
 export AWS_REGION=us-east-1
@@ -392,9 +394,7 @@ python3 -m pytest tests/test_bedrock_service.py -v
 
 ### Short Term (This Week)
 
-1. **Integrate with Orchestrator**
-   - Replace mock LLM responses with real Bedrock calls
-   - Update `agent_orchestrator.py`
+1. **Integrate with Orchestrator** (done: agents call `create_llm_service()`)
 
 2. **Test End-to-End**
    - Run full security remediation workflow
@@ -440,15 +440,16 @@ src/
 ├── config/
 │   └── bedrock_config.py                   # Configuration management
 └── services/
-    └── bedrock_llm_service.py              # LLM service (950 lines)
+    └── bedrock_llm_service.py              # LLM service (2,388 lines)
 
 docs/
-├── BEDROCK_INTEGRATION_README.md           # Usage guide
-├── bedrock_integration_plan.md             # Architecture (600 lines)
-└── BEDROCK_SETUP_SUMMARY.md                # This file
+└── integrations/
+    ├── BEDROCK_INTEGRATION_README.md       # Usage guide
+    ├── BEDROCK_INTEGRATION_PLAN.md         # Original design record (950 lines)
+    └── BEDROCK_SETUP_SUMMARY.md            # This file
 
 tests/
-└── test_bedrock_service.py                 # Test suite (50+ tests)
+└── test_bedrock_service.py                 # Test suite (26 tests; see also the other tests/test_bedrock_*.py files)
 ```
 
 ### Important URLs
@@ -474,7 +475,7 @@ You'll know everything is working when:
 ✅ Budget limits enforced
 ✅ Tests passing
 
-**Current Status: Ready for Deployment!**
+**Current Status: Implemented.** Verifying a given environment's AWS-mode behavior requires checking that environment directly.
 
 ---
 
@@ -495,4 +496,4 @@ You'll know everything is working when:
 **For:** Project Aura
 **Date:** November 2025
 **Version:** 1.0
-**Status:** Production Ready ✅
+**Status:** Implemented ✅

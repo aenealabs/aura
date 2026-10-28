@@ -108,7 +108,8 @@ Run tests as part of the CI/CD pipeline with VPC access configured.
 1. **Add E2E test stage to buildspec:**
 
 ```yaml
-# deploy/buildspecs/buildspec-e2e-tests.yml
+# deploy/buildspecs/buildspec-e2e-tests.yml (proposed; not in the repository -- the existing
+# integration buildspec is deploy/buildspecs/buildspec-integration-test.yml)
 version: 0.2
 
 env:
@@ -182,8 +183,8 @@ nc -zv vpc-aura-dev-EXAMPLE.us-east-1.es.amazonaws.com 443
 
 ```bash
 # Using SSO
-aws sso login --profile aura-admin
-export AWS_PROFILE=aura-admin
+aws sso login --profile aura-breakglass-dev
+export AWS_PROFILE=aura-breakglass-dev
 
 # Verify identity
 aws sts get-caller-identity
@@ -216,7 +217,7 @@ Run Bedrock tests from anywhere with AWS credentials. Useful for validating LLM 
 
 ```bash
 # 1. Set AWS credentials
-export AWS_PROFILE=aura-admin
+export AWS_PROFILE=aura-breakglass-dev
 # or
 export AWS_ACCESS_KEY_ID=...
 export AWS_SECRET_ACCESS_KEY=...

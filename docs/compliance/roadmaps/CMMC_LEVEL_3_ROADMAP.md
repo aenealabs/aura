@@ -6,6 +6,7 @@
 **Last Updated:** December 22, 2025
 **Classification:** Public
 **Target Certification:** CMMC Level 3 (Expert)
+**Status:** Planned. No certification filing has been submitted (as of October 2026). Aura does not hold CMMC Level 2, the prerequisite for Level 3.
 
 ---
 
@@ -742,10 +743,7 @@ CMMC Level 3 expectations may exceed solo founder capacity:
 
 ### Decision 4: Red Team Vendor
 **Question:** Annual red team engagement vendor?
-- SpecterOps (high-end)
-- Bishop Fox (established)
-- NCC Group (comprehensive)
-- Coalfire (CMMC-aware)
+- Vendor not yet selected; choose through an RFP among established red team firms
 
 **Decision Needed By:** Month 6 of implementation
 

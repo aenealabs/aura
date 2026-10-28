@@ -2,7 +2,9 @@
 
 ## Status
 
-Deployed (Phase 1 Complete - 358 tests)
+Implemented (library, Phase 1 plus Phase 3 profile/provenance pieces); not integrated into the agent pipeline
+
+> **Status note (2026-10-26).** `src/services/constraint_geometry/` (2,976 LOC) holds the engine, coherence calculator, two-tier embedding cache, 4 policy profiles, provenance adapter and regression floors; `tests/services/test_constraint_geometry/` collects 190 tests (not 358). It is imported only by `src/services/model_assurance/` and `src/services/verification_envelope/`, not by the agent orchestrator, and `create_engine()` (`engine.py:203`) builds no embedding provider, so a cache miss raises. `ConstraintGraphResolver` stores a Neptune client but resolves only in-memory rules (`constraint_graph.py:49-100`); `deploy/cloudformation/constraint-geometry.yaml`, `constraint_bundle.py` and `version_manager.py` do not exist.
 
 ## Date
 

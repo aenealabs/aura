@@ -2,7 +2,7 @@
 
 ## 1. Overview and Architecture
 
-**Aura** is an autonomous code development platform powered by the **Codebase Knowledge Graph Engine (CKGE)**. CKGE provides **Infinite Code Context** through a hybrid graph-vector architecture, enabling Aura to autonomously generate production-ready code with built-in CMMC/FedRAMP compliance. The platform operates as a coordinated multi-agent microservice architecture.
+**Aura** is an autonomous code development platform powered by the **Codebase Knowledge Graph Engine (CKGE)**. CKGE provides **Infinite Code Context** through a hybrid graph-vector architecture, enabling Aura to autonomously generate production-ready code with controls designed to align with CMMC and FedRAMP requirements (not certified; no filing submitted). The platform operates as a coordinated multi-agent microservice architecture.
 
 ### Key Architectural Concepts
 
@@ -24,8 +24,8 @@ The platform is hardened against common vulnerabilities found in AI code generat
 To contribute a new feature or fix to the Aura platform (CKGE):
 
 1. **Code and Test:** Implement changes in Python and update **`requirements.txt`** if needed.
-2. **Unit Test Coverage:** All new logic must achieve $100\%$ unit test coverage (e.g., in `src/tests/ckge_tests.py`).
-3. **Run Integration Test:** Execute `python3 src/tests/ckge_tests.py` locally to verify the full multi-agent flow.
+2. **Unit Test Coverage:** All new logic needs unit tests under `tests/`. The enforced repository-wide coverage gate is 70% (`fail_under = 70` in `pyproject.toml`) and must not be lowered; aim for full coverage of new logic.
+3. **Run Integration Test:** Execute `pytest tests/integration -q --no-cov` locally (the original `src/tests/ckge_tests.py` script no longer exists).
 4. **Submit Pull Request (PR):** Target the `develop` branch.
 5. **Pass Security Gates:** The PR merge will trigger the CI/CD pipeline, which must pass **SAST, SCA, and ECR Vulnerability Scans** before merging into `main`.
 

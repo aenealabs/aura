@@ -18,13 +18,14 @@
 
 ## Overview
 
-Project Aura uses a **modular CI/CD architecture** with 20 CodeBuild projects managing 106 CloudFormation templates across 8 deployment layers. Each layer has its own CodeBuild project for independent, parallel deployments. A Step Functions state machine orchestrates complete environment deployments.
+Project Aura uses a **modular CI/CD architecture** with 24 CodeBuild projects (one per `deploy/cloudformation/codebuild-*.yaml` template) managing 182 CloudFormation templates across 8 deployment layers. Each layer has its own CodeBuild project for independent, parallel deployments. A Step Functions state machine orchestrates complete environment deployments.
 
 ✅ **Modular Architecture:**
-- **20 CodeBuild projects** (8 parent layers + 10 sub-layers + 2 pipeline projects)
-- **106 CloudFormation templates** (20 CodeBuild + 86 infrastructure)
-- **86 stacks deployed** to dev environment
-- **20 buildspec files** managing deployments
+- **24 CodeBuild projects** (one `AWS::CodeBuild::Project` in each of the 24 `deploy/cloudformation/codebuild-*.yaml` templates)
+- **182 CloudFormation templates** (24 CodeBuild + 157 infrastructure; count excludes `archive/` and includes `service-catalog-products/`)
+- **27 buildspec files** under `deploy/buildspecs/` (`buildspec-*.yml`)
+
+Template count reproduction: `find deploy/cloudformation -path "*/archive" -prune -o -name "*.yaml" -type f -print | grep -v "/archive/" | wc -l`
 
 ✅ **Step Functions Deployment Pipeline:**
 - **Automated 5-phase deployment** from infrastructure to verification
@@ -80,17 +81,17 @@ aws cloudformation deploy \
   --tags Project=aura Environment=dev Layer=bootstrap BootstrapExemption=true \
   --region us-east-1
 
-# Then trigger the bootstrap build to deploy all 20 CodeBuild projects
+# Then trigger the bootstrap build to deploy all 24 CodeBuild projects
 aws codebuild start-build --project-name aura-bootstrap-deploy-dev --region us-east-1
 ```
 
 **What the Bootstrap layer deploys:**
-- 20 CodeBuild projects (8 parent layers + 12 sub-layers including k8s-deploy and integration-test)
+- 24 CodeBuild projects (8 parent layers plus sub-layer, pipeline, k8s-deploy and integration-test projects)
 - S3 artifacts buckets for each layer
 - IAM roles with layer-specific permissions
 - CloudWatch log groups and alarms
 
-**Time:** ~15 minutes (bootstrap build deploys all 20 CodeBuild stacks)
+**Time:** ~15 minutes (bootstrap build deploys the CodeBuild project stacks)
 
 > **Note:** See `docs/operations/BOOTSTRAP_GUIDE.md` for complete fresh account bootstrap procedure.
 > See `docs/operations/bootstrap-exemptions.md` for bootstrap exemption rationale.
@@ -180,7 +181,7 @@ aws codebuild start-build --project-name aura-security-deploy-dev --region us-ea
 │ Serverless    │ │ Sandbox       │ │ Security      │ │ All 8 Layers  │
 │               │ │               │ │               │ │ DEPLOYED ✅   │
 │ Lambda        │ │ HITL Workflow │ │ AWS Config    │ │               │
-│ EventBridge   │ │ Step Functions│ │ GuardDuty     │ │ 16 CodeBuild  │
+│ EventBridge   │ │ Step Functions│ │ GuardDuty     │ │ 24 CodeBuild  │
 │ Chat/Incident │ │ ECS Sandbox   │ │ Drift Detect  │ │ 92 Templates  │
 └───────────────┘ └───────────────┘ └───────────────┘ └───────────────┘
 ```
@@ -644,14 +645,14 @@ The buildspecs use `cfn-lint` to validate CloudFormation templates before deploy
 | 6 | Errors found | Fail |
 | 8 | Both errors and warnings | Fail |
 
-**Fallback Pattern in Buildspecs:**
+**Pattern in Buildspecs (as of 2026-10-26):**
 
 ```bash
-# Prevents build failure on cfn-lint warnings (exit 4)
-cfn-lint template.yaml || echo "cfn-lint warnings (non-blocking)"
+# Warnings (exit 4) pass; errors (exit 2/6/8) fail the build
+./scripts/cfn-lint-wrapper.sh deploy/cloudformation/template.yaml --ignore-checks W3002 || exit 1
 ```
 
-This pattern is applied to 46 cfn-lint invocations across 8 buildspecs.
+Every buildspec uses this form and installs `cfn-lint==1.57.2`, matching the PR gate (`code-quality.yml`) and the nightly job. The `|| exit 1` is needed inside multi-line `- |` blocks, where CodeBuild checks only the last command's exit status. It replaced the former `cfn-lint ... || echo` form, which swallowed every exit code; see `deploy/buildspecs/CLAUDE.md`.
 
 ### cfn-lint Wrapper Script
 
@@ -707,7 +708,7 @@ on:
 ```
 
 **Workflow Features:**
-- Scans 97 CloudFormation templates (excludes `archive/` and `marketplace.yaml`)
+- Scans every `*.yaml` under `deploy/cloudformation/` except `archive/` (182 templates; the retired `marketplace.yaml` now lives in `archive/`)
 - Validates all IAM actions against AWS service database
 - Creates GitHub issue if invalid actions found
 - Uploads validation report as artifact (30-day retention)
@@ -1057,10 +1058,10 @@ aws cloudformation wait stack-delete-complete \
   --stack-name aura-eks-dev \
   --region us-east-1
 
-# Redeploy from backup
+# Redeploy from the last known-good template revision in git
 aws cloudformation create-stack \
   --stack-name aura-eks-dev \
-  --template-body file://deploy/cloudformation/eks-multi-tier.yaml.backup \
+  --template-body file://deploy/cloudformation/eks.yaml \
   --region us-east-1
 ```
 

@@ -201,7 +201,7 @@ The sandbox buildspec (`buildspec-sandbox.yml`) does NOT update the `aura-codebu
 
 ```bash
 # Update the CodeBuild IAM stack manually
-AWS_PROFILE=aura-admin aws cloudformation update-stack \
+AWS_PROFILE=aura-breakglass-dev aws cloudformation update-stack \
   --stack-name aura-codebuild-sandbox-dev \
   --template-body file://deploy/cloudformation/codebuild-sandbox.yaml \
   --capabilities CAPABILITY_NAMED_IAM \
@@ -209,7 +209,7 @@ AWS_PROFILE=aura-admin aws cloudformation update-stack \
   --region us-east-1
 
 # Wait for completion
-AWS_PROFILE=aura-admin aws cloudformation wait stack-update-complete \
+AWS_PROFILE=aura-breakglass-dev aws cloudformation wait stack-update-complete \
   --stack-name aura-codebuild-sandbox-dev \
   --region us-east-1
 ```

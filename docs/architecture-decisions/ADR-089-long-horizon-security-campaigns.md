@@ -1,6 +1,6 @@
 # ADR-089: Long-Horizon Security Campaigns
 
-**Status:** Accepted -- Phases 1-4 and 6 implemented in-process; Phase 5 blocked-stub (#115); Step Functions substrate not yet used by code
+**Status:** Implemented (library, Phases 1-4 and 6); not integrated -- Phase 5 blocked-stub (#115); Step Functions substrate not yet used by code
 **Date:** 2026-05-07
 **Author:** Project Aura Team
 **Related ADRs:** ADR-024 (Titan Neural Memory), ADR-032 (Configurable HITL),

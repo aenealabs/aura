@@ -2,7 +2,9 @@
 
 ## Status
 
-Deployed
+Deployed (Phases 1-2; Phase 3 services are stubs)
+
+> **Status note (2026-10-26).** Dashboard CRUD, sharing, templates, and role defaults are DynamoDB-backed (`src/services/dashboard/dashboard_service.py`, `deploy/cloudformation/dashboard-dynamodb.yaml` with Streams to EventBridge audit). The Phase 3 features exposed by `src/api/dashboard_endpoints.py` are stubs: custom widgets are stored in memory and return canned data from `_execute_mock_query` (`custom_widget_service.py:211`, `:423`, `:513`), scheduled reports are in memory and `_send_report` only logs (`scheduled_report_service.py:207`, `:532`), and embed tokens are in memory (`embed_service.py:203`).
 
 ## Date
 

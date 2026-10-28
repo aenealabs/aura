@@ -14,15 +14,22 @@ env:
 phases:
   pre_build:
     commands:
+      # ADR-092: deploy through the scoped CloudFormation service role when the
+      # environment opts in by publishing the role ARN in SSM. Unset means the
+      # stacks deploy as this CodeBuild role (the default).
+      - |
+        CFN_ROLE_ARN=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/cfn-service-role-arn" --query Parameter.Value --output text 2>/dev/null || echo "")
+        if [ -n "$CFN_ROLE_ARN" ] && [ "$CFN_ROLE_ARN" != "None" ]; then export CFN_ROLE_ARG="--role-arn $CFN_ROLE_ARN"; else export CFN_ROLE_ARG=""; fi
+        echo "CloudFormation service role: ${CFN_ROLE_ARN:-none, deploying as the CodeBuild role}"
       - echo "=========================================="
       - echo "SSR Training Deployment (Layer 7.2-7.3)"
       - echo "=========================================="
       - echo "Installing dependencies..."
       - python -m pip install --upgrade pip
-      - pip3 install --quiet cfn-lint
+      - pip3 install --quiet cfn-lint==1.57.2
       - echo "Validating CloudFormation templates..."
-      - cfn-lint deploy/cloudformation/ssr-training.yaml --ignore-checks W3002,W1020 || echo "Template has warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/ssr-training-pipeline.yaml --ignore-checks W3002,W1020 || echo "Template has warnings (non-blocking)"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/ssr-training.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/ssr-training-pipeline.yaml --ignore-checks W3002,W1020 || exit 1
       - echo "Template validation complete"
 
       # Get VPC and subnet info for ECS tasks
@@ -55,7 +62,7 @@ phases:
         if [ -n "$ALERT_EMAIL" ] && [ "$ALERT_EMAIL" != "None" ]; then
           PARAMS="$PARAMS AlertEmail=$ALERT_EMAIL"
         fi
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $SSR_TRAINING_STACK \
           --template-file deploy/cloudformation/ssr-training.yaml \
           --parameter-overrides $PARAMS \
@@ -97,7 +104,7 @@ phases:
         if [ -n "$SSR_KMS_KEY" ] && [ "$SSR_KMS_KEY" != "None" ]; then
           PIPELINE_PARAMS="$PIPELINE_PARAMS SSRKMSKeyArn=$SSR_KMS_KEY"
         fi
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $SSR_PIPELINE_STACK \
           --template-file deploy/cloudformation/ssr-training-pipeline.yaml \
           --parameter-overrides $PIPELINE_PARAMS \

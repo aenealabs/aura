@@ -178,5 +178,5 @@ For feature requests or documentation feedback, use the **Feedback** button in t
 
 - [Getting Started](../getting-started/index.md) - Initial setup and configuration
 - [Core Concepts](../core-concepts/index.md) - Technical foundations and architecture
-- [API Reference](../../support/api-reference/index.md) - REST and GraphQL APIs
+- [API Reference](../../support/api-reference/index.md) - REST API (GraphQL planned)
 - [Troubleshooting](../../support/troubleshooting/index.md) - Common issues and solutions

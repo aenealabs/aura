@@ -11,6 +11,15 @@ The Sandbox Security Model is the validation layer that ensures every AI-generat
 
 This document explains how sandbox environments work, which isolation controls are actually enforced, the validation categories that every patch must pass, and the resource controls that prevent runaway processes.
 
+> **Implementation status (October 2026).** The network and IAM controls in [Network Isolation](#network-isolation) are deployed by `deploy/cloudformation/sandbox.yaml`. Runtime patch testing is not yet connected end to end:
+>
+> - The orchestrator's sandbox step runs only when `SANDBOX_ENABLED=true`; otherwise it is reported as `SKIPPED` and the approval request is marked "not runtime-tested". The orchestrator ConfigMap does not set this variable.
+> - When enabled, `FargateSandboxOrchestrator.create_sandbox` (`src/services/sandbox_network_service.py:695`) launches task definition `sandbox-patch-test-{env}` with container `sandbox-runtime`. Those names are defined only in the archived template `deploy/cloudformation/archive/ecs-sandbox-cluster.yaml`; the active `sandbox.yaml` defines `aura-sandbox-test-runner-{env}` with container `sandbox-test-runner`.
+> - The patched code is not passed to the task: `ValidatorAgent.validate_in_sandbox` receives the code but sends only the sandbox ID, patch ID, and test-suite name.
+> - A real test-runner image exists (`deploy/docker/sandbox/Dockerfile.test-runner`, `run-tests.sh`): it fetches code from S3 or Git and runs pytest (`unit`, `integration`, `security`, or `all`), with Bandit and Safety for `security`. It is used by the Step Functions state machine in `deploy/cloudformation/hitl-workflow.yaml`, which no application code starts.
+>
+> The five validation categories below describe the target pipeline. Today only the static checks in `ValidatorAgent` (syntax via `ast`, expected symbols, dangerous-pattern scan) run on every patch, outside the sandbox.
+
 ---
 
 ## Why Sandbox Testing Matters
@@ -44,7 +53,7 @@ In the HITL workflow, step 6 is a repair run: the orchestrator reruns the Coder 
 
 ### What Validation Covers
 
-Sandbox validation runs these checks before a patch reaches human review:
+Sandbox validation is designed to run these checks before a patch reaches human review (planned; see the status note above):
 
 | Issue Type | How it is detected |
 |------------|--------------------|
@@ -54,8 +63,9 @@ Sandbox validation runs these checks before a patch reaches human review:
 | Performance regressions | Benchmark comparison against the pre-patch baseline |
 | Integration failures | Integration suite exit status |
 
-No catch-rate or production-success figures are published here. Aura has no
-customer deployments, so any such rate would be unmeasured.
+No catch-rate or production-success figures are published here. Aura has not
+yet onboarded a non-synthetic customer codebase, so any such rate would be
+unmeasured.
 
 ---
 
@@ -97,9 +107,9 @@ data by IAM allow-list and by the environment's AWS account boundary.
 │  │                                                                   │  │
 │  │  ┌─────────────────────────────────────────────────────────────┐  │  │
 │  │  │  Fargate Task (ephemeral, auto-destroyed)                   │  │  │
-│  │  │  - CPU: 0.5 vCPU                                            │  │  │
-│  │  │  - Memory: 1 GB                                             │  │  │
-│  │  │  - Timeout: 30 minutes max                                  │  │  │
+│  │  │  - CPU: 1 vCPU                                              │  │  │
+│  │  │  - Memory: 2 GB                                             │  │  │
+│  │  │  - Timeout: 30 minutes (Step Functions task)                │  │  │
 │  │  │  - assignPublicIp: DISABLED                                 │  │  │
 │  │  └─────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                   │  │
@@ -119,10 +129,10 @@ data by IAM allow-list and by the environment's AWS account boundary.
 
 | Component | Purpose | Technology |
 |-----------|---------|------------|
-| **Sandbox Orchestrator** | Provisions and manages sandbox lifecycle | Python, AWS Step Functions |
-| **ECS Fargate Task** | Runs patched code in isolation | AWS ECS, Fargate Spot |
-| **Mock Services** | Simulates external dependencies | LocalStack, custom mocks |
-| **Test Data Store** | Provides synthetic test data | In-memory, no production data |
+| **Sandbox Orchestrator** | Provisions and manages sandbox lifecycle | Python (`FargateSandboxOrchestrator`); Step Functions state machine defined but not started by the application |
+| **ECS Fargate Task** | Runs patched code in isolation | AWS ECS, Fargate (on-demand launch type; Spot is not used) |
+| **Mock Services** | Simulates external dependencies | Planned |
+| **Test Data Store** | Provides synthetic test data | Planned |
 | **CloudWatch Logs** | Captures test output and metrics | Sandbox-specific log groups |
 
 ---
@@ -247,7 +257,7 @@ grant for another account.
 
 ## Validation Categories
 
-Every patch must pass five validation categories before it can proceed to human review. Failure in any category results in automatic rejection.
+The target design requires every patch to pass five validation categories before it can proceed to human review, with failure in any category resulting in automatic rejection. **These categories are planned.** The test-runner image runs a single pytest suite per task (plus Bandit and Safety for the `security` suite); syntax checks for other languages, coverage gating, performance benchmarking, and contract testing are not implemented.
 
 ### Category Overview
 
@@ -444,7 +454,7 @@ Integration Tests: FAILED
 
 ## Validation Pipeline
 
-The validation pipeline executes all categories in a defined sequence with early termination on failure.
+Planned: the validation pipeline executes all categories in a defined sequence with early termination on failure. `SandboxValidator` below is a design sketch, not a class in the codebase.
 
 ### Pipeline Flow
 
@@ -581,15 +591,16 @@ Sandboxes operate under strict resource constraints to prevent runaway processes
 
 | Resource | Limit | Justification |
 |----------|-------|---------------|
-| **CPU** | 0.5 vCPU | Sufficient for test execution |
-| **Memory** | 1 GB | Covers typical test suites |
-| **Storage** | 20 GB ephemeral | Temporary build artifacts |
-| **Network** | Outbound only | Package downloads only |
-| **Task Duration** | 30 minutes max | Hard limit, auto-terminated |
+| **CPU** | 1 vCPU | `Cpu: '1024'` in `SandboxTestRunnerTaskDefinition` |
+| **Memory** | 2 GB | `Memory: '2048'` |
+| **Storage** | Read-only root filesystem; tmpfs `/tmp` (256 MiB) and `/app/workspace` (1024 MiB) | Temporary build artifacts |
+| **Network** | Egress UDP 53 and TCP 443 only | Security group, see above |
+| **Task Duration** | 30 minutes in the Step Functions path; the orchestrator polls for 300 seconds and records the task with a 3600-second TTL | Timeout |
 
 ### Timeout Configuration
 
 ```python
+# Planned per-stage budgets (not in code)
 SANDBOX_TIMEOUTS = {
     "provisioning": 300,       # 5 minutes
     "syntax_validation": 60,   # 1 minute
@@ -630,7 +641,7 @@ Sandboxes are automatically destroyed after execution to prevent resource accumu
 │                                                                         │
 │  COST OPTIMIZATION                                                      │
 │  ─────────────────                                                      │
-│  - Fargate Spot: 70% cost reduction for ephemeral tasks                 │
+│  - Fargate Spot (planned; tasks launch as on-demand FARGATE today)      │
 │  - Auto-teardown: Prevents orphaned resources                           │
 │  - Shared VPC: Amortized networking costs                               │
 │                                                                         │
@@ -641,7 +652,7 @@ Sandboxes are automatically destroyed after execution to prevent resource accumu
 
 ## Sandbox Results and Reporting
 
-Every sandbox execution produces a comprehensive report for human reviewers.
+Planned: every sandbox execution produces a comprehensive report for human reviewers. Today the approval request carries a sandbox block with status (`PASSED`, `FAILED`, or `SKIPPED`), sandbox ID, errors, execution time, and test counts when the task reported test results. The reports below are mock-ups.
 
 ### Report Structure
 
@@ -739,7 +750,7 @@ Every sandbox execution produces a comprehensive report for human reviewers.
 
 ## Data Isolation
 
-Sandboxes never access production data. All test data is synthetic or anonymized.
+Sandboxes cannot reach production data stores: the task role grants no Neptune, OpenSearch, or other data-store access (see [IAM Task Role](#iam-task-role)). The synthetic data sources and mock services below are planned.
 
 ### Data Sources
 
@@ -785,13 +796,13 @@ MOCK_SERVICES = {
 
 ## Cost Analysis
 
-Sandbox validation is cost-effective due to ephemeral provisioning and Spot pricing.
+Sandbox validation is designed to be cost-effective through ephemeral provisioning. The figures below are estimates for the target pipeline, not measured costs.
 
 ### Per-Patch Cost Breakdown
 
 | Resource | Usage | Cost (USD) |
 |----------|-------|------------|
-| Fargate (Spot) | 0.5 vCPU x 1 GB x 15 min | $0.01 |
+| Fargate (on-demand) | 1 vCPU x 2 GB x 15 min | $0.01 |
 | CloudWatch Logs | 50 MB | $0.03 |
 | S3 (reports) | 10 MB stored | $0.00 |
 | Data transfer | 25 MB | $0.00 |
@@ -807,7 +818,7 @@ Sandbox validation is cost-effective due to ephemeral provisioning and Spot pric
 | 10,000 | $400 | High-volume CI/CD |
 
 **Cost Optimization Strategies:**
-- Fargate Spot for 70% discount
+- Fargate Spot (planned)
 - Aggressive timeouts prevent runaway costs
 - Automatic teardown eliminates orphaned resources
 - Shared VPC amortizes networking
@@ -841,15 +852,15 @@ All sandbox executions produce audit evidence:
 
 ## Key Takeaways
 
-> **Every patch is validated before human review.** The sandbox layer ensures that human reviewers only see patches that have passed automated validation, saving time and reducing risk.
+> **Every patch is statically validated before human review.** Review and static validation always run; runtime sandbox testing is skipped or not yet testing the patch (see the status note), and the approval request says so.
 
 > **Sandbox reachability is constrained by security group and IAM allow-list.** A sandbox task has no inbound rules, no public IP, egress only on UDP 53 and TCP 443, and a task role that grants nothing beyond two sandbox DynamoDB tables, one log group and one S3 artifact prefix. It is not a dedicated-VPC boundary, and `vpc` / `full` isolation levels are refused rather than provided -- see the Isolation Levels table above.
 
-> **Five validation categories provide comprehensive coverage.** Syntax, unit tests, security scans, performance, and integration tests catch different categories of issues.
+> **Five validation categories are planned.** Syntax, unit tests, security scans, performance, and integration tests are the target pipeline; the test-runner image covers pytest suites and Bandit/Safety today.
 
 > **Resource limits prevent runaway processes.** Strict CPU, memory, and timeout limits ensure sandboxes cannot consume excessive resources.
 
-> **Sandbox validation is cost-effective.** Ephemeral provisioning and Spot pricing keep per-patch costs under $0.05.
+> **Sandbox validation is designed to be cost-effective.** Ephemeral provisioning keeps the estimated per-patch cost under $0.05; Spot pricing is planned.
 
 ---
 

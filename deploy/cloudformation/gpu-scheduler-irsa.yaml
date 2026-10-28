@@ -113,6 +113,7 @@ Resources:
   GPUSchedulerRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-gpu-scheduler-irsa-role-${Environment}'
       Description: !Sub 'IRSA role for ${ProjectName}-gpu-scheduler Kubernetes service account'
       AssumeRolePolicyDocument:

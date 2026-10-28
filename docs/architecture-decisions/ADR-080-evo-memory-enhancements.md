@@ -4,6 +4,8 @@
 
 Implemented (all six phases built and unit-tested; 339 tests collected on 2026-10-14; not yet wired into production request paths)
 
+> **Status note (2026-10-26).** The package is written against protocol interfaces (for example `NeptuneGraphServiceProtocol`, `MemoryStoreProtocol` and `SnapshotStoreProtocol` in `src/services/memory_evolution/advanced_operations.py`, and a `DynamoDBClientProtocol` in `evolution_metrics.py`); no concrete DynamoDB or Neptune adapter for those protocols exists in `src/`, and nothing outside the package imports it.
+
 ## Date
 
 2026-02-04

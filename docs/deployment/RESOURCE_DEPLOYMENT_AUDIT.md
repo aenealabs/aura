@@ -356,7 +356,7 @@ aws ssm put-parameter --name "/aura/global/codeconnections-arn" --type "String" 
   --value "arn:aws:codeconnections:us-east-1:ACCOUNT:connection/XXXXX"
 
 aws ssm put-parameter --name "/aura/dev/admin-role-arn" --type "String" \
-  --value "arn:aws:iam::ACCOUNT:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AdministratorAccess_XXXXX"
+  --value "arn:aws:iam::ACCOUNT:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AuraBreakGlass_XXXXX"
 
 aws ssm put-parameter --name "/aura/dev/alert-email" --type "String" \
   --value "alerts@example.com"
@@ -613,7 +613,7 @@ All previously identified gaps have been addressed. Every CloudFormation templat
 
 ### 2. Templates Deployment Summary
 
-All 122 CloudFormation templates are deployed via CodeBuild:
+At the time of this snapshot, 122 CloudFormation templates were deployed via CodeBuild (the repository now holds 182 templates under `deploy/cloudformation/`, excluding `archive/`):
 
 | Category | Count | Deployed By |
 |----------|-------|-------------|

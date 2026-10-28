@@ -38,6 +38,7 @@ Resources:
   EKSClusterRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-eks-cluster-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -63,6 +64,7 @@ Resources:
   EKSNodeRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-eks-node-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -94,6 +96,7 @@ Resources:
   ServiceRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-service-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -208,6 +211,7 @@ Resources:
   NeptuneAccessRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-neptune-access-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -238,6 +242,7 @@ Resources:
   CodeBuildServiceRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-deployer-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-codebuild-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -1150,6 +1155,7 @@ Resources:
   CloudFormationServiceRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-deployer-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-cfn-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -1387,6 +1393,9 @@ Resources:
                   - iam:TagRole
                   - iam:UntagRole
                   - iam:CreateServiceLinkedRole
+                  # Every project role declares a permission boundary; the
+                  # deployer boundary on this role limits which ones it may set.
+                  - iam:PutRolePermissionsBoundary
                 Resource:
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*'
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/${ProjectName}-*'
@@ -1623,6 +1632,7 @@ Resources:
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-lambda-execution-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

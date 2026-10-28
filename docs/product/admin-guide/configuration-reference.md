@@ -26,7 +26,29 @@ Configuration values are resolved in the following order (highest priority first
 
 ## Environment Variables
 
-All Project Aura environment variables use the `AURA_` prefix. Variables are grouped by functional area.
+> **Implementation status:** The `AURA_*` variable tables in this section are largely a **Planned** naming scheme. Of the 164 variable and value names in backticks in this document, 7 (`AURA_EDITION`, `AURA_ENVIRONMENT`, `AURA_LOG_LEVEL`, and the autonomy-level values `AUDIT_ONLY`, `DRAFT`, `FULL_AUTONOMOUS`, `FULL_HITL`) appear anywhere in `src/`, `frontend/src/`, or the `deploy/` Kubernetes, CloudFormation, and Helm directories; the other 157 are not read by any code today. Self-hosted and multi-cloud provider adapters do exist (`src/services/providers/`: PostgreSQL, Neo4j, MinIO, self-hosted OpenSearch, local LLM, Azure OpenAI, Cosmos DB, OpenAI, Google), but they read unprefixed variables such as `POSTGRES_HOST`, `POSTGRES_USERNAME`, `OPENSEARCH_ENDPOINT`, `LLM_PROVIDER`, `LLM_ENDPOINT`, `AZURE_OPENAI_ENDPOINT`, `OPENAI_API_KEY`, and `MINIO_ENDPOINT`, `NEO4J_URI`, and `REDIS_HOST`, not the `AURA_*` names below.
+>
+> **Variables the API server actually reads** (see `src/api/main.py`, `src/api/auth.py`, `src/api/dev_mock_fallback.py`, and the service getters):
+>
+> | Variable | Default | Effect |
+> |----------|---------|--------|
+> | `ENVIRONMENT` | `dev` | Environment name; gates the auth bypass, CORS strictness, and debug behavior |
+> | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Comma-separated CORS allowlist (must be set in `prod`) |
+> | `DEBUG` | `false` | Debug error detail (ignored outside dev/test environments) |
+> | `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID` | read from SSM when unset | Cognito JWT validation |
+> | `AWS_REGION` | `us-east-1` | Region; when set, the HITL approval service uses DynamoDB instead of in-memory storage |
+> | `AURA_AUTH_BYPASS` | unset | `true` uses a mock dev user, honored only when `ENVIRONMENT` is dev/local/test |
+> | `AURA_ENABLE_DEV_MOCKS` | `true` | Mounts the dev-mock router (canned sandboxes, capability graph, knowledge graph, validator runs, notification settings, health overview) |
+> | `AURA_DEV_MOCK_ON_AWS_ERROR` | `true` | Repository, OAuth, model-router, and scheduling routes return seeded demo data on AWS credential, region, endpoint, or `ClientError` failures instead of an error |
+> | `AURA_SEED_MOCK_ALERTS`, `AURA_SEED_MOCK_INCIDENTS`, `AURA_SEED_MOCK_APPROVALS` | `true` | Seed demo records into in-memory stores |
+> | `USE_AWS_DYNAMODB` | unset | When set, environment, orchestrator-settings, and trust-center services use DynamoDB instead of in-memory mock storage |
+> | `BILLING_MODE`, `FEEDBACK_MODE`, `USAGE_ANALYTICS_MODE`, `HEALTH_SERVICE_MODE` | `mock` | Service backends; `mock` keeps data in memory |
+> | `NEPTUNE_ENDPOINT`, `OPENSEARCH_ENDPOINT` | service-discovery defaults | Graph and vector store endpoints |
+> | `GITHUB_WEBHOOK_SECRET`, `AURA_ALLOWED_BRANCHES`, `AURA_CLONE_PATH` | unset, `main,master,develop`, `/tmp/aura-repos` | Inbound GitHub webhook and ingestion |
+>
+> No file under `deploy/` sets the dev-mock or seed flags to `false`, so deployments that do not set them explicitly serve demo data on those routes. The canonical deployed values are in the Kubernetes manifests under `deploy/kubernetes/`.
+
+All Project Aura environment variables are planned to use the `AURA_` prefix. Variables are grouped by functional area.
 
 ### Core Configuration
 
@@ -400,9 +422,9 @@ A service's own documented model setting still takes precedence over `claude_mod
 
 ## Configuration Files
 
-### YAML Configuration
+### YAML Configuration (Planned)
 
-For complex configurations, use YAML files mounted in containers:
+The API server does not currently load a `config/aura.yaml` file. For complex configurations, the planned approach is YAML files mounted in containers:
 
 ```yaml
 # config/aura.yaml
@@ -494,7 +516,9 @@ stringData:
 
 ### Health Check Endpoint
 
-The `/api/v1/health` endpoint validates configuration:
+> **Current behavior:** there is no `/api/v1/health` configuration report. `GET /health/detailed` returns component health, and `GET /api/v1/health/overview` is served by the dev-mock router with canned data. The response below and the `aura-cli config validate` command are **Planned**.
+
+The planned `/api/v1/health` endpoint validates configuration:
 
 ```bash
 curl -s https://aura.yourcompany.com/api/v1/health | jq

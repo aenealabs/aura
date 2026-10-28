@@ -1,6 +1,9 @@
 # ADR-006: Three-Tier dnsmasq Integration for Service Discovery
 
-**Status:** Deployed
+**Status:** Deployed (Tiers 1-2; Tier 3 per-sandbox dnsmasq is simulated -- see status note)
+
+> **Status note (2026-10-26).** Tier 1 (`deploy/kubernetes/dnsmasq-daemonset.yaml`) and Tier 2 (`deploy/cloudformation/network-services.yaml`, an ECS service behind a Network Load Balancer) are defined in the repo. Tier 3 is not built: `SandboxNetworkOrchestrator._provision_container_network` (`src/services/sandbox_network_service.py:377`) writes a dnsmasq config to a temporary directory, then marks the network ACTIVE with a made-up task ARN and DNS IP, and no code outside that module creates a `SandboxNetworkOrchestrator`. The live sandbox path (`FargateSandboxOrchestrator`) runs test tasks without a per-sandbox dnsmasq.
+
 **Date:** 2025-11-12
 **Decision Makers:** Project Aura Team
 

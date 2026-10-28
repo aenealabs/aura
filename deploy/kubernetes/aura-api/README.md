@@ -30,7 +30,7 @@ This deployment follows [ADR-011: VPC Access via EKS Deployment](../../../docs/a
 ### 2. Configure kubectl
 
 ```bash
-aws eks update-kubeconfig --name aura-cluster-${ENV} --region ${AWS_REGION} --profile aura-admin
+aws eks update-kubeconfig --name aura-cluster-${ENV} --region ${AWS_REGION} --profile aura-breakglass-dev
 ```
 
 ### 3. Build and Push Docker Image

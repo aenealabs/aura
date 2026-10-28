@@ -110,7 +110,7 @@ All Project Aura Lambda functions with their descriptions:
 
 ```bash
 # List all aura Lambda functions with descriptions
-AWS_PROFILE=aura-admin aws lambda list-functions \
+AWS_PROFILE=aura-breakglass-dev aws lambda list-functions \
   --query 'Functions[?starts_with(FunctionName, `aura-`)].{Name: FunctionName, Description: Description}' \
   --output table --region us-east-1
 ```
@@ -119,7 +119,7 @@ AWS_PROFILE=aura-admin aws lambda list-functions \
 
 ```bash
 # Find functions with empty or missing descriptions
-AWS_PROFILE=aura-admin aws lambda list-functions \
+AWS_PROFILE=aura-breakglass-dev aws lambda list-functions \
   --query 'Functions[?starts_with(FunctionName, `aura-`) && (Description==`` || Description==`null`)].FunctionName' \
   --output text --region us-east-1
 ```
@@ -128,7 +128,7 @@ AWS_PROFILE=aura-admin aws lambda list-functions \
 
 ```bash
 # Get full configuration for a specific Lambda
-AWS_PROFILE=aura-admin aws lambda get-function-configuration \
+AWS_PROFILE=aura-breakglass-dev aws lambda get-function-configuration \
   --function-name aura-chat-handler-dev \
   --query '{Name: FunctionName, Description: Description, Runtime: Runtime, Timeout: Timeout, Memory: MemorySize}' \
   --output json --region us-east-1
@@ -214,7 +214,7 @@ aws codebuild start-build --project-name aura-{layer}-deploy-dev --region us-eas
 
 4. **Verify deployment:**
 ```bash
-AWS_PROFILE=aura-admin aws lambda get-function-configuration \
+AWS_PROFILE=aura-breakglass-dev aws lambda get-function-configuration \
   --function-name aura-function-name-dev \
   --query '{FunctionName: FunctionName, Description: Description}' \
   --output json --region us-east-1

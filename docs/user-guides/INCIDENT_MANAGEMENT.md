@@ -9,13 +9,15 @@
 
 The Incident Investigations view in Project Aura provides a centralized interface for managing and investigating production incidents. This feature combines AI-powered Root Cause Analysis (RCA) with seamless integration to external ticketing systems, enabling teams to track, investigate, and resolve incidents efficiently.
 
+> **Implementation status (October 2026).** The **Incidents** page (`/incidents`) loads its list from `GET /api/v1/incidents` (`src/api/security_incidents_endpoints.py`), which serves an in-memory store seeded with demo incidents unless `AURA_SEED_MOCK_INCIDENTS=false`; if the call fails, the page shows built-in demo incidents. **+ New Incident**, **Assign Agent**, **Mark Resolved**, and **Create Ticket** change the page's local state only: nothing is saved to the backend, the Runtime Incident Agent is not started, and no external ticket is created (ticket IDs are generated in the browser). The **RCA Success Rate** card is a fixed value. Runtime Incident Agent investigations are real (LLM root cause analysis written to DynamoDB table `aura-incident-investigations-{env}`) and are served by `/api/v1/incidents/investigations`, which this page does not read yet. Wiring the page to those endpoints and to ticketing connectors is planned.
+
 ### Key Capabilities
 
 - **Internal Incident Tracking**: Create and manage incident records within Project Aura
 - **AI-Powered Root Cause Analysis**: Automated investigation with confidence scoring
-- **External Ticketing Integration**: Export incidents to Zendesk, ServiceNow, Linear, or Jira
+- **External Ticketing Integration** (planned): Export incidents to Zendesk, ServiceNow, Linear, or Jira
 - **Real-Time Timeline**: Track all investigation activities and decisions
-- **Evidence Collection**: Aggregate logs, metrics, and traces in one location
+- **Evidence Collection** (partial): Aggregate logs, metrics, and traces in one location; the agent's CLI does not yet pass the observability adapters, so metrics and graph evidence are skipped
 
 ---
 
@@ -32,7 +34,7 @@ The Incident Investigations view in Project Aura provides a centralized interfac
 | **Total Incidents** | Count of all incidents in the system |
 | **Open** | Incidents awaiting investigation |
 | **Investigating** | Incidents currently being analyzed |
-| **RCA Success Rate** | Percentage of incidents with successful root cause identification |
+| **RCA Success Rate** | Percentage of incidents with successful root cause identification (currently a fixed placeholder value) |
 
 ---
 
@@ -175,7 +177,7 @@ For incidents without assigned investigators:
 
 1. Select the incident from the list
 2. Click **Assign Agent** in the detail panel
-3. The Runtime Incident Agent begins automated investigation
+3. The incident is marked as investigating and shows the Runtime Incident Agent as assigned (planned: this does not yet start an investigation; the agent runs from its own task trigger)
 4. Investigation progress appears in the Timeline tab
 
 ### Timeline Tab

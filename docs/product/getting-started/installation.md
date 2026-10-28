@@ -22,6 +22,8 @@ This guide provides detailed instructions for deploying Project Aura across all 
 
 The fastest path to deploying Aura. Aenea Labs manages all infrastructure components.
 
+> **Implementation status:** The console's `/signup` page creates a Cognito user account; organization creation, subscription-tier selection, and payment collection are not yet implemented (the billing service runs in mock mode unless `BILLING_MODE=stripe` is set). SSO configuration (Step 2) is planned; see [SSO Integration](../admin-guide/sso-integration.md).
+
 ### Step 1: Create Your Organization
 
 1. Navigate to [aenealabs.com/signup](https://aenealabs.com/signup)
@@ -41,7 +43,7 @@ The fastest path to deploying Aura. Aenea Labs manages all infrastructure compon
 
 5. Check your email for activation link.
 
-### Step 2: Configure SSO (Recommended)
+### Step 2: Configure SSO (Planned)
 
 For enterprise deployments, configure single sign-on:
 
@@ -76,13 +78,11 @@ For enterprise deployments, configure single sign-on:
 
 ### Step 3: Connect Source Control
 
-1. Navigate to **Settings > Integrations**
+1. Navigate to **Repositories** and start the onboarding wizard
 
-2. Click **Add Integration**
+2. Select GitHub or GitLab and follow the OAuth flow
 
-3. Select your source control provider and follow the OAuth flow
-
-4. For GitHub Enterprise or GitLab Self-Managed, provide your server URL
+3. GitHub Enterprise Server and GitLab Self-Managed are planned; only github.com and gitlab.com are supported today
 
 Your cloud setup is complete. Proceed to [Initial Configuration](#initial-configuration).
 
@@ -122,7 +122,7 @@ cd aura
 ALERT_EMAIL=ops@example.com ./deploy/deploy.sh deploy dev
 ```
 
-`./deploy/deploy.sh deploy <env>` runs `deploy/scripts/bootstrap-fresh-account.sh` to populate private ECR base images and provision the 24 layer CodeBuild projects, then starts the deployment-pipeline Step Functions execution that deploys every layer (foundation → data → compute → application → observability → serverless → sandbox → security → scanning-engine) in dependency order.
+`./deploy/deploy.sh deploy <env>` runs `deploy/scripts/bootstrap-fresh-account.sh` to populate private ECR base images and provision the 23 layer CodeBuild projects, then starts the deployment-pipeline Step Functions execution that deploys every layer (foundation → data → compute → application → observability → serverless → sandbox → security → scanning-engine) in dependency order.
 
 **Other supported commands**
 
@@ -253,6 +253,8 @@ curl https://aura.yourcompany.com/health
 ## Self-Hosted Podman Deployment
 
 For single-node deployments without Kubernetes.
+
+> **Status: Planned.** The repository does not ship a Podman compose file or published `ghcr.io/aenealabs/*` images for this topology. Self-hosted provider adapters (PostgreSQL, Neo4j, MinIO, local LLM, self-hosted OpenSearch) exist in `src/services/providers/self_hosted/`, but the end-to-end single-node packaging below is a design sketch, not a tested install path.
 
 ### Prerequisites
 
@@ -516,10 +518,10 @@ After installation, complete these configuration steps.
 
 **Cloud SaaS:** Admin account created during signup.
 
-**Self-Hosted:**
+**Self-Hosted:** create the first administrator in the Cognito user pool and add the user to the `admin` group (for example with `aws cognito-idp admin-create-user` and `aws cognito-idp admin-add-user-to-group`). The `aura-cli user create` command shown below is **Planned**; the shipped `src/cli/main.py` provides `status`, `config`, `license`, `deploy`, `health`, and `logs` commands only.
 
 ```bash
-# For Kubernetes deployment
+# Planned -- not implemented
 kubectl exec -it deployment/aura-api -n aura-system -- \
   aura-cli user create \
     --email admin@yourcompany.com \
@@ -570,27 +572,29 @@ podman exec -it aura-api \
 
 ### Connect Source Control
 
-1. Navigate to **Settings > Integrations**
+1. Navigate to **Repositories**
 
-2. Click **Add Source Control**
+2. Start the onboarding wizard
 
 3. Follow provider-specific setup:
 
    **GitHub:**
-   - Create OAuth App or GitHub App in GitHub Settings
-   - Configure callback URL: `https://your-domain.com/auth/github/callback`
-   - Add Client ID and Secret to Aura
+   - Create an OAuth App in GitHub Settings
+   - Configure callback URL: `https://{your-aura-api-host}/api/v1/oauth/callback` (the API reads it from `OAUTH_CALLBACK_URL`)
+   - Provide the client ID and secret to the API as `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET`
 
    **GitLab:**
    - Create Application in GitLab Admin
-   - Configure redirect URI
-   - Add Application ID and Secret
+   - Configure redirect URI (same callback URL as GitHub)
+   - Provide `GITLAB_OAUTH_CLIENT_ID` and `GITLAB_OAUTH_CLIENT_SECRET` to the API
 
 4. Authorize and test the connection
 
 ---
 
 ## Environment Variables Reference
+
+> Of the 41 variable names in backticks in this document, 21 are read somewhere in `src/` or the `deploy/` Kubernetes, CloudFormation, and Helm directories; several others (for example `AURA_DOMAIN`) are planned names. See the [Configuration Reference](../admin-guide/configuration-reference.md#environment-variables) for the variables the API server reads today.
 
 ### Core Configuration
 
@@ -670,9 +674,11 @@ podman exec -it aura-api \
 
 ---
 
-## CI/CD Integration
+## CI/CD Integration (Planned)
 
 Integrate Aura with your existing CI/CD pipelines.
+
+> **Not yet available.** There is no `aura scan` command, no `aura-cli` package on PyPI, no `ghcr.io/aenealabs/aura-cli` image, and no scan-trigger API (`/v1/scans`) today. The examples below are the planned design. Current automation options are the GitHub push webhook (`POST /webhook/github`) and the authenticated REST API.
 
 ### GitHub Actions
 

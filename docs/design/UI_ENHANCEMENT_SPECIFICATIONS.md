@@ -4,7 +4,9 @@
 **Date:** 2026-01-27
 **Author:** UI/UX Design Team
 
-This document provides comprehensive UI/UX specifications for three priority ADRs requiring frontend implementation. These designs align with Project Aura's established design system, component patterns, and minimalist aesthetic philosophy.
+This document provides comprehensive UI/UX specifications for three priority ADRs requiring frontend implementation.
+
+> **Implementation note:** The Guardrail Configuration UI (`/guardrails`), Explainability Dashboard (`/explainability`), and Capability Graph (`/capability-graph`) pages exist in the console. Their backends currently return generated or canned data: guardrail activity metrics are randomized, explainability decisions and stats are generated sample records, and capability-graph data comes from the dev-mock router. These designs align with Project Aura's established design system, component patterns, and minimalist aesthetic philosophy.
 
 ---
 
@@ -1210,9 +1212,9 @@ This component can extend the existing `CapabilityGraph.jsx` pattern with trust-
 
 ## ADR-071: Capability Graph Completion
 
-### Status: COMPLETE (Jan 27, 2026)
+### Status: COMPLETE (Jan 27, 2026) -- frontend only
 
-All features have been implemented in the Capability Graph visualization:
+All features have been implemented in the Capability Graph visualization. **Backend note:** the dedicated capability-graph router (`src/api/capability_graph_endpoints.py`) is not mounted in `src/api/main.py`; the console's `/api/v1/capability-graph` requests are answered by the dev-mock router with canned graph data, so the visualization does not yet reflect live agent capabilities.
 
 **Completed Features:**
 1. Escalation path highlighting with visual emphasis (red edges, arrowhead markers)

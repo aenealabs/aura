@@ -1,7 +1,7 @@
 # Constitutional AI Issues
 
 **Version:** 1.0
-**Last Updated:** January 2026
+**Last Updated:** October 2026
 **Product:** Project Aura by Aenea Labs
 
 ---
@@ -17,10 +17,14 @@ Use this guide when:
 - Cache efficiency is below target
 - Compliance scores are dropping
 
+> **Current status (October 2026):** Constitutional AI runs today in the nightly evaluation Lambda (`src/lambda/constitutional_evaluation/handler.py`) and in tests; inline critique of live agent output is not yet active because no production agent class uses `ConstitutionalMixin`. The AI Trust Center returns sample data unless `USE_AWS_DYNAMODB` is set, and its Overview compliance score is a fixed placeholder (0.94), so a stable score there is not a health signal.
+>
+> **Code layout:** The `# File:` paths in the fix examples below are illustrative and do not exist as separate modules. Principles live in `src/services/constitutional_ai/constitution.yaml`; critique and revision prompts are built in `critique_service.py` and `revision_service.py`; caching is in `cache_utils.py`; failure handling is in `failure_policy.py`.
+
 **Related Documentation:**
 - `docs/product/core-concepts/hitl-workflows.md` - HITL autonomy levels
 - `docs/support/operations/monitoring.md` - CloudWatch dashboards
-- `docs/architecture-decisions/ADR-063-constitutional-ai.md` - Architecture details
+- `docs/architecture-decisions/ADR-063-constitutional-ai-integration.md` - Architecture details
 
 ---
 

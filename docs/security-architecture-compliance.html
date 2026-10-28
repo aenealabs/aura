@@ -439,7 +439,7 @@
   <div class="subtitle">Project Aura &mdash; Autonomous Code Intelligence Platform</div>
   <div class="meta-row">
     <div class="meta-item">Company: <span class="meta-value">Aenea Labs</span></div>
-    <div class="meta-item">Date: <span class="meta-value">February 25, 2026</span></div>
+    <div class="meta-item">Date: <span class="meta-value">October 26, 2026</span></div>
     <div class="meta-item">Security ADRs: <span class="meta-value">13 Deployed</span></div>
     <div class="meta-item">Compliance: <span class="meta-value">NIST 800-53 Aligned</span></div>
   </div>
@@ -477,10 +477,10 @@
 <div class="exec-summary">
   <div class="exec-card">
     <div class="number">13</div>
-    <div class="label">Security ADRs Deployed</div>
+    <div class="label">Security ADRs (see status per ADR)</div>
   </div>
   <div class="exec-card">
-    <div class="number green">3,993+</div>
+    <div class="number green">6,758</div>
     <div class="label">Security-Specific Tests</div>
   </div>
   <div class="exec-card">
@@ -520,7 +520,7 @@
 <span class="hl-dim">                    │</span>    10 VPC Endpoints  ·  Zero-Egress Sandboxes                  <span class="hl-dim">│</span>
 <span class="hl-dim">                    ├──────────────────────────────────────────────────────────────┤</span>
 <span class="hl-dim">                    │</span>              <span class="hl-blue">IDENTITY &amp; ACCESS</span>                                  <span class="hl-dim">│</span>
-<span class="hl-dim">                    │</span>    JWT + OAuth 2.0  ·  Argon2id  ·  MFA  ·  RBAC + ABAC        <span class="hl-dim">│</span>
+<span class="hl-dim">                    │</span>    JWT + OAuth 2.0  ·  Cognito   ·  MFA  ·  RBAC + ABAC        <span class="hl-dim">│</span>
 <span class="hl-dim">                    │</span>    4-Tier Capability Governance  ·  IRSA for K8s Pods           <span class="hl-dim">│</span>
 <span class="hl-dim">                    ├──────────────────────────────────────────────────────────────┤</span>
 <span class="hl-dim">                    │</span>              <span class="hl-green">AI &amp; AGENT SECURITY</span>                                <span class="hl-dim">│</span>
@@ -547,7 +547,7 @@
 <!-- Section 2: Core Security Services -->
 <section id="core-services">
 <h2>&#128272; Core Security Services</h2>
-<p style="margin-bottom:16px;color:var(--text-secondary);">Five foundational security services deployed across all API endpoints, providing input validation, secrets detection, audit logging, alerting, and integration middleware.</p>
+<p style="margin-bottom:16px;color:var(--text-secondary);">Five foundational security services providing input validation, secrets detection, audit logging, alerting, and integration helpers. Status: these are implemented and tested as libraries, but the FastAPI decorators and validated request models in <code>security_integration.py</code> are not yet applied to any route, so input validation and secrets detection do not yet run inline on API requests. The API-wide middleware that is mounted is <code>security_middleware.py</code> (security headers, request IDs, request size limit, safe error responses). Test counts below are from <code>pytest --collect-only</code> on each test file.</p>
 
 <table>
   <thead>
@@ -557,20 +557,20 @@
     <tr>
       <td><strong>Input Validation</strong><br><code>input_validation_service.py</code></td>
       <td>948</td>
-      <td>35</td>
+      <td>66</td>
       <td>SQL injection, XSS, command injection, path traversal, SSRF, prompt injection detection and sanitization</td>
     </tr>
     <tr>
       <td><strong>Secrets Detection</strong><br><code>secrets_detection_service.py</code></td>
-      <td>797</td>
-      <td>123</td>
+      <td>808</td>
+      <td>73</td>
       <td>Scans for 30+ secret types: AWS keys, API tokens, private keys, database credentials, JWTs</td>
     </tr>
     <tr>
       <td><strong>Security Audit</strong><br><code>security_audit_service.py</code></td>
       <td>518</td>
-      <td>76</td>
-      <td>Structured event logging: auth, authorization, threats, input validation, agent security, GraphRAG, system events</td>
+      <td>78</td>
+      <td>Structured event logging (to the application log stream): auth, authorization, threats, input validation, agent security, GraphRAG, system events</td>
     </tr>
     <tr>
       <td><strong>Security Alerts</strong><br><code>security_alerts_service.py</code></td>
@@ -580,16 +580,16 @@
     </tr>
     <tr>
       <td><strong>API Integration</strong><br><code>security_integration.py</code></td>
-      <td>&mdash;</td>
+      <td>670</td>
       <td>39</td>
-      <td>FastAPI decorator-based integration across all endpoints; request/response security middleware</td>
+      <td>FastAPI decorators and validated request models (not yet applied to routes)</td>
     </tr>
   </tbody>
   <tfoot>
     <tr style="font-weight:700;background:#F8FAFC;">
       <td>Total</td>
-      <td>2,860</td>
-      <td>286</td>
+      <td>3,541</td>
+      <td>285</td>
       <td></td>
     </tr>
   </tfoot>
@@ -618,9 +618,9 @@
     <div class="card-header">
       <div>
         <div class="card-title">Constitutional AI (ADR-063)</div>
-        <div class="card-subtitle">Critique-revision pipeline for all agent outputs</div>
+        <div class="card-subtitle">Critique-revision pipeline for agent outputs (opt-in mixin; no production agent uses it yet; nightly evaluation Lambda)</div>
       </div>
-      <span class="badge badge-deployed">Deployed</span>
+      <span class="badge badge-medium">Not wired</span>
     </div>
     <div class="metric-grid" style="grid-template-columns:repeat(3,1fr);">
       <div class="metric-item"><div class="value">16</div><div class="label">Principles</div></div>
@@ -630,12 +630,12 @@
     <h4>Principle Categories</h4>
     <table>
       <tbody>
-        <tr><td><strong>Safety (3)</strong></td><td>Security-first code gen, non-destructive defaults, sandbox containment</td></tr>
-        <tr><td><strong>Compliance (2)</strong></td><td>Regulatory compliance, decision audit trail</td></tr>
-        <tr><td><strong>Transparency (3)</strong></td><td>Honest uncertainty, transparent reasoning, genuine assistance</td></tr>
-        <tr><td><strong>Anti-Sycophancy (2)</strong></td><td>Independent judgment, constructive pushback</td></tr>
-        <tr><td><strong>Code Quality (2)</strong></td><td>Long-term maintainability, minimal necessary change</td></tr>
-        <tr><td><strong>Context (2)</strong></td><td>Codebase pattern consistency, context window preservation</td></tr>
+        <tr><td><strong>Safety (3)</strong></td><td>Security-first code generation, data protection and privacy, sandbox isolation</td></tr>
+        <tr><td><strong>Compliance (2)</strong></td><td>Regulatory compliance, comprehensive audit trail</td></tr>
+        <tr><td><strong>Transparency (2)</strong></td><td>Honest capability representation, transparent reasoning</td></tr>
+        <tr><td><strong>Helpfulness (3)</strong></td><td>Genuinely helpful assistance, error handling, maintainability</td></tr>
+        <tr><td><strong>Anti-Sycophancy (3)</strong></td><td>Honest disagreement, appropriate opinion persistence, objective assessment</td></tr>
+        <tr><td><strong>Code Quality (2)</strong></td><td>Project pattern consistency, testability</td></tr>
         <tr><td><strong>Meta (1)</strong></td><td>Principle conflict resolution</td></tr>
       </tbody>
     </table>
@@ -645,13 +645,13 @@
     <div class="card-header">
       <div>
         <div class="card-title">Agent Capability Governance (ADR-066)</div>
-        <div class="card-subtitle">4-tier runtime enforcement for agent tool access</div>
+        <div class="card-subtitle">4-tier enforcement middleware for agent tool access (not yet called from agent or MCP tool paths)</div>
       </div>
-      <span class="badge badge-deployed">Deployed</span>
+      <span class="badge badge-medium">Not wired</span>
     </div>
     <div class="metric-grid" style="grid-template-columns:repeat(3,1fr);">
       <div class="metric-item"><div class="value">4</div><div class="label">Tiers</div></div>
-      <div class="metric-item"><div class="value">322</div><div class="label">Tests</div></div>
+      <div class="metric-item"><div class="value">981</div><div class="label">Tests</div></div>
       <div class="metric-item"><div class="value">5.4K</div><div class="label">Lines</div></div>
     </div>
     <h4>Authorization Tiers</h4>
@@ -665,7 +665,7 @@
     </table>
     <div class="callout info" style="margin-top:10px;">
       <div class="callout-title">Deny-by-Default</div>
-      Unregistered tools are automatically blocked. Dynamic capability grants are time-limited and scope-limited.
+      When the middleware is invoked, unregistered tools are blocked. Dynamic capability grants are time-limited and scope-limited.
     </div>
   </div>
 </div>
@@ -700,9 +700,9 @@
     <div class="card-header">
       <div>
         <div class="card-title">ML-Based Anomaly Detection (ADR-072)</div>
-        <div class="card-subtitle">Statistical baselines + honeypot traps</div>
+        <div class="card-subtitle">Statistical baselines + honeypot traps (part of capability governance; not yet wired)</div>
       </div>
-      <span class="badge badge-deployed">Deployed</span>
+      <span class="badge badge-medium">Not wired</span>
     </div>
     <div class="metric-grid" style="grid-template-columns:repeat(3,1fr);">
       <div class="metric-item"><div class="value">5</div><div class="label">Honeypots</div></div>
@@ -726,9 +726,9 @@
     <div class="card-header">
       <div>
         <div class="card-title">AI Model Security (ADR-079)</div>
-        <div class="card-subtitle">Protecting model weights and training data</div>
+        <div class="card-subtitle">Protecting model weights and training data (library; not yet called from a production path)</div>
       </div>
-      <span class="badge badge-deployed">Deployed</span>
+      <span class="badge badge-medium">Not wired</span>
     </div>
     <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
       <li><strong>Model Weight Guardian:</strong> Unauthorized access detection, exfiltration pattern monitoring, weight fingerprinting for leak detection</li>
@@ -741,9 +741,9 @@
     <div class="card-header">
       <div>
         <div class="card-title">Universal Explainability (ADR-068)</div>
-        <div class="card-subtitle">Decision transparency for all agent operations</div>
+        <div class="card-subtitle">Decision transparency framework (service implemented; the <code>/api/v1/explainability</code> dashboard currently serves generated sample data)</div>
       </div>
-      <span class="badge badge-deployed">Deployed</span>
+      <span class="badge badge-medium">Partial</span>
     </div>
     <div class="metric-grid" style="grid-template-columns:repeat(3,1fr);">
       <div class="metric-item"><div class="value">8.2K</div><div class="label">Lines</div></div>
@@ -762,7 +762,7 @@
 <!-- Section 4: 6-Layer Semantic Guardrails -->
 <section id="guardrails">
 <h2>&#128170; 6-Layer Semantic Guardrails Engine (ADR-065)</h2>
-<p style="margin-bottom:16px;color:var(--text-secondary);">Goes beyond pattern-based security with embedding similarity and LLM-as-judge for comprehensive semantic analysis. Detects 13+ distinct bypass vectors that evade traditional defenses. 793 tests, 12,000+ lines of code, >95% accuracy on novel jailbreak variants.</p>
+<p style="margin-bottom:16px;color:var(--text-secondary);">Goes beyond pattern-based security with embedding similarity and LLM-as-judge for comprehensive semantic analysis. Detects 13+ distinct bypass vectors that evade traditional defenses. 811 tests. Status: Layers 1&ndash;2 run inline on ingested repository content; the full engine is not yet called on the LLM request path, and Layers 3&ndash;4 use in-process mocks until real OpenSearch and Bedrock clients are injected, so accuracy figures on novel jailbreaks have not been measured against a production corpus.</p>
 
 <div class="guardrail-layers">
   <div class="gl-row l1">
@@ -785,7 +785,7 @@
     <div class="gl-num">3</div>
     <div class="gl-info">
       <div class="gl-name">Embedding-Based Threat Detection</div>
-      <div class="gl-tech">OpenSearch k-NN &middot; 4,300+ threat embeddings: 2,500 jailbreaks, 1,500 prompt injections, 800 role confusion, 500 data exfiltration</div>
+      <div class="gl-tech">OpenSearch k-NN &middot; target corpus of 4,300 threat embeddings (planned; no corpus loader exists yet, and the detector currently falls back to a 15-entry in-process mock corpus)</div>
     </div>
     <div class="gl-latency">~50ms</div>
   </div>
@@ -836,7 +836,7 @@
 <!-- Section 5: Runtime Agent Security -->
 <section id="runtime">
 <h2>&#128680; Runtime Agent Security Platform (ADR-083)</h2>
-<p style="margin-bottom:16px;color:var(--text-secondary);">Comprehensive runtime visibility into agent behavior with traffic interception, shadow agent detection, behavioral baselines, and automated red teaming. 10,300+ lines of code, 848 tests.</p>
+<p style="margin-bottom:16px;color:var(--text-secondary);">Runtime visibility into agent behavior with traffic interception, shadow agent detection, behavioral baselines, and automated red teaming. 1,077 tests (shared with ADR-077). Status: the services are implemented as libraries; no event source is wired to them yet, so the <code>/api/v1/runtime-security</code> endpoints return an empty in-memory history.</p>
 
 <h3>8 Traffic Interception Points</h3>
 <div class="intercept-grid">
@@ -1008,7 +1008,7 @@
     </table>
 
     <h3>Infrastructure (Layer 9)</h3>
-    <p style="font-size:12px;color:var(--text-secondary);">9 CloudFormation stacks deployed to dev: DynamoDB, S3, KMS, SNS, IAM, Security Groups, ECS, Step Functions, ECR, CloudWatch, EventBridge, Lambda cleanup</p>
+    <p style="font-size:12px;color:var(--text-secondary);">9 CloudFormation stacks deployed to dev: DynamoDB, S3, KMS, SNS, IAM, Security Groups, ECS, Step Functions, ECR, CloudWatch, EventBridge, Lambda cleanup. Status: the Step Functions workflow runs a <code>vuln-scan-worker</code> task, but neither that task definition nor a worker entry point for the scanner pipeline exists in the repository yet, so the pipeline runs as a library and in tests.</p>
   </div>
 </div>
 </section>
@@ -1022,9 +1022,9 @@
     <div class="card-title" style="margin-bottom:12px;">Authentication</div>
     <table>
       <tbody>
-        <tr><td><strong>JWT Validation</strong></td><td>Token validation on all API endpoints with proper expiry and signature checks</td></tr>
+        <tr><td><strong>JWT Validation</strong></td><td>Cognito RS256 JWKS signature, issuer, expiry, and audience/client_id validation (<code>src/api/auth.py</code>) on authenticated routes; the runtime-security and model-assurance routers do not yet require authentication</td></tr>
         <tr><td><strong>OAuth 2.0</strong></td><td>GitHub and GitLab OAuth integration (ADR-048) with scoped token delegation</td></tr>
-        <tr><td><strong>Argon2id</strong></td><td>NIST-approved password hashing with configurable cost parameters</td></tr>
+        <tr><td><strong>Password storage</strong></td><td>Delegated to Amazon Cognito or the customer identity provider; Aura stores no user passwords and does not implement Argon2id hashing itself</td></tr>
         <tr><td><strong>MFA</strong></td><td>Multi-factor authentication via Cognito/identity provider</td></tr>
         <tr><td><strong>API Keys</strong></td><td>Service-to-service authentication with automatic key rotation</td></tr>
         <tr><td><strong>IRSA</strong></td><td>IAM Roles for Service Accounts &mdash; Kubernetes pod-level identity (ADR-003)</td></tr>
@@ -1045,7 +1045,7 @@
     </table>
     <div class="callout info" style="margin-top:10px;">
       <div class="callout-title">Multi-Tenant Isolation</div>
-      Per-tenant resource scoping enforced at the policy engine level. Cross-tenant access requires explicit clearance elevation + MFA verification. 115 tests, 1,300+ lines.
+      Per-tenant resource scoping evaluated by the ABAC policy engine. Cross-tenant access requires explicit clearance elevation + MFA verification. 134 tests. Status: the <code>require_abac</code> dependency is not yet applied to any API route.
     </div>
   </div>
 </div>
@@ -1061,11 +1061,11 @@
     <div class="card-title" style="margin-bottom:8px;">SBOM &amp; Attestation</div>
     <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
       <li>CycloneDX 1.5 + SPDX 2.3 formats</li>
-      <li>Sigstore keyless signing (OIDC)</li>
+      <li>Sigstore keyless signing (OIDC) &mdash; currently simulated; real signing planned</li>
       <li>Offline HSM/YubiKey support</li>
-      <li>Rekor transparency log recording</li>
+      <li>Rekor transparency log recording &mdash; currently simulated; planned</li>
       <li>VEX vulnerability exception docs</li>
-      <li>K8s admission: SBOM required for deploy</li>
+      <li>K8s admission: SBOM required for deploy (admission webhook not yet deployed)</li>
     </ul>
   </div>
   <div class="card">
@@ -1099,19 +1099,19 @@
   <code>aura-base-images/node:20-slim</code> &middot;
   <code>aura-base-images/nginx:1.25</code>
   <br><br>
-  Public registries (Docker Hub, public ECR, GHCR) are prohibited. Private images are scanned, hardened, and tracked with vulnerability scanning. K8s admission controller enforces approved registry images.
+  Public registries (Docker Hub, public ECR, GHCR) are prohibited. Private images are scanned, hardened, and tracked with vulnerability scanning. A K8s admission controller to enforce approved registry images is implemented as a library; the webhook is not yet deployed.
 </div>
 
 <h3>Cloud Runtime Security (ADR-077)</h3>
 <div class="metric-grid" style="grid-template-columns:repeat(4,1fr);">
   <div class="metric-item"><div class="value">3.2K</div><div class="label">Lines of Code</div></div>
-  <div class="metric-item"><div class="value">155</div><div class="label">Tests</div></div>
+  <div class="metric-item"><div class="value">1,077</div><div class="label">Tests (with ADR-083)</div></div>
   <div class="metric-item"><div class="value">3</div><div class="label">Core Services</div></div>
-  <div class="metric-item"><div class="value">eBPF</div><div class="label">Syscall Monitoring</div></div>
+  <div class="metric-item"><div class="value">Falco</div><div class="label">Event Rules (feed planned)</div></div>
 </div>
 <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;margin-top:8px;">
   <li><strong>K8s Admission Controller:</strong> ValidatingWebhook for Pod/Deployment/StatefulSet &mdash; SBOM verification, image signing (Sigstore/cosign), CVE blocking, OPA/Gatekeeper policies</li>
-  <li><strong>Container Escape Detector:</strong> eBPF-based syscall monitoring &mdash; Privilege escalation, namespace escape, kernel exploit, symlink attack detection</li>
+  <li><strong>Container Escape Detector:</strong> evaluates Falco/eBPF-style events passed to it (no live Falco or eBPF feed is connected yet) &mdash; Privilege escalation, namespace escape, kernel exploit, symlink attack detection</li>
   <li><strong>Runtime-to-Code Correlator:</strong> CloudTrail + GuardDuty + VPC Flow &rarr; IaC &rarr; Git Blame &rarr; Neptune code graph</li>
 </ul>
 </section>
@@ -1263,7 +1263,7 @@
     <tr><td>VPC Flow Logs</td><td>365 days</td><td>90 days</td><td>KMS</td></tr>
     <tr><td>CloudWatch Application Logs</td><td>365 days</td><td>90 days</td><td>KMS</td></tr>
     <tr><td>WAF Logs</td><td>90 days</td><td>90 days</td><td>KMS</td></tr>
-    <tr><td>Security Audit Events</td><td>7 years (SOX)</td><td>90 days</td><td>KMS + DynamoDB</td></tr>
+    <tr><td>Security Audit Events</td><td>7 years (SOX) target</td><td>90 days</td><td>KMS (written to the application log stream; DynamoDB persistence planned)</td></tr>
     <tr><td>Config Snapshots</td><td>7 years</td><td>90 days</td><td>S3 SSE-KMS</td></tr>
   </tbody>
 </table>
@@ -1279,7 +1279,7 @@
     <ul>
       <li><strong>AC</strong> (Access Control): RBAC + ABAC, least privilege, capability governance</li>
       <li><strong>AU</strong> (Audit): Structured event logging, 7-year retention, audit review</li>
-      <li><strong>IA</strong> (Identification/Auth): JWT, OAuth 2.0, Argon2id, MFA</li>
+      <li><strong>IA</strong> (Identification/Auth): JWT, OAuth 2.0, Cognito-managed credentials, MFA</li>
       <li><strong>IR</strong> (Incident Response): HITL workflow, P1-P5 classification</li>
       <li><strong>SC</strong> (System/Comms): TLS 1.2+, KMS encryption, VPC boundary protection</li>
       <li><strong>SI</strong> (System Integrity): Input validation, GuardDuty, Config monitoring</li>
@@ -1329,7 +1329,7 @@
 
 <div class="callout info" style="margin-top:16px;">
   <div class="callout-title">Certification Status</div>
-  Technical controls are implemented and aligned with NIST 800-53, CMMC Level 2/3, SOX, and SOC 2 requirements. FedRAMP High and CMMC formal certifications are postponed due to cost. Technical readiness is 100% &mdash; formal certification can be pursued when specific contracts require it.
+  Technical controls are aligned with NIST 800-53 and mapped to CMMC Level 2/3, SOX, and SOC 2 requirements. Aura holds no FedRAMP, CMMC, SOC 2, or IL5 certification or authorization; these are not yet pursued and remain on the roadmap. No independent assessment has measured readiness, and several mapped controls rely on services that are not yet wired (see status per ADR below).
 </div>
 </section>
 
@@ -1340,7 +1340,7 @@
 <div class="metric-grid" style="grid-template-columns:repeat(5,1fr);">
   <div class="metric-item"><div class="value" style="color:var(--success);">19/19</div><div class="label">Services Compatible</div></div>
   <div class="metric-item"><div class="value" style="color:var(--success);">100%</div><div class="label">Partition Handling</div></div>
-  <div class="metric-item"><div class="value">FIPS 140-2</div><div class="label">Crypto Compliance</div></div>
+  <div class="metric-item"><div class="value">Planned</div><div class="label">FIPS 140-2 Crypto (AWS endpoints)</div></div>
   <div class="metric-item"><div class="value" style="color:var(--success);">Yes</div><div class="label">Data Residency</div></div>
   <div class="metric-item"><div class="value" style="color:var(--success);">Ready</div><div class="label">High-Side Deploy</div></div>
 </div>
@@ -1350,10 +1350,10 @@
   <table>
     <thead><tr><th>Requirement</th><th>Implementation</th><th>Status</th></tr></thead>
     <tbody>
-      <tr><td>ARN Partition Handling</td><td><code>${AWS::Partition}</code> used throughout all 155 CloudFormation templates &mdash; never hardcoded <code>arn:aws</code></td><td><span class="badge badge-deployed">Complete</span></td></tr>
-      <tr><td>FIPS 140-2 Cryptography</td><td>AWS-native FIPS endpoints for GovCloud regions</td><td><span class="badge badge-deployed">Complete</span></td></tr>
-      <tr><td>Data Residency</td><td>All data remains in selected region; no cross-region replication</td><td><span class="badge badge-deployed">Complete</span></td></tr>
-      <tr><td>Network Isolation</td><td>Isolated VPC with no internet egress for sensitive workloads</td><td><span class="badge badge-deployed">Complete</span></td></tr>
+      <tr><td>ARN Partition Handling</td><td><code>${AWS::Partition}</code> used throughout all 181 CloudFormation templates &mdash; no hardcoded <code>arn:aws</code> outside YAML comments</td><td><span class="badge badge-deployed">Complete</span></td></tr>
+      <tr><td>FIPS 140-2 Cryptography</td><td>AWS-native FIPS endpoints for GovCloud regions (no endpoint selection in templates yet; applies at GovCloud deployment)</td><td><span class="badge badge-medium">Planned</span></td></tr>
+      <tr><td>Data Residency</td><td>Data stays in the selected primary region, except disaster-recovery replication to a configured secondary region (DynamoDB Global Tables, S3 cross-region replication, Secrets Manager replicas)</td><td><span class="badge badge-deployed">Complete</span></td></tr>
+      <tr><td>Network Isolation</td><td>Private subnets and VPC endpoints for data services; sandbox tasks have no inbound rules and egress limited to DNS and HTTPS (no egress-free isolated VPC exists)</td><td><span class="badge badge-medium">Partial</span></td></tr>
       <tr><td>Managed Policy ARNs</td><td>PartitionMap for managed policy ARN differences</td><td><span class="badge badge-deployed">Complete</span></td></tr>
       <tr><td>Service Availability</td><td>All 19 deployed AWS services available in GovCloud (US)</td><td><span class="badge badge-deployed">Complete</span></td></tr>
     </tbody>
@@ -1364,17 +1364,17 @@
 <!-- Section 15: All Security ADRs -->
 <section id="security-adrs">
 <h2>&#128203; Security Architecture Decision Records</h2>
-<p style="margin-bottom:16px;color:var(--text-secondary);">13 security-focused ADRs document the rationale, architecture, and implementation of every security capability. All are deployed or accepted.</p>
+<p style="margin-bottom:16px;color:var(--text-secondary);">13 security-focused ADRs document the rationale, architecture, and implementation of every security capability. Each card shows its current wiring status: Deployed (wired into a production path), Partial (some layers wired), or Not wired (implemented and tested as a library only).</p>
 
 <div class="adr-grid">
   <div class="adr-card">
     <div class="adr-num">ADR-063</div>
     <div class="adr-title">Constitutional AI Integration</div>
-    <div class="adr-desc">16-principle critique-revision pipeline applied to all agent outputs. Chain-of-thought reasoning with 4-layer optimized latency pipeline targeting &lt;500ms P95.</div>
+    <div class="adr-desc">16-principle critique-revision pipeline available to agents through an opt-in mixin (not yet used by production agents; runs in the nightly evaluation Lambda). Chain-of-thought reasoning with 4-layer optimized latency pipeline targeting &lt;500ms P95.</div>
     <div class="adr-stats">
       <div class="adr-stat"><span class="stat-val">6,914</span> lines</div>
       <div class="adr-stat"><span class="stat-val">535</span> tests</div>
-      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+      <div class="adr-stat"><span class="badge badge-medium">Partial</span></div>
     </div>
   </div>
 
@@ -1385,29 +1385,29 @@
     <div class="adr-stats">
       <div class="adr-stat"><span class="stat-val">12,000+</span> lines</div>
       <div class="adr-stat"><span class="stat-val">793</span> tests</div>
-      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+      <div class="adr-stat"><span class="badge badge-medium">Partial</span></div>
     </div>
   </div>
 
   <div class="adr-card">
     <div class="adr-num">ADR-066</div>
     <div class="adr-title">Agent Capability Governance</div>
-    <div class="adr-desc">4-tier tool classification with runtime enforcement middleware. Deny-by-default for unregistered tools, dynamic time-limited grants, complete audit trail.</div>
+    <div class="adr-desc">4-tier tool classification with enforcement middleware (not yet called from agent or MCP tool paths). Deny-by-default for unregistered tools, dynamic time-limited grants, audit trail.</div>
     <div class="adr-stats">
       <div class="adr-stat"><span class="stat-val">5,400+</span> lines</div>
       <div class="adr-stat"><span class="stat-val">322</span> tests</div>
-      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+      <div class="adr-stat"><span class="badge badge-medium">Not wired</span></div>
     </div>
   </div>
 
   <div class="adr-card">
     <div class="adr-num">ADR-067</div>
     <div class="adr-title">Context Provenance &amp; Integrity</div>
-    <div class="adr-desc">Multi-layer verification preventing GraphRAG context poisoning. Index-time provenance, trust scoring, anomaly detection, automatic quarantine with &gt;99% detection rate.</div>
+    <div class="adr-desc">Multi-layer verification preventing GraphRAG context poisoning. Index-time provenance recording (opt-in via <code>AURA_CONTEXT_PROVENANCE_ENABLED</code>) and trust scoring are implemented; the retrieval verifier, anomaly detector and quarantine are built but not yet on a running path. No detection rate has been measured.</div>
     <div class="adr-stats">
       <div class="adr-stat"><span class="stat-val">3,315</span> lines</div>
       <div class="adr-stat"><span class="stat-val">275</span> tests</div>
-      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+      <div class="adr-stat"><span class="badge badge-medium">Partial</span></div>
     </div>
   </div>
 
@@ -1418,7 +1418,7 @@
     <div class="adr-stats">
       <div class="adr-stat"><span class="stat-val">8,200+</span> lines</div>
       <div class="adr-stat"><span class="stat-val">227</span> tests</div>
-      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+      <div class="adr-stat"><span class="badge badge-medium">Partial</span></div>
     </div>
   </div>
 
@@ -1429,18 +1429,18 @@
     <div class="adr-stats">
       <div class="adr-stat"><span class="stat-val">1,350</span> lines</div>
       <div class="adr-stat"><span class="stat-val">113</span> tests</div>
-      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+      <div class="adr-stat"><span class="badge badge-medium">Not wired</span></div>
     </div>
   </div>
 
   <div class="adr-card">
     <div class="adr-num">ADR-073</div>
     <div class="adr-title">Attribute-Based Access Control</div>
-    <div class="adr-desc">Fine-grained multi-tenant authorization with dynamic context-aware policies. Subject, resource, context, and action attributes with Cedar/Rego policy engine.</div>
+    <div class="adr-desc">Fine-grained multi-tenant authorization with dynamic context-aware policies. Subject, resource, context, and action attributes evaluated by an in-house policy engine (not yet applied to API routes).</div>
     <div class="adr-stats">
       <div class="adr-stat"><span class="stat-val">1,300+</span> lines</div>
       <div class="adr-stat"><span class="stat-val">115</span> tests</div>
-      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+      <div class="adr-stat"><span class="badge badge-medium">Not wired</span></div>
     </div>
   </div>
 
@@ -1451,18 +1451,18 @@
     <div class="adr-stats">
       <div class="adr-stat"><span class="stat-val">4,500+</span> lines</div>
       <div class="adr-stat"><span class="stat-val">168</span> tests</div>
-      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+      <div class="adr-stat"><span class="badge badge-medium">Partial</span></div>
     </div>
   </div>
 
   <div class="adr-card">
     <div class="adr-num">ADR-077</div>
     <div class="adr-title">Cloud Runtime Security</div>
-    <div class="adr-desc">K8s admission control, container escape detection (eBPF), runtime-to-code correlation linking CloudTrail events to source code via Neptune graph.</div>
+    <div class="adr-desc">K8s admission control, container escape detection (Falco/eBPF event rules; feed not yet connected), runtime-to-code correlation linking CloudTrail events to source code via Neptune graph.</div>
     <div class="adr-stats">
       <div class="adr-stat"><span class="stat-val">3,200+</span> lines</div>
       <div class="adr-stat"><span class="stat-val">155</span> tests</div>
-      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+      <div class="adr-stat"><span class="badge badge-medium">Not wired</span></div>
     </div>
   </div>
 
@@ -1473,7 +1473,7 @@
     <div class="adr-stats">
       <div class="adr-stat"><span class="stat-val">4,000+</span> lines</div>
       <div class="adr-stat"><span class="stat-val">200</span> tests</div>
-      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+      <div class="adr-stat"><span class="badge badge-medium">Library; not integrated</span></div>
     </div>
   </div>
 
@@ -1484,18 +1484,18 @@
     <div class="adr-stats">
       <div class="adr-stat"><span class="stat-val">2,800+</span> lines</div>
       <div class="adr-stat"><span class="stat-val">86</span> tests</div>
-      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+      <div class="adr-stat"><span class="badge badge-medium">Not wired</span></div>
     </div>
   </div>
 
   <div class="adr-card">
     <div class="adr-num">ADR-083</div>
     <div class="adr-title">Runtime Agent Security Platform</div>
-    <div class="adr-desc">8 traffic interception points, shadow agent detection, behavioral baselines, AURA-ATT&CK red team (75 techniques), runtime-to-code correlation via GraphRAG.</div>
+    <div class="adr-desc">8 traffic interception points, shadow agent detection, behavioral baselines, AURA-ATT&CK red team (75 techniques), runtime-to-code correlation via GraphRAG. Implemented as libraries; event sources not yet wired.</div>
     <div class="adr-stats">
       <div class="adr-stat"><span class="stat-val">10,300+</span> lines</div>
       <div class="adr-stat"><span class="stat-val">848</span> tests</div>
-      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+      <div class="adr-stat"><span class="badge badge-medium">Partial</span></div>
     </div>
   </div>
 
@@ -1506,7 +1506,7 @@
     <div class="adr-stats">
       <div class="adr-stat"><span class="stat-val">4,900+</span> lines</div>
       <div class="adr-stat"><span class="stat-val">980</span> tests</div>
-      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+      <div class="adr-stat"><span class="badge badge-medium">Partial</span></div>
     </div>
   </div>
 </div>
@@ -1519,27 +1519,27 @@
 <table>
   <thead><tr><th>Component</th><th>ADR</th><th>Tests</th><th>Coverage Area</th></tr></thead>
   <tbody>
-    <tr><td>Core Security Services</td><td>&mdash;</td><td>286</td><td>Input validation, secrets detection, audit, alerts, API integration</td></tr>
+    <tr><td>Core Security Services</td><td>&mdash;</td><td>285</td><td>Input validation, secrets detection, audit, alerts, API integration</td></tr>
     <tr><td>Constitutional AI</td><td>063</td><td>535</td><td>16 principles, critique-revision pipeline, agent integration</td></tr>
-    <tr><td>Semantic Guardrails</td><td>065</td><td>793</td><td>6 layers, 13+ bypass vectors, embedding + LLM-as-judge</td></tr>
-    <tr><td>Capability Governance</td><td>066</td><td>322</td><td>4 tiers, runtime enforcement, dynamic grants</td></tr>
-    <tr><td>Context Provenance</td><td>067</td><td>275</td><td>7 threat models, trust scoring, quarantine</td></tr>
-    <tr><td>Universal Explainability</td><td>068</td><td>227</td><td>Reasoning chains, alternatives, confidence calibration</td></tr>
-    <tr><td>Anomaly Detection</td><td>072</td><td>113</td><td>Statistical baselines, honeypots, cross-agent detection</td></tr>
-    <tr><td>ABAC Authorization</td><td>073</td><td>115</td><td>Multi-tenant isolation, policy evaluation, attribute resolution</td></tr>
-    <tr><td>SBOM &amp; Supply Chain</td><td>076</td><td>168</td><td>SBOM generation, attestation, confusion detection, license compliance</td></tr>
-    <tr><td>Cloud Runtime Security</td><td>077</td><td>155</td><td>K8s admission, container escape, runtime-to-code correlation</td></tr>
-    <tr><td>Air-Gapped &amp; Edge</td><td>078</td><td>200</td><td>Offline operation, firmware analysis, edge runtime</td></tr>
-    <tr><td>AI Model Security</td><td>079</td><td>86</td><td>Weight protection, poisoning detection, streaming analysis</td></tr>
-    <tr><td>Constraint Geometry</td><td>081</td><td>358</td><td>7-axis constraint space, coherence scoring, policy profiles</td></tr>
-    <tr><td>Runtime Agent Security</td><td>083</td><td>848</td><td>8 interception points, AURA-ATT&CK, behavioral baselines</td></tr>
-    <tr><td>Vulnerability Scanner</td><td>084</td><td>980</td><td>3-phase LLM analysis, isolation model, confidence calibration</td></tr>
-    <tr><td>Security Framework Tests</td><td>&mdash;</td><td>131</td><td>E2E, load testing, middleware integration</td></tr>
+    <tr><td>Semantic Guardrails</td><td>065</td><td>811</td><td>6 layers, 13+ bypass vectors, embedding + LLM-as-judge</td></tr>
+    <tr><td>Capability Governance</td><td>066</td><td>981</td><td>4 tiers, enforcement middleware, dynamic grants (includes ADR-071/072 tests)</td></tr>
+    <tr><td>Context Provenance</td><td>067</td><td>461</td><td>7 threat models, trust scoring, quarantine</td></tr>
+    <tr><td>Universal Explainability</td><td>068</td><td>247</td><td>Reasoning chains, alternatives, confidence calibration</td></tr>
+    <tr><td>Anomaly Detection</td><td>072</td><td>&mdash;</td><td>Statistical baselines, honeypots, cross-agent detection</td></tr>
+    <tr><td>ABAC Authorization</td><td>073</td><td>134</td><td>Multi-tenant isolation, policy evaluation, attribute resolution</td></tr>
+    <tr><td>SBOM &amp; Supply Chain</td><td>076</td><td>276</td><td>SBOM generation, attestation, confusion detection, license compliance</td></tr>
+    <tr><td>Cloud Runtime Security</td><td>077</td><td>&mdash;</td><td>K8s admission, container escape, runtime-to-code correlation</td></tr>
+    <tr><td>Air-Gapped &amp; Edge</td><td>078</td><td>238</td><td>Offline operation, firmware analysis, edge runtime</td></tr>
+    <tr><td>AI Model Security</td><td>079</td><td>31</td><td>Weight protection, poisoning detection, streaming analysis</td></tr>
+    <tr><td>Constraint Geometry</td><td>081</td><td>190</td><td>7-axis constraint space, coherence scoring, policy profiles</td></tr>
+    <tr><td>Runtime Agent Security</td><td>083</td><td>1,077</td><td>8 interception points, AURA-ATT&CK, behavioral baselines (includes ADR-077 tests)</td></tr>
+    <tr><td>Vulnerability Scanner</td><td>084</td><td>1,427</td><td>3-phase LLM analysis, isolation model, confidence calibration</td></tr>
+    <tr><td>Security Framework Tests</td><td>&mdash;</td><td>65</td><td>E2E, load testing, middleware integration</td></tr>
   </tbody>
   <tfoot>
     <tr style="font-weight:700;background:#F0FDF4;">
-      <td colspan="2">Total Security Tests</td>
-      <td>5,592+</td>
+      <td colspan="2">Total Security Tests (pytest --collect-only, October 2026)</td>
+      <td>6,758</td>
       <td></td>
     </tr>
   </tfoot>
@@ -1606,7 +1606,7 @@
     <div class="label">Lines of Security Code</div>
   </div>
   <div class="exec-card">
-    <div class="number green">5,592+</div>
+    <div class="number green">6,758</div>
     <div class="label">Security-Specific Tests</div>
   </div>
   <div class="exec-card">
@@ -1634,8 +1634,8 @@
     <div class="label">Interception Points</div>
   </div>
   <div class="exec-card">
-    <div class="number">4,300+</div>
-    <div class="label">Threat Embeddings</div>
+    <div class="number">15</div>
+    <div class="label">Threat Embeddings (mock corpus; 4,300 planned)</div>
   </div>
   <div class="exec-card">
     <div class="number">5</div>
@@ -1669,7 +1669,7 @@
 
 <div class="callout success">
   <div class="callout-title">Security Posture Summary</div>
-  Project Aura implements defense-in-depth security across 6 layers: perimeter, identity, AI/agent, data integrity, supply chain, and monitoring. With 13 security-focused ADRs, 71,000+ lines of security code, 5,592+ security tests, and alignment to NIST 800-53, CMMC, SOX, and SOC 2 frameworks, the platform is architected for the most demanding enterprise and government environments.
+  Project Aura implements defense-in-depth security across 6 layers: perimeter, identity, AI/agent, data integrity, supply chain, and monitoring. With 13 security-focused ADRs, 71,000+ lines of security code, 6,758 security tests, and alignment to NIST 800-53, CMMC, SOX, and SOC 2 frameworks, the platform is architected for the most demanding enterprise and government environments.
 </div>
 </section>
 

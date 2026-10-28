@@ -1,5 +1,7 @@
 # AWS Account Setup Guide for Project Aura
 
+> **Accuracy note (October 2026):** This document describes the original nested-stack design. The repository no longer contains `deploy/cloudformation/master-stack.yaml`, `deploy/cloudformation/codebuild.yaml`, `deploy/cloudformation/neptune.yaml` (now `neptune-simplified.yaml`) or `deploy/buildspec-modular.yml`, and `deploy/deploy.sh` supports only `deploy <env>`, `redeploy <env>`, `status <env>`, `destroy <env>` and `validate` (no `init`, `outputs`, `--email` or `--delete`). Infrastructure is deployed by per-layer CodeBuild projects (`deploy/cloudformation/codebuild-*.yaml`, `deploy/buildspecs/buildspec-*.yml`) driven by the deployment-pipeline state machine. The canonical, current procedure is `docs/deployment/DEPLOYMENT_GUIDE.md`; treat the commands and file lists below as historical.
+
 ## Step-by-Step Infrastructure Deployment
 
 **Time Required:** 45-60 minutes
@@ -107,7 +109,7 @@ You have three options for AWS credentials. Choose the one that fits your situat
    - Review the settings
    - Click **"Create user"**
 
-**⚠️ Security Note:** `AdministratorAccess` gives full access to your AWS account. This is fine for initial setup, but you should:
+**⚠️ Security Note:** `AdministratorAccess` gives full access to your AWS account. Use it only for the one-time account setup; for deploys, use the scoped `AuraDeployer` IAM Identity Center permission set (`deploy/cloudformation/identity-center-permission-sets.yaml`, AURA-CTL-005). You should also:
 
 - Use this user only for infrastructure setup
 - Rotate credentials regularly

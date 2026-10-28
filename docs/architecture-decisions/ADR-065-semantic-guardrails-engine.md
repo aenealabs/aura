@@ -2,7 +2,7 @@
 
 ## Status
 
-Deployed
+Deployed (engine built; not yet invoked on agent or LLM inputs)
 
 > **Status note (2026-10-14) -- Layers 3 and 4 run in parallel, not
 > conditionally.** The pipeline diagram and the pseudocode below show Layer 4
@@ -32,6 +32,8 @@ Deployed
 > back to in-process mock implementations when no embedding/vector service or
 > LLM service is injected (`embedding_detector.py`, `intent_classifier.py`), so
 > a benchmark without those services does not measure real L3/L4 latency.
+>
+> **Status note (2026-10-26).** The 2026-10-14 note above is still accurate. In addition, the full engine is not invoked on any production input: outside `src/services/semantic_guardrails/` only `normalizer.normalize_text` and `pattern_matcher.match_patterns` (Layers 1-2) are used, by `src/services/git_ingestion_service.py:49-50`, and the `integration.py` pre-invoke hook is not referenced by `src/services/bedrock_llm_service.py` or any agent, so Phase 5 (enable for all agent inputs) is not done. The test suite is `tests/services/semantic_guardrails/` (566 test functions in 14 files), not the path listed below, and `context_verifier.py` (Phase 3) and `tests/fixtures/threat_corpus/` do not exist.
 
 ## Date
 

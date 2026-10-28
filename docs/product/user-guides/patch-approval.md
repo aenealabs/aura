@@ -1,7 +1,7 @@
 # Patch Approval Workflows
 
 **Version:** 1.0
-**Last Updated:** January 2026
+**Last Updated:** October 2026
 **Time to Complete:** 20-30 minutes
 
 ---
@@ -9,6 +9,8 @@
 ## Overview
 
 Patch approval workflows implement Human-in-the-Loop (HITL) governance for AI-generated security patches. This guide explains how to configure autonomy levels, review patches in the approval queue, and make informed approval decisions.
+
+> **Implementation status (October 2026).** Available today: the **Approvals** page (`/approvals`) lists approval requests with status filters and search, shows the patch diff and sandbox status, and supports **Approve** and **Reject** (both with comments) through `/api/v1/approvals`. Only the `security-engineer` and `admin` roles can decide, and the requester cannot approve their own request. Every patch produced by the job server goes to this queue; the autonomy levels below are configured in the policy service but are not yet applied to the pipeline, so nothing is auto-approved. Approval records the decision and sends notifications; it does not commit, open a pull request, or deploy. **Request Changes**, bulk approval, the deployment plan, impact analysis, and the full sandbox report are planned. If the approvals API is unreachable, the page silently shows demo data.
 
 The HITL system ensures that:
 - Critical changes receive appropriate human oversight
@@ -38,7 +40,7 @@ Aura supports four configurable autonomy levels that determine when human approv
 | Level | Name | Approval Required | Best For |
 |-------|------|-------------------|----------|
 | **1** | FULL_HITL | All patches | Defense, Healthcare, Government |
-| **2** | HITL_CRITICAL | Critical and High severity only | Financial Services, Enterprise |
+| **2** | CRITICAL_HITL | Critical and High severity only | Financial Services, Enterprise |
 | **3** | AUDIT_ONLY | None (logged only) | Internal Tools, Low-Risk Repos |
 | **4** | FULL_AUTONOMOUS | Guardrails only | Development/Test Environments |
 
@@ -60,12 +62,12 @@ Every patch requires human approval before deployment.
 
 **Timeout:** 24 hours default (configurable)
 
-### HITL_CRITICAL (Level 2)
+### CRITICAL_HITL (Level 2)
 
 Only Critical and High severity patches require approval.
 
 **Behavior:**
-- LOW and MEDIUM severity patches auto-deploy after sandbox testing
+- LOW and MEDIUM severity patches auto-deploy after sandbox testing (planned)
 - HIGH and CRITICAL patches queue for human review
 - Reduces approval volume while maintaining oversight for serious issues
 
@@ -75,11 +77,11 @@ Only Critical and High severity patches require approval.
 - Enterprise standard deployments
 - Teams with limited security engineering bandwidth
 
-**Timeout:** 24 hours for CRITICAL, 48 hours for HIGH
+**Timeout:** 24 hours (single default for all severities)
 
 ### AUDIT_ONLY (Level 3)
 
-All patches deploy automatically; decisions are logged for compliance.
+Planned: all patches deploy automatically; decisions are logged for compliance.
 
 **Behavior:**
 - No approval queue (except guardrails)
@@ -97,7 +99,7 @@ All patches deploy automatically; decisions are logged for compliance.
 
 ### FULL_AUTONOMOUS (Level 4)
 
-Maximum automation with only guardrail protections.
+Planned: maximum automation with only guardrail protections.
 
 **Behavior:**
 - All patches deploy without human intervention
@@ -117,7 +119,7 @@ Maximum automation with only guardrail protections.
 
 ## Guardrails: Always-Approval Operations
 
-Certain operations require human approval regardless of autonomy level. These guardrails cannot be disabled.
+Certain operations require human approval regardless of autonomy level when a policy is evaluated. `production_deployment` and `credential_modification` are hard-coded and cannot be disabled; the other three are in every default policy.
 
 ### Guardrail Operations
 
@@ -173,20 +175,11 @@ Full context for the selected patch (see [Reviewing Patches](#reviewing-ai-gener
 
 ### Queue Filtering
 
-Filter the approval queue by:
-
-- **Severity:** CRITICAL, HIGH, MEDIUM, LOW
-- **Repository:** Specific repository or all
-- **Age:** Recent, Today, This Week, Older
-- **Assignee:** Assigned to me, Unassigned, All
+Filter the approval queue by status (all, pending, sandbox testing, approved, rejected) and search by text. Severity, repository, age, and assignee filters are planned.
 
 ### Queue Sorting
 
-Sort by:
-- **Severity (default):** Critical first
-- **Age:** Oldest first
-- **Timeout:** Expiring soonest first
-- **Repository:** Alphabetical
+Planned. The API supports `sort_by` and `sort_order` query parameters; the page does not expose sorting controls yet.
 
 ---
 
@@ -258,9 +251,9 @@ Side-by-side or unified diff of changes:
 - Are type hints and documentation appropriate?
 - Are there backward compatibility concerns?
 
-**3. AI Reasoning**
+**3. AI Reasoning** (planned)
 
-Explanation from the Coder Agent:
+The Coder does not yet return reasoning text or a confidence score. Approval requests from the job server record a decision confidence (the reviewer's self-reflection confidence when available, otherwise a fixed 0.8 prior). Example of the target display:
 
 ```
 Confidence: 0.94
@@ -282,7 +275,7 @@ Related entities checked:
 
 **4. Sandbox Test Results**
 
-Automated validation results:
+Today the request shows a sandbox status of `PASSED`, `FAILED`, or `SKIPPED` (not runtime-tested), plus errors and test counts when the sandbox reported them. Most requests are currently `SKIPPED`; see [Sandbox Security](../core-concepts/sandbox-security.md). Target per-category display:
 
 | Test Category | Status | Details |
 |---------------|--------|---------|
@@ -297,7 +290,7 @@ Click **View Full Report** to see detailed test output, including:
 - Security scanner output
 - Performance benchmark comparisons
 
-**5. Deployment Plan**
+**5. Deployment Plan** (planned)
 
 Where and how the patch will be applied:
 
@@ -309,7 +302,7 @@ Where and how the patch will be applied:
 | **CI Required** | Yes (repository workflow) |
 | **Auto-merge** | After CI passes |
 
-**6. Impact Analysis**
+**6. Impact Analysis** (planned)
 
 Potential downstream effects:
 
@@ -347,10 +340,10 @@ Use when the patch is correct and safe for deployment.
 4. Click **Confirm Approval**
 
 **After approval:**
-- Patch is committed to target branch
-- Pull request is created (if configured)
-- CI/CD pipeline triggers
-- Vulnerability status updates to "Remediated (Pending Merge)"
+
+- The request status changes to approved and the decision is recorded with your identity and comment
+- A decision notification is sent
+- Planned: commit to a branch, open a pull request, and trigger CI (not yet performed on approval)
 
 ### Reject
 
@@ -362,7 +355,7 @@ Use when the patch is incorrect, incomplete, or inappropriate.
 
 2. Click **Reject Patch**
 
-3. Select rejection reason:
+3. Select rejection reason (planned; today you enter free-text feedback only):
    - **Incorrect Fix** - Patch does not address vulnerability
    - **Incomplete** - Missing necessary changes
    - **Style Violation** - Does not match code standards
@@ -381,12 +374,14 @@ Use when the patch is incorrect, incomplete, or inappropriate.
 5. Click **Confirm Rejection**
 
 **After rejection:**
-- Patch is discarded
-- Feedback is logged for AI improvement
-- Vulnerability remains open
-- Optional: Re-generate with different parameters
+
+- The request status changes to rejected and your reason is recorded
+- A decision notification is sent
+- Planned: feed the rejection into agent memory and offer regeneration
 
 ### Request Changes
+
+> **Planned.** The page shows a **Request Changes** button, but the API has no `request-changes` endpoint yet, so the action fails.
 
 Use when the patch is close but needs modifications.
 
@@ -414,18 +409,18 @@ Use when the patch is close but needs modifications.
 
 ## Sandbox Testing
 
-Every patch is validated in an isolated sandbox before approval.
+Patches are designed to be validated in an isolated sandbox before approval. See the status note in [Sandbox Security](../core-concepts/sandbox-security.md): the sandbox step is often `SKIPPED` today and does not yet test the patched code.
 
 ### Sandbox Environment
 
 | Component | Configuration |
 |-----------|---------------|
 | **Runtime** | AWS ECS Fargate (isolated container) |
-| **Network** | No external network access |
-| **Timeout** | 5 minutes default |
-| **Resources** | 2 vCPU, 4GB RAM |
+| **Network** | No inbound access; egress limited to UDP 53 and TCP 443 |
+| **Timeout** | Orchestrator waits 300 seconds |
+| **Resources** | 1 vCPU, 2 GB RAM |
 
-### Test Categories
+### Test Categories (planned)
 
 | Test | What It Validates |
 |------|-------------------|
@@ -480,6 +475,8 @@ If sandbox tests fail:
 ---
 
 ## Bulk Approval
+
+> **Planned.** Bulk approval is not available yet; approve or reject requests one at a time.
 
 For organizations with high patch volume, bulk approval streamlines the process.
 
@@ -553,20 +550,24 @@ Patches do not wait indefinitely. Aura implements automatic escalation.
 
 **Timeout Thresholds:**
 
-| Severity | Default Timeout | Warning At | Escalation |
-|----------|-----------------|------------|------------|
-| CRITICAL | 24 hours | 18 hours (75%) | 12 hours |
-| HIGH | 24 hours | 18 hours (75%) | 12 hours |
-| MEDIUM | 48 hours | 36 hours (75%) | N/A (expires) |
-| LOW | 72 hours | 54 hours (75%) | N/A (expires) |
+| Severity | Default Timeout | Warning At | On Expiry |
+|----------|-----------------|------------|-----------|
+| CRITICAL | 24 hours | 18 hours (75%) | Escalate (up to 2 times) |
+| HIGH | 24 hours | 18 hours (75%) | Escalate (up to 2 times) |
+| MEDIUM | 24 hours | 18 hours (75%) | Expires |
+| LOW | 24 hours | 18 hours (75%) | Expires |
+
+The expiration processor runs on an EventBridge schedule (default every 3 hours), so actions can lag the thresholds by up to that interval.
 
 **Escalation Behavior:**
 
 1. **Warning notification** sent at 75% of timeout
 2. For CRITICAL/HIGH: **Escalation** to backup reviewers
-3. For MEDIUM/LOW: **Expiration** and re-queue option
+3. For MEDIUM/LOW: **Expiration** (re-queue is planned)
 
 **Configure backup reviewers:**
+
+Backup reviewers are set on the expiration processor Lambda through the `BackupReviewers` parameter of `deploy/cloudformation/hitl-scheduler.yaml` (passed as the `BACKUP_REVIEWERS` environment variable, comma-separated emails). A settings screen for this is planned; the steps below describe the intended UI.
 
 1. Navigate to **Settings > Security Policies > Escalation**
 
@@ -611,9 +612,8 @@ All approval decisions are logged for compliance.
 
 | Environment | Retention Period |
 |-------------|------------------|
-| Production | 7 years |
-| Development | 90 days |
-| Self-hosted | Configurable |
+| All environments | 90 days (DynamoDB TTL on approval records) |
+| Target for production | 7 years (planned) |
 
 ---
 
@@ -621,13 +621,15 @@ All approval decisions are logged for compliance.
 
 ### Viewing Current Policy
 
+> **Planned.** The **Autonomy Policies** tab in Settings cannot load or save policies yet because the autonomy API router is not mounted; it shows a default policy.
+
 1. Navigate to **Settings > Security Policies**
 
 2. View your organization's active policy:
    ```
    Organization: ACME Corp
    Policy: enterprise_standard (preset)
-   Default Level: HITL_CRITICAL
+   Default Level: CRITICAL_HITL
    HITL Enabled: Yes
 
    Severity Overrides:
@@ -652,15 +654,16 @@ All approval decisions are logged for compliance.
    | `defense_contractor` | FULL_HITL | Defense, Aerospace |
    | `financial_services` | FULL_HITL | Banking, Insurance |
    | `healthcare` | FULL_HITL | Hospitals, Pharma |
-   | `enterprise_standard` | HITL_CRITICAL | Fortune 500 |
-   | `fintech_startup` | HITL_CRITICAL | Growth Companies |
-   | `internal_tools` | AUDIT_ONLY | Internal Dev Teams |
+   | `enterprise_standard` | CRITICAL_HITL | Fortune 500 |
+   | `fintech_startup` | CRITICAL_HITL | Growth Companies |
+   | `internal_tools` | FULL_AUTONOMOUS | Internal Dev Teams |
+   | `fully_autonomous` | FULL_AUTONOMOUS (HITL off; guardrails apply) | Commercial dev/test |
 
 3. Configure overrides as needed
 
 4. Click **Save Policy**
 
-> **Warning:** Reducing oversight levels (e.g., FULL_HITL to HITL_CRITICAL) may affect compliance. Consult your compliance team before making changes.
+> **Warning:** Reducing oversight levels (e.g., FULL_HITL to CRITICAL_HITL) may affect compliance. Consult your compliance team before making changes.
 
 ---
 

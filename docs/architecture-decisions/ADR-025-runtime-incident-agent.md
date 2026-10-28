@@ -1,9 +1,11 @@
 # ADR-025: RuntimeIncidentAgent for Code-Aware Incident Response
 
-**Status:** Deployed
+**Status:** Deployed (code-graph correlation and observability adapters not wired in the deployed CLI)
 **Date:** 2025-12-06
 **Decision Makers:** Project Aura Team
 **Related:** ADR-005 (HITL Sandbox Architecture), ADR-022 (GitOps with ArgoCD)
+
+> **Status note (2026-10-26).** Built: `src/agents/runtime_incident_agent.py`, `src/agents/runtime_incident_cli.py`, the router in `src/api/incidents.py` (mounted in `src/api/main.py:925`), `frontend/src/components/IncidentInvestigations.jsx`, `deploy/cloudformation/incident-response.yaml` and `deploy/cloudformation/incident-investigation-workflow.yaml`, with tests in `tests/test_runtime_incident_agent.py`; the Implementation Plan checkboxes were never updated. The CLI that the container entrypoint runs passes `context_service=None` and `mcp_adapters=None` (`src/agents/runtime_incident_cli.py:75-79`), so Neptune code correlation, OpenSearch change search and Datadog/Prometheus queries are skipped, and RCA uses CloudWatch logs, the deployments table and the LLM only. The agent also calls `graph_store.get_entity_by_name`, which no class in `src/` defines.
 
 ## Context
 

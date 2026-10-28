@@ -47,7 +47,7 @@ aws cloudformation describe-stacks \
 
 # View template validation errors
 aws cloudformation validate-template \
-  --template-body file://deploy/cloudformation/template.yaml
+  --template-body file://deploy/cloudformation/<template-name>.yaml
 ```
 
 **Resolution by Error Type:**

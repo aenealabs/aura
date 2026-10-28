@@ -10,6 +10,8 @@
 
 ## Overview
 
+> **Schedule status (October 2026):** The `schedule:` trigger in `.github/workflows/nightly-live-llm.yml` is commented out (lines 31-33); the workflow currently runs only through `workflow_dispatch`. It stays manual until the `AURA_LIVE_LLM_ROLE_ARN` secret and the `LIVE_LLM_ENABLED` repository variable are configured (see the header comment in the workflow). References to the "nightly" run below describe the intended cadence once re-enabled.
+
 The nightly live-LLM smoke runs the Tier 3 symbol resolver against real Bedrock on five representative fixtures. The mocked Tier 3 tests prove the resolver code is correct given a known-shaped LLM response; this smoke catches what mocks cannot:
 
 - A new model snapshot rolls out and changes the response shape.

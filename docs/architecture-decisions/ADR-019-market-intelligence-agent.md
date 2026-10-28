@@ -1,9 +1,11 @@
 # ADR-019: Market Intelligence Agent for Autonomous Competitive Research
 
-**Status:** Deployed
+**Status:** Accepted (scaffold only; data sources stubbed and agent not wired)
 **Date:** 2025-12-03
 **Decision Makers:** Project Aura Team
 **Related:** ADR-018 (MetaOrchestrator Dynamic Agent Spawning), ADR-010 (Autonomous ADR Generation Pipeline)
+
+> **Status note (2026-10-26).** `src/agents/market_intelligence_agent.py` defines `MarketIntelligenceAgent`, `CompetitorWatchAgent`, `TrendAnalysisAgent` and `DocumentationAggregatorAgent`, `AgentCapability.MARKET_INTELLIGENCE` exists (`src/agents/meta_orchestrator.py:75`), and `tests/test_market_intelligence_agent.py` covers the module. Every data source is a stub: `_fetch_feed` (line 338) returns one canned "Sample Competitor Announcement", the GitHub trending and NIST checks return fixed reports, and the HackerNews, Reddit, OWASP and CIS checks return empty lists. The knowledge base is an in-memory list; there is no DynamoDB table, EventBridge schedule, query API or dashboard endpoint, and nothing outside the module and its tests imports the agent.
 
 ## Context
 

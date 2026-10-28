@@ -16,8 +16,8 @@
 ## Key Scripts
 
 - **Kill-Switches:**
-  - `dev_killswitch.py` (86 tests) - See `docs/runbooks/DEV_KILLSWITCH_RUNBOOK.md`
-  - `qa_killswitch.py` (47 tests) - See `docs/runbooks/QA_KILLSWITCH_RUNBOOK.md`
+  - `dev_killswitch.py` (106 tests) - See `docs/runbooks/DEV_KILLSWITCH_RUNBOOK.md`
+  - `qa_killswitch.py` (61 tests) - See `docs/runbooks/QA_KILLSWITCH_RUNBOOK.md`
 - **Security Hooks:**
   - `security_hooks/secrets_hook.py` - Pre-commit secrets scanning
   - `security_hooks/config_hook.py` - Config file validation

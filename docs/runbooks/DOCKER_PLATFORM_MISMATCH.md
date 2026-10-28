@@ -144,7 +144,7 @@ git clone https://github.com/aenealabs/aura.git
 cd aura
 
 # 2. Configure AWS credentials
-aws configure  # or use SSO: aws sso login --profile aura-admin
+aws configure  # or use SSO: aws sso login --profile aura-breakglass-dev
 
 # 3. Run bootstrap with force flag
 ./deploy/scripts/bootstrap-base-images.sh dev --force

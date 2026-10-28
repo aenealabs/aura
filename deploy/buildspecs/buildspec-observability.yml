@@ -20,32 +20,39 @@ phases:
     commands:
       - echo "Installing cfn-lint..."
       - python -m pip install --upgrade pip
-      - pip3 install cfn-lint
+      - pip3 install cfn-lint==1.57.2
 
   pre_build:
     commands:
+      # ADR-092: deploy through the scoped CloudFormation service role when the
+      # environment opts in by publishing the role ARN in SSM. Unset means the
+      # stacks deploy as this CodeBuild role (the default).
+      - |
+        CFN_ROLE_ARN=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/cfn-service-role-arn" --query Parameter.Value --output text 2>/dev/null || echo "")
+        if [ -n "$CFN_ROLE_ARN" ] && [ "$CFN_ROLE_ARN" != "None" ]; then export CFN_ROLE_ARG="--role-arn $CFN_ROLE_ARN"; else export CFN_ROLE_ARG=""; fi
+        echo "CloudFormation service role: ${CFN_ROLE_ARN:-none, deploying as the CodeBuild role}"
       - echo "=========================================="
       - echo "Observability Layer Deployment"
       - echo "=========================================="
 
       # Validate templates (ignore W3002: dynamic references, W1020: unnecessary Fn::Sub)
       - echo "Validating observability layer templates..."
-      - cfn-lint deploy/cloudformation/secrets.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/monitoring.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/aura-cost-alerts.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/realtime-monitoring.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/disaster-recovery.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/otel-collector.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/log-retention-sync.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/alignment-alerts.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/gpu-monitoring.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/compliance-settings-sync.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/org-cost-monitoring.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/secrets.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/monitoring.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/aura-cost-alerts.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/realtime-monitoring.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/disaster-recovery.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/otel-collector.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/log-retention-sync.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/alignment-alerts.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/gpu-monitoring.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/compliance-settings-sync.yaml --ignore-checks W3002,W1020 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/org-cost-monitoring.yaml --ignore-checks W3002,W1020 || exit 1
       - |
         if [ "$ENVIRONMENT" = "dev" ]; then
-          cfn-lint deploy/cloudformation/dev-cost-scheduler.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+          ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/dev-cost-scheduler.yaml --ignore-checks W3002,W1020 || exit 1
         elif [ "$ENVIRONMENT" = "qa" ]; then
-          cfn-lint deploy/cloudformation/qa-cost-scheduler.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+          ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/qa-cost-scheduler.yaml --ignore-checks W3002,W1020 || exit 1
         fi
 
       # Get dependency stack outputs
@@ -87,7 +94,7 @@ phases:
       - echo "Deploying Secrets Stack..."
       - SECRETS_STACK="${PROJECT_NAME}-secrets-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $SECRETS_STACK \
           --template-file deploy/cloudformation/secrets.yaml \
           --parameter-overrides \
@@ -105,7 +112,7 @@ phases:
       - echo "Deploying Monitoring Stack..."
       - MONITORING_STACK="${PROJECT_NAME}-monitoring-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $MONITORING_STACK \
           --template-file deploy/cloudformation/monitoring.yaml \
           --parameter-overrides \
@@ -123,7 +130,7 @@ phases:
       - echo "Deploying Cost Alerts Stack..."
       - COST_ALERTS_STACK="${PROJECT_NAME}-cost-alerts-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $COST_ALERTS_STACK \
           --template-file deploy/cloudformation/aura-cost-alerts.yaml \
           --parameter-overrides \
@@ -142,7 +149,7 @@ phases:
       - echo "Deploying Organization Cost Monitoring Stack..."
       - ORG_COST_MONITORING_STACK="${PROJECT_NAME}-org-cost-monitoring-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $ORG_COST_MONITORING_STACK \
           --template-file deploy/cloudformation/org-cost-monitoring.yaml \
           --parameter-overrides \
@@ -159,7 +166,7 @@ phases:
       - echo "Deploying Real-Time Monitoring Stack..."
       - REALTIME_MONITORING_STACK="${PROJECT_NAME}-realtime-monitoring-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $REALTIME_MONITORING_STACK \
           --template-file deploy/cloudformation/realtime-monitoring.yaml \
           --parameter-overrides \
@@ -177,7 +184,7 @@ phases:
       - echo "Deploying Disaster Recovery Stack..."
       - DR_STACK="${PROJECT_NAME}-disaster-recovery-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $DR_STACK \
           --template-file deploy/cloudformation/disaster-recovery.yaml \
           --parameter-overrides \
@@ -211,7 +218,7 @@ phases:
         if [ -z "$OIDC_PROVIDER_ARN" ] || [ "$OIDC_PROVIDER_ARN" = "None" ]; then
           echo "Skipping OTEL Collector - EKS OIDC not available"
         else
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $OTEL_STACK \
             --template-file deploy/cloudformation/otel-collector.yaml \
             --parameter-overrides \
@@ -230,7 +237,7 @@ phases:
       - echo "Deploying Log Retention Sync Lambda..."
       - LOG_RETENTION_STACK="${PROJECT_NAME}-log-retention-sync-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $LOG_RETENTION_STACK \
           --template-file deploy/cloudformation/log-retention-sync.yaml \
           --parameter-overrides \
@@ -248,7 +255,7 @@ phases:
       - echo "Deploying AI Alignment Alerts Stack..."
       - ALIGNMENT_ALERTS_STACK="${PROJECT_NAME}-alignment-alerts-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $ALIGNMENT_ALERTS_STACK \
           --template-file deploy/cloudformation/alignment-alerts.yaml \
           --parameter-overrides \
@@ -273,7 +280,7 @@ phases:
           echo "Warning: AlertTopicArn not found, skipping GPU Monitoring deployment"
         else
           echo "Alert Topic ARN: $ALERT_TOPIC_ARN"
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $GPU_MONITORING_STACK \
             --template-file deploy/cloudformation/gpu-monitoring.yaml \
             --parameter-overrides \
@@ -290,7 +297,7 @@ phases:
       - echo "Deploying Compliance Settings Sync Stack..."
       - COMPLIANCE_SYNC_STACK="${PROJECT_NAME}-compliance-settings-sync-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $COMPLIANCE_SYNC_STACK \
           --template-file deploy/cloudformation/compliance-settings-sync.yaml \
           --parameter-overrides \
@@ -311,7 +318,7 @@ phases:
       - |
         if [ "$ENVIRONMENT" = "dev" ]; then
           echo "Deploying DEV Cost Scheduler Stack..."
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $DEV_COST_SCHEDULER_STACK \
             --template-file deploy/cloudformation/dev-cost-scheduler.yaml \
             --parameter-overrides \
@@ -325,7 +332,7 @@ phases:
           echo "DEV Cost Scheduler Stack deployment complete"
         elif [ "$ENVIRONMENT" = "qa" ]; then
           echo "Deploying QA Cost Scheduler Stack..."
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $QA_COST_SCHEDULER_STACK \
             --template-file deploy/cloudformation/qa-cost-scheduler.yaml \
             --parameter-overrides \
@@ -347,7 +354,7 @@ phases:
       - |
         ALERT_TOPIC_ARN=$(aws cloudformation describe-stacks --stack-name $MONITORING_STACK \
           --query 'Stacks[0].Outputs[?OutputKey==`AlertTopicArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $DVE_MONITORING_STACK \
           --template-file deploy/cloudformation/dve-monitoring.yaml \
           --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME AlertTopicArn=${ALERT_TOPIC_ARN:-""} \
@@ -356,7 +363,7 @@ phases:
 
       # Deploy Model Assurance Monitoring (ADR-088) — self-contained
       - echo "Deploying Model Assurance Monitoring Stack..."
-      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-model-assurance-monitoring-${ENVIRONMENT} --template-file deploy/cloudformation/model-assurance-monitoring.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME AlertEmail=${ALERT_EMAIL:-""} --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=observability ADR=ADR-088 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset --region $AWS_DEFAULT_REGION
+      - aws cloudformation deploy ${CFN_ROLE_ARG:-} --stack-name ${PROJECT_NAME}-model-assurance-monitoring-${ENVIRONMENT} --template-file deploy/cloudformation/model-assurance-monitoring.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME AlertEmail=${ALERT_EMAIL:-""} --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=observability ADR=ADR-088 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset --region $AWS_DEFAULT_REGION
 
   post_build:
     commands:

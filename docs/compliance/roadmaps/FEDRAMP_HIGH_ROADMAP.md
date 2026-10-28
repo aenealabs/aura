@@ -6,6 +6,7 @@
 **Last Updated:** December 22, 2025
 **Classification:** Public
 **Target Authorization:** FedRAMP High (JAB or Agency)
+**Status:** Planned. No certification filing has been submitted (as of October 2026). Aura holds no FedRAMP authorization at any level and is not listed as FedRAMP In Process or Ready.
 
 ---
 
@@ -17,12 +18,12 @@ This roadmap outlines the path to FedRAMP High authorization for Project Aura, a
 
 **Total Investment:** $250,000-350,000 (first year)
 
-**Current State:** Project Aura maintains strong technical infrastructure with 100% GovCloud-ready services (19/19), comprehensive audit logging, encryption-at-rest with KMS rotation, and automated compliance evidence generation. The primary gaps are organizational controls (AT, IR, PS, RA, CA domains) and formal documentation (SSP, SAR, POA&M).
+**Current State:** Project Aura maintains strong technical infrastructure with 100% GovCloud-ready services (19/19), comprehensive audit logging, encryption-at-rest with KMS rotation, and a SOC 2-aligned evidence service whose collectors still return sample values. The primary gaps are organizational controls (AT, IR, PS, RA, CA domains) and formal documentation (SSP, SAR, POA&M).
 
 **Key Advantages:**
 - 100% Infrastructure-as-Code (CloudFormation) enables reproducible, auditable deployments
 - 4,874+ automated tests provide continuous control validation
-- SOC 2 Compliance Evidence Service already deployed
+- SOC 2-aligned evidence service built (control catalog and assessment logic; AWS-backed evidence collection planned)
 - AWS GovCloud architecture with partition-aware ARNs
 - Zero hardcoded credentials (AWS Secrets Manager, Parameter Store)
 
@@ -38,23 +39,23 @@ This roadmap outlines the path to FedRAMP High authorization for Project Aura, a
 
 ### Technical Controls Status
 
-| Control Family | FedRAMP High Required | Current Implementation | Gap Assessment |
+| Control Family | FedRAMP High Required | Current Implementation | Gap Assessment (internal, unaudited) |
 |----------------|----------------------|------------------------|----------------|
-| **Access Control (AC)** | 25 controls | IAM least-privilege, RBAC, MFA ready | 85% - Need formal access review procedures |
-| **Audit & Accountability (AU)** | 16 controls | CloudTrail, VPC Flow Logs (365-day), CloudWatch | 90% - Need SIEM correlation, audit review procedures |
-| **Configuration Management (CM)** | 11 controls | IaC (80 CloudFormation templates), AWS Config | 95% - Need baseline documentation |
-| **Contingency Planning (CP)** | 13 controls | Multi-AZ deployment, backup procedures | 70% - Need formal DR plan, testing schedule |
-| **Identification & Auth (IA)** | 12 controls | Argon2id, JWT validation, MFA infrastructure | 80% - Need PIV/CAC support for High |
-| **Incident Response (IR)** | 10 controls | GuardDuty, 7 CloudWatch alarms, SNS alerts | 40% - Need IR playbook, CIRT contacts |
-| **Maintenance (MA)** | 6 controls | AWS managed services | 95% - Inherited controls |
-| **Media Protection (MP)** | 8 controls | KMS encryption, S3 bucket policies | 90% - Need media handling procedures |
-| **Personnel Security (PS)** | 8 controls | N/A (solo founder) | 20% - Need background check process |
-| **Physical & Environmental (PE)** | 20 controls | AWS data centers | 100% - Inherited from AWS |
-| **Planning (PL)** | 9 controls | Architecture documentation | 60% - Need formal security planning |
-| **Risk Assessment (RA)** | 6 controls | AWS Inspector deployed | 30% - Need formal RA program |
-| **Security Assessment (CA)** | 9 controls | Automated testing | 40% - Need penetration testing |
-| **System & Comms (SC)** | 44 controls | TLS 1.3, encryption in transit/at rest | 85% - Need boundary protection docs |
-| **System & Info Integrity (SI)** | 17 controls | WAF, GuardDuty, vulnerability scanning | 75% - Need malware protection evidence |
+| **Access Control (AC)** | 25 controls | IAM least-privilege, RBAC, MFA ready | Need formal access review procedures |
+| **Audit & Accountability (AU)** | 16 controls | CloudTrail, VPC Flow Logs (365-day), CloudWatch | Need SIEM correlation, audit review procedures |
+| **Configuration Management (CM)** | 11 controls | IaC (80 CloudFormation templates), AWS Config | Need baseline documentation |
+| **Contingency Planning (CP)** | 13 controls | Multi-AZ deployment, backup procedures | Need formal DR plan, testing schedule |
+| **Identification & Auth (IA)** | 12 controls | Cognito-managed credentials, JWT validation, MFA infrastructure | Need PIV/CAC support for High |
+| **Incident Response (IR)** | 10 controls | GuardDuty, 7 CloudWatch alarms, SNS alerts | Need IR playbook, CIRT contacts |
+| **Maintenance (MA)** | 6 controls | AWS managed services | Inherited controls |
+| **Media Protection (MP)** | 8 controls | KMS encryption, S3 bucket policies | Need media handling procedures |
+| **Personnel Security (PS)** | 8 controls | N/A (solo founder) | Need background check process |
+| **Physical & Environmental (PE)** | 20 controls | AWS data centers | Inherited from AWS |
+| **Planning (PL)** | 9 controls | Architecture documentation | Need formal security planning |
+| **Risk Assessment (RA)** | 6 controls | AWS Inspector deployed | Need formal RA program |
+| **Security Assessment (CA)** | 9 controls | Automated testing | Need penetration testing |
+| **System & Comms (SC)** | 44 controls | TLS 1.3, encryption in transit/at rest | Need boundary protection docs |
+| **System & Info Integrity (SI)** | 17 controls | WAF, GuardDuty, vulnerability scanning | Need malware protection evidence |
 
 ### Overall Control Coverage
 
@@ -63,10 +64,10 @@ FedRAMP High Total Controls: 421 (NIST 800-53 Rev 5)
 AWS Inherited Controls: ~150 (35%)
 Customer Implemented: ~271 (65%)
 
-Current Coverage Estimate:
-- Fully Implemented: ~180 controls (43%)
-- Partially Implemented: ~120 controls (28%)
-- Not Implemented: ~121 controls (29%)
+Current Coverage:
+- Not yet formally assessed. No 3PAO readiness assessment
+  or scored gap analysis exists; Phase 1 produces the
+  first baseline.
 ```
 
 ### Existing Evidence Sources
@@ -79,7 +80,7 @@ Current Coverage Estimate:
 | Vulnerability Scans | AWS Inspector | Scheduled scanning |
 | Configuration Baseline | CloudFormation templates | Version controlled |
 | Test Results | 4,874 pytest results | CI/CD integrated |
-| Compliance Evidence | SOC 2 Evidence Service | Daily generation |
+| Compliance Evidence | SOC 2-aligned evidence service | Planned (collectors return sample values today) |
 
 ---
 
@@ -277,7 +278,7 @@ For each control family, document:
 
 #### Critical Gap Remediation
 
-##### Incident Response (IR) - Current: 40%
+##### Incident Response (IR)
 
 | Control | Gap | Remediation | Cost Estimate |
 |---------|-----|-------------|---------------|
@@ -287,7 +288,7 @@ For each control family, document:
 | IR-6 | No reporting procedures | Document reporting chain | 10 hours internal |
 | IR-8 | No IR plan | Develop comprehensive IR plan | 60 hours internal |
 
-##### Personnel Security (PS) - Current: 20%
+##### Personnel Security (PS)
 
 | Control | Gap | Remediation | Cost Estimate |
 |---------|-----|-------------|---------------|
@@ -296,7 +297,7 @@ For each control family, document:
 | PS-5 | No transfer procedures | Document procedures | 10 hours internal |
 | PS-7 | No third-party agreements | Draft template agreements | 20 hours internal |
 
-##### Security Assessment (CA) - Current: 40%
+##### Security Assessment (CA)
 
 | Control | Gap | Remediation | Cost Estimate |
 |---------|-----|-------------|---------------|
@@ -305,7 +306,7 @@ For each control family, document:
 | CA-7 | No continuous monitoring | Implement ConMon program | 40 hours internal |
 | CA-8 | No penetration testing | Annual pentest contract | $30,000-50,000/year |
 
-##### Awareness Training (AT) - Current: 0%
+##### Awareness Training (AT)
 
 | Control | Gap | Remediation | Cost Estimate |
 |---------|-----|-------------|---------------|
@@ -313,7 +314,7 @@ For each control family, document:
 | AT-3 | No role-based training | Custom modules | 20 hours internal |
 | AT-4 | No training records | LMS implementation | Included in KnowBe4 |
 
-##### Risk Assessment (RA) - Current: 30%
+##### Risk Assessment (RA)
 
 | Control | Gap | Remediation | Cost Estimate |
 |---------|-----|-------------|---------------|
@@ -494,7 +495,7 @@ FedRAMP requires separation between security administration, system administrati
 |-------|-----------------|-------------------|
 | 100% IaC (CloudFormation) | CM controls, reproducibility | `deploy/cloudformation/` |
 | 4,874 automated tests | SI controls, validation | `tests/` directory |
-| SOC 2 Evidence Service | Automated evidence generation | Deployed service |
+| SOC 2 Evidence Service | Evidence framework (collectors return sample values; AWS-backed collection planned) | `src/services/compliance_evidence_service.py` |
 | KMS encryption (rotation) | SC controls, encryption | CloudFormation templates |
 | VPC Flow Logs (365-day) | AU controls, audit | AWS configuration |
 | GuardDuty + CloudWatch Alarms | IR controls, monitoring | Deployed services |

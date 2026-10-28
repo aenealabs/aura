@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (All 5 Phases Implemented)
+Implemented (library, all 5 phases); not integrated -- not yet invoked from an agent or API path
+
+> **Status note (2026-10-26).** The phase descriptions below match `src/services/verification_envelope/` (consensus, coverage, formal, policies, traceability, pipeline, sinks, plus the ADR-085.1 `object_code/` scaffold); `tests/services/verification_envelope/` now collects 226 tests (223 pass, 3 skip on 2026-10-26). No module outside the package imports it, so `DVEPipeline` is not called from the agent orchestrator, the HITL workflow or any API route, and it does not call the ADR-085.1 `ObjectCodeGate`. `NeptuneRequirementStore` falls back to its in-memory store when no Neptune client is injected. `dve-infrastructure.yaml` and `dve-monitoring.yaml` exist; whether they are deployed was not checked here.
 
 Phase 1 deployed as `src/services/verification_envelope/` (consensus engine, AST normalizer, semantic equivalence checker, consensus policy with M-of-N centroid selection, DAL coverage policy stubs for the cert argument). 40 unit tests.
 
@@ -132,7 +134,7 @@ The DVE enables the following output verification argument under DO-330 Section 
 - (c) CGE deterministic 7-axis coherence scoring (deterministic -- frozen embeddings, pure arithmetic)
 - (d) Z3 formal constraint satisfaction proof (deterministic -- SMT solver with reproducible proof hash)
 - (e) Sandbox testing with MC/DC structural coverage (deterministic -- tests pass or fail, coverage measured)
-- (f) HITL human review (independent -- satisfies DO-178C independence requirements)
+- (f) HITL human review (independent -- intended to meet DO-178C independence objectives; no certification credit claimed)
 
 **Premise 3:** Passes (c), (d), and (e) are fully deterministic -- the same output always produces the same verification result. Passes (a) and (b) are probabilistic but serve as variance reducers that filter non-convergent and principle-violating outputs before they reach the deterministic gates. Pass (f) satisfies the independence requirement through human cognition.
 

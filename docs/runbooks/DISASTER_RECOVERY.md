@@ -447,7 +447,7 @@ aws dynamodb describe-continuous-backups \
 
 ## Appendix B: Recovery Scripts
 
-Located in `scripts/dr/`:
+**Planned, not yet in the repository:** the `scripts/dr/` directory does not exist, and neither do the scripts named in the procedures above (`scripts/validate_neptune_integrity.py`, `scripts/validate_opensearch_integrity.py`, `scripts/migrate_dynamodb_data.py`). Until they are written, perform the equivalent steps manually with the AWS console or CLI. The intended script set is:
 - `validate_neptune_integrity.py`
 - `validate_opensearch_integrity.py`
 - `migrate_dynamodb_data.py`

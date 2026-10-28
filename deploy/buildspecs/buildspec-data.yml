@@ -14,12 +14,19 @@ env:
 phases:
   pre_build:
     commands:
+      # ADR-092: deploy through the scoped CloudFormation service role when the
+      # environment opts in by publishing the role ARN in SSM. Unset means the
+      # stacks deploy as this CodeBuild role (the default).
+      - |
+        CFN_ROLE_ARN=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/cfn-service-role-arn" --query Parameter.Value --output text 2>/dev/null || echo "")
+        if [ -n "$CFN_ROLE_ARN" ] && [ "$CFN_ROLE_ARN" != "None" ]; then export CFN_ROLE_ARG="--role-arn $CFN_ROLE_ARN"; else export CFN_ROLE_ARG=""; fi
+        echo "CloudFormation service role: ${CFN_ROLE_ARN:-none, deploying as the CodeBuild role}"
       - echo "=========================================="
       - echo "Data Layer Deployment"
       - echo "=========================================="
       - echo "Installing dependencies..."
       - python -m pip install --upgrade pip
-      - pip3 install --quiet cfn-lint boto3
+      - pip3 install --quiet cfn-lint==1.57.2 boto3
 
       - echo "Retrieving Foundation layer outputs..."
       - export VPC_ID=$(aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-networking-${ENVIRONMENT} --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
@@ -32,19 +39,19 @@ phases:
       - echo "✓ OpenSearch SG - $OPENSEARCH_SG"
 
       - echo "Validating templates..."
-      - cfn-lint deploy/cloudformation/neptune-simplified.yaml --ignore-checks W2001,W3002,W3005 || echo "Neptune simplified template has warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/opensearch.yaml --ignore-checks W2001,W3002,W3005 || echo "OpenSearch template has warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/dynamodb.yaml --ignore-checks W2001,W3002,W3005 || echo "DynamoDB template has warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/repository-tables.yaml --ignore-checks W2001,W3002,W3005 || echo "Repository tables template has warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/s3.yaml --ignore-checks W2001,W3002,W3005 || echo "S3 template has warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/elasticache.yaml --ignore-checks W2001,W3002,W3005 || echo "ElastiCache template has warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/dashboard-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || echo "Dashboard DynamoDB template has warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/supply-chain-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || echo "Supply Chain DynamoDB template has warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/runtime-security-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || echo "Runtime Security DynamoDB template has warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/ai-security-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || echo "AI Security DynamoDB template has warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/memory-evolution-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || echo "Memory Evolution DynamoDB template has warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/dve-infrastructure.yaml --ignore-checks W2001,W3002,W3005,W7001 || echo "DVE Infrastructure template has warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/model-assurance-storage.yaml --ignore-checks W2001,W3002,W3005,W7001 || echo "Model Assurance Storage template has warnings (non-blocking)"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/neptune-simplified.yaml --ignore-checks W2001,W3002,W3005 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/opensearch.yaml --ignore-checks W2001,W3002,W3005 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/dynamodb.yaml --ignore-checks W2001,W3002,W3005 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/repository-tables.yaml --ignore-checks W2001,W3002,W3005 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/s3.yaml --ignore-checks W2001,W3002,W3005 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/elasticache.yaml --ignore-checks W2001,W3002,W3005 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/dashboard-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/supply-chain-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/runtime-security-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/ai-security-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/memory-evolution-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/dve-infrastructure.yaml --ignore-checks W2001,W3002,W3005,W7001 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/model-assurance-storage.yaml --ignore-checks W2001,W3002,W3005,W7001 || exit 1
       - echo "✓ Template validation complete"
 
   build:
@@ -54,19 +61,19 @@ phases:
       - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
 
       - echo "Deploying DynamoDB..."
-      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+      - aws cloudformation deploy ${CFN_ROLE_ARG:-} --stack-name ${PROJECT_NAME}-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
 
       - echo "Deploying Repository Tables..."
-      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-repository-tables-${ENVIRONMENT} --template-file deploy/cloudformation/repository-tables.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+      - aws cloudformation deploy ${CFN_ROLE_ARG:-} --stack-name ${PROJECT_NAME}-repository-tables-${ENVIRONMENT} --template-file deploy/cloudformation/repository-tables.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
 
       - echo "Deploying Context Provenance..."
-      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-context-provenance-${ENVIRONMENT} --template-file deploy/cloudformation/context-provenance.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+      - aws cloudformation deploy ${CFN_ROLE_ARG:-} --stack-name ${PROJECT_NAME}-context-provenance-${ENVIRONMENT} --template-file deploy/cloudformation/context-provenance.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
 
       - echo "Deploying Dashboard DynamoDB (ADR-064)..."
-      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-dashboard-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/dashboard-dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+      - aws cloudformation deploy ${CFN_ROLE_ARG:-} --stack-name ${PROJECT_NAME}-dashboard-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/dashboard-dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
 
       - echo "Deploying S3..."
-      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-s3-${ENVIRONMENT} --template-file deploy/cloudformation/s3.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+      - aws cloudformation deploy ${CFN_ROLE_ARG:-} --stack-name ${PROJECT_NAME}-s3-${ENVIRONMENT} --template-file deploy/cloudformation/s3.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
 
       - echo "Deploying Neptune with simplified template (bypassing parameter group issue)..."
       - |
@@ -83,7 +90,7 @@ phases:
           sleep 30
         fi
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name ${PROJECT_NAME}-neptune-${ENVIRONMENT} \
           --template-file deploy/cloudformation/neptune-simplified.yaml \
           --parameter-overrides \
@@ -99,7 +106,7 @@ phases:
 
       - echo "Deploying OpenSearch (this will take ~15 minutes)..."
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name ${PROJECT_NAME}-opensearch-${ENVIRONMENT} \
           --template-file deploy/cloudformation/opensearch.yaml \
           --parameter-overrides \
@@ -135,7 +142,7 @@ phases:
           echo "Application security group not found, using Neptune SG as fallback"
           APP_SG=$NEPTUNE_SG
         fi
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name ${PROJECT_NAME}-elasticache-${ENVIRONMENT} \
           --template-file deploy/cloudformation/elasticache.yaml \
           --parameter-overrides \
@@ -149,22 +156,22 @@ phases:
           --no-fail-on-empty-changeset
 
       - echo "Deploying Supply Chain DynamoDB (ADR-076)..."
-      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-supply-chain-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/supply-chain-dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-076 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+      - aws cloudformation deploy ${CFN_ROLE_ARG:-} --stack-name ${PROJECT_NAME}-supply-chain-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/supply-chain-dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-076 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
 
       - echo "Deploying Runtime Security DynamoDB (ADR-077)..."
-      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-runtime-security-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/runtime-security-dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-077 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+      - aws cloudformation deploy ${CFN_ROLE_ARG:-} --stack-name ${PROJECT_NAME}-runtime-security-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/runtime-security-dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-077 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
 
       - echo "Deploying AI Security DynamoDB (ADR-079)..."
-      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-ai-security-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/ai-security-dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-079 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+      - aws cloudformation deploy ${CFN_ROLE_ARG:-} --stack-name ${PROJECT_NAME}-ai-security-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/ai-security-dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-079 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
 
       - echo "Deploying Memory Evolution DynamoDB (ADR-080)..."
-      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-memory-evolution-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/memory-evolution-dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-080 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+      - aws cloudformation deploy ${CFN_ROLE_ARG:-} --stack-name ${PROJECT_NAME}-memory-evolution-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/memory-evolution-dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-080 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
 
       - echo "Deploying DVE Audit Infrastructure (ADR-085 Phase 5)..."
-      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-dve-infrastructure-${ENVIRONMENT} --template-file deploy/cloudformation/dve-infrastructure.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-085 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+      - aws cloudformation deploy ${CFN_ROLE_ARG:-} --stack-name ${PROJECT_NAME}-dve-infrastructure-${ENVIRONMENT} --template-file deploy/cloudformation/dve-infrastructure.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-085 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
 
       - echo "Deploying Model Assurance Storage (ADR-088)..."
-      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-model-assurance-storage-${ENVIRONMENT} --template-file deploy/cloudformation/model-assurance-storage.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-088 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+      - aws cloudformation deploy ${CFN_ROLE_ARG:-} --stack-name ${PROJECT_NAME}-model-assurance-storage-${ENVIRONMENT} --template-file deploy/cloudformation/model-assurance-storage.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-088 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
 
   post_build:
     commands:

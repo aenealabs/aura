@@ -297,6 +297,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: IsProduction
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-cognito-hydrator-trigger-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -408,6 +409,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: IsProduction
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-cognito-ssm-cutover-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -590,6 +592,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: IsProduction
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-data-plane-secret-cutover-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

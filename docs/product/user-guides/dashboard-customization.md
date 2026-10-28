@@ -17,6 +17,13 @@ By the end of this guide, you will be able to:
 - Share dashboards with team members
 - Configure scheduled reports
 
+> **Implementation status: Partial.**
+>
+> - **Backend (implemented):** the dashboard API (`src/api/dashboard_endpoints.py`, `src/services/dashboard/`) supports dashboard CRUD, role defaults, templates, cloning, and sharing, persisted in DynamoDB and protected by Cognito authentication.
+> - **Backend (in-memory or simulated):** scheduled reports, custom widgets, and embed tokens are stored in process memory and are lost when the API restarts. Scheduled-report delivery is simulated (it logs and reports success without rendering or emailing anything), and nothing invokes due schedules automatically. Embed tokens are signed with a placeholder key unless `AURA_EMBED_SECRET_KEY` is set.
+> - **Console:** the main dashboard uses fixed role-based layouts. The edit-mode, widget library, custom widget builder, share, and schedule-report screens described below exist as components (`DashboardEditor`, `CustomWidgetBuilder`, `ShareDashboardModal`, `ScheduleReportModal`) but are not yet mounted in the console's routes, so the step-by-step UI flows in this guide are **Planned**. Several dashboard widgets show demo data when their backend route does not exist; those widgets carry a **Demo data** badge.
+> - The main dashboard's summary, agent, scan, alert, health, and cost panels call `/api/v1/dashboard/*` routes that are not implemented, so those panels show an error state.
+
 ---
 
 ## Prerequisites
@@ -608,6 +615,9 @@ The dashboard customization system is built on the following components:
 | `/api/v1/dashboards/{id}/clone` | POST | Clone dashboard |
 | `/api/v1/dashboards/{id}/share` | POST | Share with users/teams |
 | `/api/v1/widgets/catalog` | GET | List available widgets |
+| `/api/v1/dashboards/{id}/schedules` | GET, POST | Scheduled reports (in-memory; delivery simulated) |
+| `/api/v1/widgets/custom` | GET, POST | Custom widgets (in-memory) |
+| `/api/v1/dashboards/{id}/embed` | GET, POST | Embed tokens (in-memory) |
 
 For complete API documentation, see [REST API Reference](../../support/api-reference/rest-api.md).
 

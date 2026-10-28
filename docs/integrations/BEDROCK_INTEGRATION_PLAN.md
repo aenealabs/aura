@@ -2,7 +2,7 @@
 ## Cost Control & Security Architecture
 
 **Created:** November 2025
-**Status:** Design Phase
+**Status:** Implemented (this file is the original design record; see the update note below for current model selection)
 **Owner:** Project Aura Team
 
 > **Update (October 2026):** The model IDs in this plan (Claude 3.5 Sonnet, Claude 3 Haiku) are the November 2025 design values and are no longer defaults. Tier models now resolve from the `aura/<env>/bedrock-config` secret, then `src/config/bedrock_config.py`, then `auto` (region discovery via `ListFoundationModels` / `ListInferenceProfiles`). See [Model Selection](../product/admin-guide/configuration-reference.md#model-selection).
@@ -926,14 +926,14 @@ Realistic estimate: $50-100/month for pilot, $500-1000/month at scale
 ## 10. Next Steps
 
 1. **Immediate (This Week):**
-   - [ ] Create `config/bedrock_config.py`
-   - [ ] Implement `services/bedrock_llm_service.py`
-   - [ ] Write unit tests
+   - [x] Create `config/bedrock_config.py` (`src/config/bedrock_config.py`)
+   - [x] Implement `services/bedrock_llm_service.py` (`src/services/bedrock_llm_service.py`)
+   - [x] Write unit tests (`tests/test_bedrock_*.py`)
    - [ ] Enable Bedrock in AWS dev account
 
 2. **Short Term (Next 2 Weeks):**
    - [ ] Deploy DynamoDB table and CloudWatch alarms
-   - [ ] Integrate with System2Orchestrator
+   - [x] Integrate with System2Orchestrator (`src/agents/agent_orchestrator.py` calls `create_llm_service()`)
    - [ ] Run integration tests
    - [ ] Monitor costs in dev environment
 
@@ -945,6 +945,4 @@ Realistic estimate: $50-100/month for pilot, $500-1000/month at scale
 
 ---
 
-**Document Status:** Ready for implementation
-**Estimated Implementation Time:** 3-5 days
-**Risk Level:** Low (incremental, well-tested)
+**Document Status:** Historical design record. The service (`src/services/bedrock_llm_service.py`), configuration (`src/config/bedrock_config.py`), and tests (`tests/test_bedrock_*.py`) are implemented.

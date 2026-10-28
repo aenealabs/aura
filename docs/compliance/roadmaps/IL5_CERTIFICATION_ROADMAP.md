@@ -6,6 +6,7 @@
 **Last Updated:** December 22, 2025
 **Classification:** Public
 **Target Authorization:** DoD IL5 Provisional Authorization
+**Status:** Planned. No certification filing has been submitted (as of October 2026). Aura holds no FedRAMP authorization (the IL5 prerequisite) and no DoD Provisional Authorization or ATO.
 
 ---
 
@@ -66,8 +67,8 @@ The DoD CC SRG defines six Impact Levels (IL) for cloud services:
 | Requirement | Status | Notes |
 |-------------|--------|-------|
 | FedRAMP High Authorization | Required | See FEDRAMP_HIGH_ROADMAP.md |
-| AWS GovCloud Deployment | Ready | Architecture uses partition-aware ARNs |
-| GovCloud-Compatible Services | 19/19 | All services IL5-capable |
+| AWS GovCloud Deployment | Planned | Architecture uses partition-aware ARNs; not yet deployed to GovCloud |
+| GovCloud-Compatible Services | 19/19 | All underlying AWS services offered at IL5 in GovCloud (Aura itself not authorized) |
 | KMS Encryption | Implemented | Customer-managed keys with rotation |
 | CloudTrail Logging | Implemented | 365-day retention |
 | VPC Architecture | Implemented | GovCloud-compatible design |
@@ -143,11 +144,11 @@ IL5 requires validated cryptographic modules:
 
 | Component | Current State | IL5 Requirement | Action |
 |-----------|---------------|-----------------|--------|
-| AWS KMS | FIPS 140-2 Level 3 | Compliant | Use FIPS endpoints |
+| AWS KMS | FIPS 140-2 Level 3 (AWS-validated module) | Met by AWS KMS | Use FIPS endpoints |
 | TLS Implementation | TLS 1.3 | FIPS-validated | Verify library |
 | Application Crypto | Python cryptography | FIPS mode required | Enable FIPS |
 | Data Encryption | AES-256 | FIPS-validated | AWS KMS handles |
-| Key Management | KMS-based | FIPS Level 2+ | Compliant |
+| Key Management | KMS-based | FIPS Level 2+ | Met by AWS KMS (Aura's own crypto is not FIPS-validated) |
 
 **FIPS Endpoint Configuration:**
 
@@ -462,20 +463,22 @@ IL5 systems must support DoD Common Access Card (CAC) and Personal Identity Veri
 
 | Asset | IL5 Benefit | Application |
 |-------|-------------|-------------|
-| GovCloud Architecture | Ready for IL5 infrastructure | Deploy to GovCloud |
+| GovCloud Architecture | Designed for GovCloud deployment (not yet deployed) | Deploy to GovCloud |
 | Partition-Aware ARNs | No refactoring needed | Seamless deployment |
 | KMS Encryption | FIPS-ready foundation | Configure FIPS endpoints |
 | IaC (CloudFormation) | Reproducible STIG compliance | Embed STIG in templates |
 | Automated Testing | STIG validation automation | Extend test coverage |
 | VPC Architecture | Network isolation foundation | Add CAP connectivity |
 
-### FedRAMP High Foundation
+### FedRAMP High Foundation (Once Obtained)
+
+Aura does not hold FedRAMP High today. The benefits below apply only after a FedRAMP High ATO is granted.
 
 | FedRAMP High Control | IL5 Benefit |
 |----------------------|-------------|
-| 421 NIST 800-53 controls | Baseline satisfied |
+| 421 NIST 800-53 controls | Baseline would be satisfied |
 | SSP documentation | Foundation for IL5 SSP |
-| 3PAO assessment | Recent security validation |
+| 3PAO assessment | Would provide recent security validation |
 | Continuous monitoring | Extend to DoD requirements |
 | Incident response plan | Extend to DoD chain |
 

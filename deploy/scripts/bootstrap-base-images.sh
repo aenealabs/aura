@@ -96,8 +96,8 @@ get_ecr_uri() {
 
     if [[ -z "${uri}" || "${uri}" == "None" ]]; then
         log_error "ECR Base Images stack not found or missing output: ${output_key}"
-        log_error "Deploy the Foundation layer first:"
-        log_error "  aws codebuild start-build --project-name aura-foundation-deploy-dev"
+        log_error "Deploy it first (bootstrap-fresh-account.sh does this before pushing images):"
+        log_error "  ./deploy/scripts/bootstrap-fresh-account.sh ${ENVIRONMENT} ${AWS_REGION}"
         exit 1
     fi
 

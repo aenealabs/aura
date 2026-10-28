@@ -10,14 +10,24 @@
 
 This guide covers Single Sign-On (SSO) integration with Project Aura. SSO enables centralized authentication through your organization's identity provider (IdP), improving security and user experience while simplifying access management.
 
-Project Aura supports industry-standard SSO protocols:
+Project Aura is designed to support industry-standard SSO protocols:
 
 - **SAML 2.0** - Security Assertion Markup Language
 - **OIDC** - OpenID Connect (OAuth 2.0 extension)
 
+> **Implementation status: Partial -- customer IdP federation is not yet available in deployed environments.**
+>
+> - **Available today:** sign-in to the Aura console uses Amazon Cognito (Hosted UI, OAuth 2.0 authorization-code flow). Cognito user-pool groups `admin`, `security-engineer`, `developer`, and `viewer` drive role checks in the API.
+> - **Built but not wired:** provider implementations for SAML 2.0, OIDC, LDAP, PingID, and Cognito exist in `src/services/identity/` (with group-to-role mapping via `group_mappings`), and the routers `src/api/identity_endpoints.py` (`/auth/saml/*`, `/auth/oidc/*`, `/auth/login/ldap`, `/auth/token/refresh`, `/auth/logout`) and `src/api/idp_admin_endpoints.py` (`/admin/identity-providers`) are written. Neither router is mounted in `src/api/main.py`, so those URLs return `404`, and no Cognito user-pool identity provider (SAML/OIDC federation) is defined in the CloudFormation templates.
+> - **Console:** **Settings > Identity Providers** calls `/api/v1/identity/*`, which has no backend route; in local dev mode it stores configurations in browser storage only.
+> - **Planned:** JIT provisioning settings, SSO enforcement, SCIM, certificate rotation, the `/v1/sso/*` API, and the per-provider steps below. Treat the provider matrix, ACS/metadata URLs, and configuration screens in this guide as the target design.
+> - **Known gap:** SAML signature validation in `saml_provider.py` is skipped (returns valid) when the optional `xmlsec` library is not installed; `xmlsec` is not in the Python dependency files. This must be resolved before SAML is enabled.
+
 ---
 
-## Supported Identity Providers
+## Supported Identity Providers (Planned)
+
+The matrix below is the target support matrix. None of these providers can be connected in a deployed environment until the identity routers are mounted (see the status note above).
 
 | Provider | SAML 2.0 | OIDC | JIT Provisioning | Group Sync |
 |----------|----------|------|------------------|------------|
@@ -706,7 +716,9 @@ curl -X POST https://api.aenealabs.com/v1/sso/test \
 
 ---
 
-## API Reference
+## API Reference (Planned)
+
+> The `/v1/sso/*` routes below do not exist. The written-but-unmounted admin router uses `/admin/identity-providers` (list, create, update, delete, test, audit, SAML metadata, supported types), and the console client expects `/api/v1/identity/providers`. The final path will be settled when the router is mounted.
 
 ### SSO Settings Endpoints
 

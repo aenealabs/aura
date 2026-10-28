@@ -2,6 +2,8 @@
 
 This guide covers installing the Aura CLI using native OS packages and installers.
 
+> **Implementation status (October 2026):** The installer build scripts exist under `deploy/installer/native/` (`build-all.sh`, `macos/build-pkg.sh`, `windows/build-msi.ps1`, `linux/debian/build-deb.sh`, `linux/rpm/build-rpm.sh`, `homebrew/aura-cli.rb`) and the `aura` CLI commands used below (`config init|show|set`, `license`, `deploy`, `health`, `logs`, `status`) are implemented in `src/cli/main.py`. No workflow in `.github/workflows/` builds or publishes these packages, so the release download URLs and the Homebrew tap shown below depend on a manual release process and cannot be confirmed from the repository. To produce the packages yourself, see "Building from Source" at the end of this guide.
+
 ## Overview
 
 The Aura CLI is available as native installers for:

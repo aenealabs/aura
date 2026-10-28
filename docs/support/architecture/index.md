@@ -40,7 +40,7 @@ Every architectural decision prioritizes security:
 
 Built for regulated industries from inception:
 
-- CMMC Level 3 controls embedded in architecture
+- CMMC Level 3-aligned technical controls embedded in architecture (not certified)
 - Immutable audit trails for all operations
 - Data isolation for multi-tenancy
 - GovCloud deployment path
@@ -237,7 +237,7 @@ DNS is managed by dnsmasq deployed as a DaemonSet with DNSSEC support.
 | **Frameworks** | FastAPI, React 18, Next.js 14 |
 | **Databases** | Neptune, OpenSearch, DynamoDB |
 | **Container** | Podman, Docker, EKS |
-| **Infrastructure** | CloudFormation, Kubernetes, Terraform (planned) |
+| **Infrastructure** | CloudFormation, Kubernetes, Helm (self-hosted); Terraform limited to one AWS-only file (`deploy/terraform/main.tf`, Bedrock IAM and budget alarms), broader Terraform planned |
 | **Monitoring** | CloudWatch, Prometheus, Grafana |
 | **Security** | WAF, GuardDuty, AWS Config, KMS |
 

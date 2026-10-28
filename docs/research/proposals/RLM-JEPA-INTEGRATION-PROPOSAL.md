@@ -3,7 +3,7 @@
 **Proposal ID:** PROP-2026-001
 **Date:** 2026-01-04
 **Authors:** Platform Architecture Team
-**Status:** Draft - Pending Architectural Review
+**Status:** Converted to ADR-051 (see the ADR for current implementation status)
 **Related ADR:** ADR-051
 
 ---

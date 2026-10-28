@@ -93,7 +93,7 @@ When we publish a GHSA, we link it from the corresponding `security:` commit mes
 
 ### Self-scanning via SBOM
 
-Per ADR-076 (SBOM Attestation & Supply Chain), every Aura release ships a CycloneDX or SPDX Software Bill of Materials, signed via Sigstore. Operators in regulated environments often prefer to scan their deployment with their own tooling rather than depend on vendor advisories — the SBOM is the bridge that makes that possible. You don't need to wait for our advisory to detect a CVE; if your SCA scanner sees a known-vulnerable component in the SBOM, it can flag it on its own schedule.
+Per ADR-076 (SBOM Attestation & Supply Chain), the plan is for every Aura release to ship a CycloneDX or SPDX Software Bill of Materials signed via Sigstore. This is not yet in place: the SBOM generation library exists, but the release pipeline does not yet publish SBOMs, and Sigstore signing in that library is currently simulated. Operators in regulated environments often prefer to scan their deployment with their own tooling rather than depend on vendor advisories — the SBOM is the bridge that makes that possible. You don't need to wait for our advisory to detect a CVE; if your SCA scanner sees a known-vulnerable component in the SBOM, it can flag it on its own schedule.
 
 ### What we don't operate
 

@@ -4,6 +4,25 @@
 
 **Accepted (v2) — Phase 2 code merged; deploy phases Deferred (Cost Gate)** | May 12, 2026
 
+> **Status note (2026-10-26): scope gap found and closed in code.** This ADR scoped the CloudFormation service role `aura-cfn-role-{env}` on the assumption that deploys run through it (Phase 1.1 queries CloudTrail for that role; Phase 2.3 expects AccessDenied from it). They did not: no buildspec passed `--role-arn`, so every stack deployed as its layer CodeBuild role (`aura-<layer>-codebuild-role-{env}`), which this ADR never covered. Those roles carried the same two risks this ADR closed for the cfn role, unmitigated: self-broadening (T1098.001), because a layer role's IAM write scope `aura-*-{env}` matched its own name, and PassRole abuse (T1078.004), because 5 PassRole grants had no `iam:PassedToService` condition, three of them bundled with other IAM actions. Closed by **AURA-CTL-004** (`docs/security/CONTROL_REGISTRY.md`):
+>
+> 1. **Permission boundaries on every role.** The new `deploy/cloudformation/iam-permission-boundaries.yaml` (Layer 0.1) is deployed first by `bootstrap-fresh-account.sh`. Build and deploy roles (24 CodeBuild roles and this cfn role) carry `aura-deployer-boundary-{env}`, which denies changes to the pipeline's own roles, changes to the boundary policies, creating a role or changing a boundary unless the boundary is approved, removing a boundary, attaching `AdministratorAccess`/`IAMFullAccess`/`PowerUserAccess`, and creating users or access keys. Runtime roles carry `aura-workload-boundary-{env}` (denies IAM changes, still allows service-linked roles) or an existing purpose-built boundary.
+> 2. **PassRole scoped to services.** Each CodeBuild `iam:PassRole` grant is now its own statement with an `iam:PassedToService` list derived from the trust principals of the roles that layer deploys.
+> 3. **This role is now on the deploy path, as an opt-in.** All 121 `aws cloudformation deploy`/`create-stack`/`update-stack` calls in 20 layer buildspecs pass `${CFN_ROLE_ARG:-}`, which resolves to `--role-arn` when `/{project}/{env}/cfn-service-role-arn` exists in SSM. Each layer role can pass this role only to `cloudformation.amazonaws.com`. The default stays off because Phases 3-4 (live AccessDenied iteration) remain cost-gated; `buildspec-bootstrap.yml` and the `iam.yaml` stack itself never use it.
+> 4. **Guarded by tests.** `tests/architecture/test_iam_escalation_guards.py` (278 items after the same-day follow-up) fails CI if a role lacks an approved boundary, a deployer deny is removed, a CodeBuild PassRole loses its service condition, or a layer deploy stops honoring the opt-in role. Verified by fault injection.
+>
+> Follow-up the same day:
+>
+> - **Pipeline roles unprotected.** The deployment-pipeline roles were taken off the protected list because the serverless layer owns that stack; protecting them would have broken `deploy.sh deploy`. A test now fails if any layer deploys a role the boundary protects from it.
+> - **New deny: same-account role assumption.** This closes "edit a project role's trust policy, then assume it".
+> - **New deny: data-plane reads.** Caps the data-plane half of the build roles' `ReadOnlyAccess`.
+> - **Missing PassRole service found.** A static check of every role-taking resource in each layer's stacks found one service missing from a PassRole list: `states.amazonaws.com` for the serverless layer, which deploys two state machines. It is fixed and guarded by a test.
+> - **Opt-in wired into the shared helper.** `deploy/scripts/cfn-deploy-helpers.sh` now honors the opt-in role too.
+> - **Lint failures fail the build.** Buildspec cfn-lint now fails the build on errors (pinned `cfn-lint==1.57.2`).
+> - **Operator least privilege.** Operators deploy with the scoped `AuraDeployer` permission set (AURA-CTL-005).
+>
+> Not proven live: everything above is statically checked and cfn-lint clean; no deploy has run with it.
+
 ### Phase tracker
 
 | Phase | Description | State | Blocker | Re-engage when |
@@ -464,15 +483,17 @@ No other templates touched.
 
 ## Compliance Mapping (revised in v2 per Sally)
 
+Control-level self-assessment only. Aura holds no CMMC, SOC 2 or ISO 27001 certification or audit report; "aligned" below means the technical control is implemented, not that an assessor has confirmed it.
+
 | Framework | Control | Before (ADR-041 only) | After (this ADR) | Caveat |
 |---|---|---|---|---|
 | CMMC AC.L2-3.1.3 | Control information flow | Compensated | Compensated + scoped | — |
-| CMMC AC.L2-3.1.5 | Least privilege | Partial | **Substantially compliant** | Requires annual review (Phase 5.3) |
+| CMMC AC.L2-3.1.5 | Least privilege | Partial | **Substantially aligned** | Requires annual review (Phase 5.3) |
 | NIST AC-3 | Access enforcement | Compensated | **Enforced (resource-level)** | — |
-| NIST AC-6 | Least privilege | Partial | **Substantially compliant** | Requires each retained wildcard to have inline rationale + annual review |
+| NIST AC-6 | Least privilege | Partial | **Substantially aligned** | Requires each retained wildcard to have inline rationale + annual review |
 | SOC 2 CC6.1 | Logical access | Compensated | Compensated + scoped | — |
-| SOC 2 CC6.3 | Authorization | Partial | **Compliant** | Documented Deny semantics |
-| ISO 27001 A.9.4.1 | Access restriction | Partial | Substantially compliant | — |
+| SOC 2 CC6.3 | Authorization | Partial | **Aligned** | Documented Deny semantics |
+| ISO 27001 A.9.4.1 | Access restriction | Partial | Substantially aligned | — |
 
 **Auditor expectation (Sally's note):** "AC-6 substantially compliant" language draws a question in audits. The defensible answer requires:
 

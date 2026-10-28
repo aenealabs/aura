@@ -25,6 +25,8 @@ The Repository Onboarding Wizard guides you through connecting your code reposit
 | **GitHub** | OAuth 2.0 | Full repository access, webhooks, organization support |
 | **GitLab** | OAuth 2.0 | Repository access, webhooks, group support |
 
+> **Implementation status: Partial.** Provider authorization, repository selection, configuration, and repository records are implemented (`/api/v1/oauth/*`, `/api/v1/repositories`). Ingestion jobs created by **Start Connection** (`POST /api/v1/repositories/ingest`) and by **Sync Now** (`POST /api/v1/repositories/{id}/sync`) are recorded in `pending` status, but no worker currently processes them, so the progress screens below do not advance. Repository content is ingested today through `POST /api/v1/ingest` and the GitHub push webhook (`POST /webhook/github`). When AWS is unreachable and `AURA_DEV_MOCK_ON_AWS_ERROR` is not `false`, repository and connection lists show seeded demo entries.
+
 ---
 
 ## Prerequisites
@@ -408,7 +410,7 @@ To manually re-sync a repository:
 
 1. Navigate to the repository details page
 2. Click **Sync Now** button
-3. Aura will perform a full re-scan of the repository
+3. Aura queues a re-ingestion job (currently recorded as `pending` without being processed; see the status note above)
 
 > **Tip**: Use manual re-sync after major refactoring or when you want to ensure the latest code is analyzed.
 
@@ -527,9 +529,9 @@ Your OAuth credentials are protected with multiple layers of security:
 
 The repository onboarding system is designed to meet enterprise compliance requirements:
 
-- **CMMC Level 2**: Server-side credential storage, audit logging
-- **SOC 2 Type II**: Access controls, encryption, monitoring
-- **GDPR**: Data minimization, right to deletion
+- **Credential storage**: OAuth tokens are stored server-side in AWS Secrets Manager, never in the browser
+- **Access controls**: repository routes require an authenticated Cognito user
+- These controls support CMMC, SOC 2, and GDPR programs; Aura has not been certified or audited against those frameworks
 
 ---
 

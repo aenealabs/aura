@@ -239,6 +239,7 @@ Resources:
   RunNextPhaseRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-campaign-run-next-phase-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -307,6 +308,7 @@ Resources:
   HitlGatewayRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-campaign-hitl-gateway-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -355,6 +357,7 @@ Resources:
   ProgressPublisherRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-campaign-progress-publisher-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -624,6 +627,7 @@ Resources:
   AppSyncCloudWatchRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-campaign-appsync-logs-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -638,6 +642,7 @@ Resources:
   AppSyncDdbRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-campaign-appsync-ddb-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

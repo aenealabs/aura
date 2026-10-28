@@ -1,9 +1,18 @@
 # ADR-046: Support Ticketing Connectors Architecture
 
-**Status:** Deployed
+**Status:** Deployed (GitHub connector; configuration storage in-memory)
 **Date:** 2025-12-20 | **Deployed:** 2025-12-31
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-043 (Repository Onboarding Wizard), ADR-037 (AWS Agent Capability)
+
+> **Status note (2026-10-26) -- configuration is not persisted.** The GitHub
+> connector, factory, router (mounted in `src/api/main.py`), settings UI and
+> four test files exist; Zendesk, Linear and ServiceNow are stubs as stated.
+> Provider configuration and credentials are held in a process-local dict
+> (`src/api/ticketing_endpoints.py:170`), so they are lost on restart and not
+> shared across pods. The `aura-ticketing-config` and `aura-ticket-mapping`
+> tables and the Secrets Manager storage described below have no template or
+> code.
 
 ---
 

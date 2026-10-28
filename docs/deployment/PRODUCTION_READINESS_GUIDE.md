@@ -9,6 +9,8 @@
 > baseline.
 
 
+> **Accuracy note (October 2026):** `deploy/scripts/post-deployment-health-check.sh`, referenced below, does not exist in the repository. Use `deploy/scripts/integration-health-check.sh`, `deploy/scripts/validate-deployment.sh`, or the API `/health/detailed` endpoint (`src/api/main.py:584`).
+
 **Last Updated:** 2025-11-18
 **Status:** Production-Ready Testing Framework Implemented
 

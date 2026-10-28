@@ -4,6 +4,8 @@
 **Market Focus:** AI Labs (OpenAI/Anthropic), Microsoft, Google, Meta
 **Dependencies:** All previous phases
 
+> **Status (2026-10-26):** Planning document. Under ADR-079, the streaming analysis engine derives findings from file names rather than content, Neptune sharding returns simulated results, and the AI model security services run heuristics over in-memory records; none is called outside its package and no API or template exists. See ADR-079 for current status.
+
 ---
 
 ## Service 1: Streaming Analysis Engine

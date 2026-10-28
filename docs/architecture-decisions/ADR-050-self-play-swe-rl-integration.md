@@ -1,9 +1,19 @@
 # ADR-050: Self-Play SWE-RL (SSR) Integration for Agent Training
 
-**Status:** Deployed
+**Status:** Deployed (infrastructure); training loop not operational
 **Date:** 2026-01-02 (Infrastructure Deployed & Validated)
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-024 (Titan Neural Memory), ADR-029 (Agent Optimization), ADR-034 (Context Engineering), ADR-039 (Self-Service Test Environments), ADR-042 (Real-Time Agent Intervention)
+
+> **Status note (2026-10-26) -- infrastructure and libraries, no live
+> training.** The three templates, both Dockerfiles and the Phase 1-5 modules
+> in `src/services/ssr/` and `src/agents/ssr/` exist with unit tests. The
+> bug-injection container runs `python -m src.agents.ssr.bug_injection_agent`,
+> which has no `__main__` entry point; `self_play_orchestrator.py`,
+> `consent_service.py` and `model_update_service.py` are not reached from any
+> API route or worker; and model updates only record metadata, with validation
+> solve rates computed by `_simulate_validation`
+> (`src/services/ssr/model_update_service.py:815`).
 
 ---
 

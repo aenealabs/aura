@@ -3,6 +3,13 @@
 **Date:** December 2025
 **Status:** Design Specification for Enhanced Security Workflow
 
+> **Implementation status (October 2026).** This specification is partly built:
+>
+> - **Built and wired:** HITL approval service with DynamoDB storage (`src/services/hitl_approval_service.py`), authenticated approvals API (`src/api/approval_endpoints.py`), SES/SNS notifications, the Approvals dashboard page, the expiration/escalation Lambda (`deploy/cloudformation/hitl-scheduler.yaml`, default schedule `rate(3 hours)`), and the job server's `execute_request_with_hitl`, which creates an approval request for every patch that passes review and validation.
+> - **Built but not wired:** the Step Functions state machine `aura-hitl-patch-workflow-{env}` (`deploy/cloudformation/hitl-workflow.yaml`) and its test-runner image (`deploy/docker/sandbox/Dockerfile.test-runner`) are deployed as IaC, but no application code starts an execution. `PatchValidationWorkflow` and `SandboxTestRunner` (whose `_wait_for_completion` returns a simulated pass of 15 tests) have no callers outside tests.
+> - **Not connected:** the job server's sandbox step uses `FargateSandboxOrchestrator`, which is skipped unless `SANDBOX_ENABLED=true`, targets the archived `sandbox-patch-test-{env}` task definition, and does not pass the patched code into the task.
+> - **Not built:** deployment after approval (approval records the decision only) and automated rollback.
+
 ---
 
 ## 1. Executive Overview
@@ -641,7 +648,7 @@ class ExpirationProcessor:
 ### 6.3 Access Control
 
 **Who Can Approve:**
-- Senior Security Engineers (IAM role: `AuraPatchApprover`)
+- Senior Security Engineers (application role: `security-engineer`; `admin` may also approve)
 - Security Operations Manager (IAM role: `AuraSecurityManager`)
 - CISO (IAM role: `AuraCISO`)
 

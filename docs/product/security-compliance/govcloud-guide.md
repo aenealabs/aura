@@ -1,7 +1,7 @@
 # AWS GovCloud Deployment Guide
 
 **Version:** 1.0
-**Last Updated:** January 2026
+**Last Updated:** October 2026
 **Product:** Project Aura by Aenea Labs
 
 ---
@@ -10,7 +10,9 @@
 
 This guide provides comprehensive information for deploying Project Aura in AWS GovCloud regions. GovCloud deployment enables organizations to process Controlled Unclassified Information (CUI), meet FedRAMP requirements, and support Impact Level 4/5 (IL4/IL5) workloads.
 
-Project Aura is designed with GovCloud compatibility from the ground up, with 100% of core services validated for GovCloud deployment (19/19 services).
+Project Aura is designed with GovCloud compatibility from the ground up: all 19 of its deployed AWS services (19/19) are available in GovCloud and its CloudFormation templates are partition-aware. Aura is deployed in AWS Commercial DEV and QA; a GovCloud production deployment is planned and has not yet been performed.
+
+> **Authorization status:** The FedRAMP, IL4, and IL5 authorizations in this guide belong to the AWS GovCloud (US) regions, not to Aura. Aura itself holds no FedRAMP authorization or DoD provisional authorization. Status: Planned. No certification filing has been submitted (as of October 2026). Customers running Aura in GovCloud inherit AWS's infrastructure controls but must obtain their own authorization for the Aura system.
 
 ---
 
@@ -42,7 +44,7 @@ AWS GovCloud (US) is an isolated AWS region designed to host sensitive data and 
 
 ### Compliance Enablement
 
-GovCloud deployment enables compliance with:
+AWS GovCloud (US) infrastructure holds or supports the following (these are AWS region authorizations, not Aura authorizations):
 
 | Framework | Requirement | GovCloud Support |
 |-----------|-------------|------------------|
@@ -124,9 +126,9 @@ Some AWS services have limitations in GovCloud:
 
 | Impact Level | Supported | Deployment Model |
 |--------------|-----------|------------------|
-| IL2 | Yes | Commercial or GovCloud |
-| IL4 | Yes | GovCloud required |
-| IL5 | Yes | GovCloud required |
+| IL2 | Planned (no Aura authorization yet) | Commercial or GovCloud |
+| IL4 | Planned (no Aura authorization yet) | GovCloud required |
+| IL5 | Planned (no Aura authorization yet) | GovCloud required |
 | IL6 | No | Requires classified infrastructure |
 
 ### IL4/IL5 Configuration
@@ -198,9 +200,9 @@ For IL4/IL5 workloads, additional configuration is required:
 +-----------------------------------------------------------------------------+
 ```
 
-### FedRAMP Authorization Boundary
+### FedRAMP Authorization Boundary (Planned)
 
-The authorization boundary for FedRAMP includes:
+Aura has not submitted a FedRAMP filing. The proposed authorization boundary for a future FedRAMP package would include:
 
 **Included in Boundary:**
 - All VPC components (subnets, security groups, NACLs)
@@ -618,8 +620,7 @@ For GovCloud deployment assistance:
 Federal customers receive dedicated support:
 
 - U.S.-based support personnel
-- FedRAMP-compliant support channels
-- Cleared personnel available (for IL5)
+- Cleared personnel for IL5 engagements (planned)
 - Priority escalation for government customers
 
 ---

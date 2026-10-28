@@ -237,7 +237,7 @@
 
 <div class="header">
   <h1>Memory Architecture &amp; Cognitive Systems</h1>
-  <div class="subtitle">Five-tier cognitive memory with Titan Neural Memory, Evo-Memory evolution framework, 7-service context engineering pipeline, and recursive 100x context scaling</div>
+  <div class="subtitle">Five-tier cognitive memory with Titan Neural Memory, Evo-Memory evolution framework, 7-service context engineering library, and recursive context decomposition (100x scaling target)</div>
   <div class="meta">
     <span>Project Aura</span>
     <span>|</span>
@@ -283,7 +283,8 @@
 <!-- 1. Architecture Overview -->
 <section id="overview">
   <h2>1. Architecture Overview</h2>
-  <p>Project Aura's memory architecture implements a neuroscience-inspired cognitive system where agents learn, remember, and evolve through five distinct memory types. The Titan Neural Memory provides sub-symbolic learning via deep MLP with test-time training, while the Evo-Memory Framework enables continuous memory evolution through 7 discrete operations. A 7-service context engineering pipeline ensures agents receive optimal, relevant code context for every task.</p>
+  <p>Project Aura's memory architecture implements a neuroscience-inspired cognitive system where agents learn, remember, and evolve through five distinct memory types. The Titan Neural Memory provides sub-symbolic learning via deep MLP with test-time training, while the Evo-Memory Framework enables continuous memory evolution through 7 discrete operations. A 7-service context engineering library is designed to give agents relevant, scored code context for every task.</p>
+  <div class="callout callout-warning"><strong>Implementation status (October 2026):</strong> The Titan neural memory performs real PyTorch test-time training (gradient updates gated by gradient-magnitude surprise) on a CPU backend. The cognitive, episodic, and Evo-Memory services contain working logic, but their storage, Neptune, and snapshot dependencies are protocol interfaces with no DynamoDB or Neptune implementation yet. The agent orchestrator can attach Titan memory (<code>ENABLE_TITAN_MEMORY</code>, off by default), but in that mode it backs the stores with in-process mocks. The context stack, three-way retrieval, HopRAG, community summarization, context scoring, RLM, and VL-JEPA modules are tested libraries that no API route or agent flow calls yet. Performance figures quoted from research papers are design targets. Aura has not measured them.</div>
 
   <div class="flow-diagram"><span class="hl">                    ┌──────────────────────────────────────────────────┐</span>
 <span class="hl">                    │              AGENT EXECUTION LAYER               │</span>
@@ -372,19 +373,19 @@
   <h2>3. Titan Neural Memory (ADR-024)</h2>
   <p>The Titan Neural Memory implements a deep MLP memory model with test-time training (TTT), enabling agents to learn at inference time via gradient descent. Surprise-driven selective memorization ensures only novel, important information is retained.</p>
 
-  <h3>Three-Tier Compute Strategy</h3>
+  <h3>Three-Tier Compute Strategy (Planned; CPU backend implemented)</h3>
   <div class="three-col">
     <div class="card" style="border-top: 3px solid var(--success);">
       <h4>Retrieval Path</h4>
-      <p>AWS Inferentia2 (inf2) instances for optimized, low-latency inference operations.</p>
+      <p>Planned: AWS Inferentia2 (inf2) instances for low-latency inference. An <code>INFERENTIA2</code> backend type is defined, but no Inferentia2 backend is implemented.</p>
     </div>
     <div class="card" style="border-top: 3px solid var(--brand);">
       <h4>TTT Path</h4>
-      <p>GPU (g5) instances for gradient computation during test-time training updates.</p>
+      <p>Planned: GPU (g5) instances for test-time training. A GPU backend class exists, but <code>TitanMemoryService</code> currently falls back to the CPU backend for any non-CPU backend type.</p>
     </div>
     <div class="card" style="border-top: 3px solid var(--medium);">
       <h4>Development</h4>
-      <p>CPU fallback (t3) instances for cost-effective iteration and testing.</p>
+      <p>Implemented: CPU backend (PyTorch on CPU). Used for all current retrieval and test-time training.</p>
     </div>
   </div>
 
@@ -397,7 +398,7 @@ class TitanMemoryServiceConfig:
     hidden_multiplier: int = 4         # Hidden layer sizing (512 * 4 = 2048)
     persistent_memory_size: int = 64   # Fixed learnable memory slots
 
-    # MIRAS settings (Multi-layer Instance-Attention Selection)
+    # MIRAS settings (Memory-Integrated Recurrent Architecture with Surprise)
     miras_preset: str = "enterprise_standard"
     miras_config: Optional[MIRASConfig] = None
 
@@ -416,10 +417,10 @@ class TitanMemoryServiceConfig:
 
   <h3>MIRAS Organization Presets</h3>
   <table>
-    <tr><th>Preset</th><th>TTT Enabled</th><th>Audit Level</th><th>Memory Depth</th><th>Target</th></tr>
-    <tr><td><code>defense_contractor</code></td><td>Disabled</td><td>All updates</td><td>2</td><td>GovCloud, CMMC Level 3+</td></tr>
-    <tr><td><code>enterprise_standard</code></td><td>Enabled</td><td>Balanced</td><td>3</td><td>Standard enterprise workloads</td></tr>
-    <tr><td><code>research_lab</code></td><td>Enabled (aggressive)</td><td>Minimal</td><td>5</td><td>Deeper memory, more learning</td></tr>
+    <tr><th>Preset</th><th>Loss / Retention Gate</th><th>Optimizer</th><th>Gradient Clip / Retention Strength</th><th>Target</th></tr>
+    <tr><td><code>defense_contractor</code></td><td>Huber / none</td><td>SGD</td><td>0.5 / 0.0</td><td>Security-focused: minimal learning, no forgetting</td></tr>
+    <tr><td><code>enterprise_standard</code></td><td>Huber / adaptive</td><td>Adam</td><td>1.0 / 0.01</td><td>Standard enterprise workloads (default)</td></tr>
+    <tr><td><code>research_lab</code></td><td>L2 / exponential</td><td>Adam</td><td>2.0 / 0.05</td><td>Aggressive learning (a fourth preset, <code>development</code>, uses L2 / weight decay / SGD)</td></tr>
   </table>
 
   <h3>Key Methods</h3>
@@ -431,7 +432,7 @@ class TitanMemoryServiceConfig:
     <tr><td><code>consolidate(strategy)</code></td><td>Memory consolidation (pruning, reset, slot reduction)</td></tr>
     <tr><td><code>freeze_persistent_memory()</code></td><td>Lock persistent memory slots for safety</td></tr>
     <tr><td><code>get_memory_pressure()</code></td><td>Monitor utilization levels (NORMAL/WARNING/HIGH/CRITICAL)</td></tr>
-    <tr><td><code>save_checkpoint(path)</code></td><td>Persist to disk/S3 for durability</td></tr>
+    <tr><td><code>save_checkpoint(path)</code></td><td>Persist model and optimizer state to a local file (<code>torch.save</code>); S3 upload is not implemented</td></tr>
   </table>
 
   <h3>Service Components</h3>
@@ -440,9 +441,9 @@ class TitanMemoryServiceConfig:
     <tr><td>Titan Memory Service</td><td><code>titan_memory_service.py</code></td><td>989</td><td>Main orchestrator with TTT and surprise-driven memorization</td></tr>
     <tr><td>Cognitive Integration</td><td><code>titan_cognitive_integration.py</code></td><td>1,225</td><td>Bridge between Titan and cognitive memory types</td></tr>
     <tr><td>Titan Embedding Service</td><td><code>titan_embedding_service.py</code></td><td>715</td><td>Embedding generation for memory operations</td></tr>
-    <tr><td>Memory Backends</td><td><code>memory_backends/</code></td><td>1,730</td><td>CPU, GPU, Inferentia2 backends + benchmarking</td></tr>
+    <tr><td>Memory Backends</td><td><code>memory_backends/</code></td><td>1,752</td><td>CPU backend (used), GPU backend (not yet selectable), Inferentia2 (planned) + benchmarking</td></tr>
   </table>
-  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">237 tests | 5 phases deployed | CloudWatch metrics: Aura/NeuralMemory namespace</div>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">426 tests | Off by default in the orchestrator (<code>ENABLE_TITAN_MEMORY=false</code>) | CloudWatch publisher for the Aura/NeuralMemory namespace exists but is not yet called</div>
 </section>
 
 <!-- 4. Deep MLP Memory Model -->
@@ -490,9 +491,9 @@ class MemoryConfig:
       <h4>Attentional Bias Options</h4>
       <table>
         <tr><th>Loss</th><th>Behavior</th></tr>
-        <tr><td><code>l2</code></td><td>Mean squared error (default)</td></tr>
+        <tr><td><code>l2</code></td><td>Mean squared error</td></tr>
         <tr><td><code>l1</code></td><td>Mean absolute error (sparse)</td></tr>
-        <tr><td><code>huber</code></td><td>Smooth L1 (robust to outliers)</td></tr>
+        <tr><td><code>huber</code></td><td>Smooth L1 (robust to outliers) (default)</td></tr>
         <tr><td><code>cosine</code></td><td>Cosine similarity loss</td></tr>
       </table>
     </div>
@@ -545,7 +546,7 @@ class ConsolidationConfig:
 <!-- 6. Evo-Memory Framework -->
 <section id="evo-memory">
   <h2>6. Evo-Memory Framework (ADR-080)</h2>
-  <p>The Evo-Memory Enhancement Framework provides continuous memory evolution through 7 discrete refinement operations executed in a ReAct (Reason-Act) loop. Each operation transforms the memory state, enabling agents to learn, correct mistakes, and share knowledge across the multi-agent system.</p>
+  <p>The Evo-Memory Enhancement Framework provides continuous memory evolution through 7 discrete refinement operations executed in a ReAct (Reason-Act) loop. Each operation transforms the memory state, enabling agents to learn, correct mistakes, and share knowledge across the multi-agent system. <strong>Status:</strong> The operations are implemented and tested against protocol interfaces (memory store, snapshot store, Neptune <code>execute_gremlin</code>, LLM). No concrete DynamoDB, DynamoDB Streams, or Neptune adapter implements those interfaces yet, and no agent flow or API calls the refiner. The <code>memory-evolution-dynamodb.yaml</code> table is defined, but no code reads or writes it.</p>
 
   <h3>Evolution Pipeline</h3>
   <div class="flow-diagram"><span class="hl-green">Agent completes task</span>
@@ -580,7 +581,7 @@ class ConsolidationConfig:
     <tr><td>Contracts</td><td>429</td><td>Data structures: RefineAction, RefineStatus</td></tr>
     <tr><td>Config</td><td>309</td><td>Evolution configuration and thresholds</td></tr>
   </table>
-  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">336 tests | 14 test files | All 5 phases deployed</div>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">339 tests | 12 test files | Library implemented; not yet wired to storage adapters or agent flows</div>
 </section>
 
 <!-- 7. ReMem Action Framework -->
@@ -649,7 +650,7 @@ class RefineStatus(Enum):
 <!-- 8. Multi-Agent Memory Sharing -->
 <section id="multi-agent-sharing">
   <h2>8. Multi-Agent Memory Sharing</h2>
-  <p>The Multi-Agent Memory Sharing Service (1,000 LOC) enables agents to share learned patterns, propagate successful strategies, and pool experiences while maintaining tenant and security domain boundaries.</p>
+  <p>The Multi-Agent Memory Sharing Service (1,000 LOC) enables agents to share learned patterns, propagate successful strategies, and pool experiences while maintaining tenant and security domain boundaries. It depends on agent-registry, strategy-store, and notification protocol interfaces. No production implementation of those interfaces exists, and nothing outside the package calls the service yet.</p>
 
   <div class="card-grid">
     <div class="card">
@@ -678,7 +679,7 @@ class RefineStatus(Enum):
 <!-- 9. Cognitive Memory Service -->
 <section id="cognitive">
   <h2>9. Cognitive Memory Service</h2>
-  <p>The Cognitive Memory Service (2,828 LOC) provides a unified interface coordinating all five memory types. It implements neuroscience-inspired subsystems including pattern completion retrieval, automatic consolidation, and a dual-mode agent architecture (System 1 fast / System 2 deliberate).</p>
+  <p>The Cognitive Memory Service (2,828 LOC) provides a unified interface coordinating all five memory types. It implements neuroscience-inspired subsystems including pattern completion retrieval, automatic consolidation, and a dual-mode agent architecture (System 1 fast / System 2 deliberate). <strong>Status:</strong> The retrieval, confidence, strategy, and consolidation logic is implemented and tested. The episodic, semantic, and procedural stores are protocol interfaces with no persistent (DynamoDB or OpenSearch) implementation yet, so tests use in-memory stores and the orchestrator factory supplies mocks. The separate <code>episodic_memory_service.py</code> holds memories in an in-process dictionary. It accepts a DynamoDB client but never calls it, and nothing imports the service.</p>
 
   <h3>Subsystems</h3>
   <div class="card-grid">
@@ -758,7 +759,7 @@ class RefineStatus(Enum):
 <!-- 11. Context Engineering Pipeline -->
 <section id="context-engineering">
   <h2>11. Context Engineering Pipeline (ADR-034)</h2>
-  <p>The Context Engineering system deploys 7 services that work together to ensure every agent receives the most relevant, accurately scored code context within a 100,000-token budget.</p>
+  <p>The Context Engineering system comprises 7 service modules designed to give every agent relevant, scored code context within a 100,000-token budget. <strong>Status:</strong> Each module is implemented and unit-tested. None of them is called by <code>context_retrieval_service.py</code>, an API route, or an agent flow yet. The only internal import is <code>context_stack_manager.py</code> importing the tool registry, and nothing imports the context stack manager. The improvement figures below come from the published research each technique is based on. Aura has not measured them.</p>
 
   <div class="flow-diagram"><span class="hl">Agent Task / User Query</span>
          &darr;
@@ -769,12 +770,12 @@ class RefineStatus(Enum):
 <span class="hl-green">Three-Way Retrieval Service</span> (527 LOC)
   Dense (OpenSearch k-NN) + Sparse (BM25) + Graph (Neptune Gremlin)
   Reciprocal Rank Fusion with sparse_boost = 1.2
-  Result: <span class="hl-green">+22-25% MRR improvement</span>
+  Research target: <span class="hl-green">+22-25% MRR improvement</span>
          &darr;
 <span class="hl-purple">HopRAG Service</span> (712 LOC)
   Multi-hop retrieval via pseudo-query edges
   Retrieve &rarr; Reason &rarr; Prune cycle (max 3 hops)
-  Result: <span class="hl-purple">+65% F1 on complex queries</span>
+  Research target: <span class="hl-purple">+65% F1 on complex queries</span>
          &darr;
 <span class="hl-yellow">Community Summarization Service</span> (725 LOC)
   Leiden/Louvain clustering &rarr; LLM summaries
@@ -792,7 +793,7 @@ class RefineStatus(Enum):
   6-layer explicit stack with priority-based budget enforcement
   Total budget: <span class="hl">100,000 tokens</span></div>
 
-  <h3>Performance Improvements</h3>
+  <h3>Published Research Results (design targets, not measured on Aura)</h3>
   <div class="three-col">
     <div class="stat-card" style="border-left: 4px solid var(--success);">
       <div class="value">+22-25%</div>
@@ -854,14 +855,14 @@ class RefineStatus(Enum):
   </div>
 
   <div class="callout callout-info">
-    <strong>Total Budget:</strong> 100,000 tokens (configurable). When budget is exceeded, lower-priority layers are pruned first. SYSTEM_INSTRUCTIONS and CURRENT_TASK are never pruned.
+    <strong>Total Budget:</strong> 100,000 tokens (configurable). When the budget is exceeded, layers are truncated from lowest priority upward. Each layer is cut by at most half. CURRENT_TASK is never pruned. SYSTEM_INSTRUCTIONS has the next-highest priority but can still be truncated. Status: implemented and tested (44 tests), but not yet called by any agent or API.
   </div>
 </section>
 
 <!-- 13. Three-Way Retrieval Fusion -->
 <section id="three-way">
   <h2>13. Three-Way Retrieval Fusion</h2>
-  <p>The Three-Way Retrieval Service (527 LOC) combines three retrieval strategies using Reciprocal Rank Fusion (RRF) with a sparse boost factor, achieving +22-25% MRR improvement over single-strategy approaches.</p>
+  <p>The Three-Way Retrieval Service (527 LOC) combines three retrieval strategies using Reciprocal Rank Fusion (RRF) with a sparse boost factor (<code>weight / (60 + rank + 1)</code>, sparse weight 1.2). The published research behind this design reports +22-25% MRR over single-strategy approaches. Aura has not measured this, and the service is not yet called by the production retrieval path.</p>
 
   <div class="flow-diagram"><span class="hl">Query: "Find JWT authentication validation code"</span>
          &darr;
@@ -890,7 +891,7 @@ results           results           DEPENDENCIES
 <!-- 14. HopRAG -->
 <section id="hoprag">
   <h2>14. HopRAG Multi-Hop Retrieval</h2>
-  <p>The HopRAG Service (712 LOC) implements multi-hop reasoning across code relationships using pseudo-query edges, achieving +65% F1 improvement on complex queries that require traversing multiple code relationships.</p>
+  <p>The HopRAG Service (712 LOC) implements multi-hop reasoning across code relationships using pseudo-query edges. The HopRAG research reports +65% F1 on complex queries that traverse multiple code relationships. Aura has not measured this, and the service is not yet called by the production retrieval path.</p>
 
   <h3>Multi-Hop Pipeline</h3>
   <div class="flow-diagram"><span class="hl">Query: "What security checks protect the payment endpoint?"</span>
@@ -924,7 +925,7 @@ results           results           DEPENDENCIES
     <tr><td><code>embedding_cache_size</code></td><td>1,000</td><td>In-memory embedding cache</td></tr>
   </table>
 
-  <h3>Research Results</h3>
+  <h3>Research Results (published HopRAG paper, not measured on Aura)</h3>
   <div class="two-col">
     <div class="stat-card" style="border-left: 4px solid var(--success);">
       <div class="value">+65.07%</div>
@@ -967,7 +968,7 @@ summary_max_length: 500         # Character limit per summary</code></pre>
 <!-- 16. Semantic Caching -->
 <section id="semantic-cache">
   <h2>16. Semantic Caching (ADR-029 Phase 1.3)</h2>
-  <p>The Semantic Cache Service (900+ LOC) caches LLM responses for semantically identical prompts, reducing API costs by 30-40% while maintaining 97%+ accuracy. Enabled by default for all agents.</p>
+  <p>The Semantic Cache Service (637 LOC) caches LLM responses for semantically similar prompts. The design targets are a 30-40% API cost reduction and 97%+ accuracy. Aura has not measured either in production. The cache is on by default for orchestrators built by <code>create_system2_orchestrator</code> (<code>enable_semantic_cache=True</code>).</p>
 
   <h3>Cache Architecture</h3>
   <div class="flow-diagram"><span class="hl">Agent submits LLM prompt</span>
@@ -1001,14 +1002,14 @@ summary_max_length: 500         # Character limit per summary</code></pre>
   <p><code>CODE_REVIEW</code>, <code>CODE_GENERATION</code>, <code>VULNERABILITY_ANALYSIS</code>, <code>QUERY_PLANNING</code>, <code>VALIDATION</code>, <code>GENERAL</code>, <code>CONSTITUTIONAL_CRITIQUE</code>, <code>CONSTITUTIONAL_REVISION</code></p>
 
   <div class="callout callout-info">
-    <strong>Constitutional AI Integration:</strong> Critique results are cached separately, providing an additional 30-40% savings on the constitutional pipeline. Combined with batched critique, total Constitutional AI cost is reduced by 85% (from $12-15K/month to $1.5-2K/month).
+    <strong>Constitutional AI Integration:</strong> Critique results are cached separately, with a projected additional 30-40% savings on the constitutional pipeline. Combined with batched critique, the projected Constitutional AI cost reduction is 85% (from $12-15K/month to $1.5-2K/month). These are cost-model estimates, not measured savings.
   </div>
 </section>
 
 <!-- 17. Recursive Context Engine -->
 <section id="rlm">
   <h2>17. Recursive Context Engine (ADR-051 &mdash; RLM)</h2>
-  <p>The Recursive Context Engine (779 LOC) enables 100x context scaling by having the LLM generate Python code to decompose and analyze massive inputs, treating long prompts as external variables in a sandboxed REPL.</p>
+  <p>The Recursive Context Engine (787 LOC) is designed for 100x context scaling. It has the LLM generate Python code to decompose and analyze massive inputs, treating long prompts as external variables in a sandboxed REPL. <strong>Status: Prototype, not wired.</strong> No agent or API calls the engine. Its generated code is compiled in <code>eval</code> mode, so only a single expression runs, and multi-statement code like the example below fails with a syntax error. <code>recursive_call</code> runs in an executor thread with no event loop, so it currently returns an error string instead of recursing. The 100x figure comes from the RLM research and has not been benchmarked on Aura.</p>
 
   <div class="flow-diagram"><span class="hl">Input: 10M+ token codebase</span>
          &darr;
@@ -1050,13 +1051,13 @@ class RLMConfig:
     <tr><td>REPLSecurityGuard</td><td>720</td><td>AST-based code validation, runtime limits, subcall tracking</td></tr>
     <tr><td>InputSanitizer</td><td>447</td><td>Pattern-based filtering (SQL/command injection), size enforcement, safe Unicode</td></tr>
   </table>
-  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">119 tests | ~2,000 LOC | 100x context scaling (200K &rarr; 10M+ tokens)</div>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">119 tests | 2,004 LOC | 100x context scaling is a research target (not yet benchmarked)</div>
 </section>
 
 <!-- 18. VL-JEPA Embedding Predictor -->
 <section id="jepa">
   <h2>18. VL-JEPA Embedding Predictor (ADR-051)</h2>
-  <p>The VL-JEPA Embedding Predictor (1,077 LOC) achieves 2.85x inference efficiency by predicting embeddings instead of generating tokens. For non-generative tasks (classification, retrieval, routing), the decoder is skipped entirely.</p>
+  <p>The VL-JEPA Embedding Predictor (1,038 LOC) is designed to predict embeddings instead of generating tokens. For non-generative tasks (classification, retrieval, routing), it skips the decoder entirely. <strong>Status: Scaffold, not wired.</strong> The predictor uses randomly initialized, untrained pure-Python/NumPy weights. It has no training loop and loads no checkpoint. The EMA encoder exists only as a config flag, and the decoder returns a placeholder hash string. Its task routing and outputs therefore carry no meaning yet, and nothing imports the module. The 2.85x figure comes from the VL-JEPA paper and has not been measured on Aura.</p>
 
   <div class="flow-diagram"><span class="hl">Input Text / Code</span>
          &darr;
@@ -1075,7 +1076,7 @@ SIMILARITY              CODE_GENERATION
 ROUTING                        &darr;
     &darr;                   <span class="hl-red">Y-Decoder</span> (2-layer lightweight)
 <span class="hl-green">Return embedding</span>              &darr;
-<span class="hl-green">(2.85x faster)</span>         <span class="hl-yellow">Return text + embedding</span></div>
+<span class="hl-green">(target 2.85x)</span>         <span class="hl-yellow">Return text + embedding</span></div>
 
   <h3>Configuration</h3>
   <pre><code>@dataclass
@@ -1094,13 +1095,13 @@ class JEPAConfig:
   <h3>Efficiency Gains by Agent Type</h3>
   <table>
     <tr><th>Agent</th><th>Primary Task Type</th><th>Decoder Needed?</th><th>Efficiency</th></tr>
-    <tr><td>Query Planner</td><td>ROUTING</td><td>No</td><td>2.85x faster</td></tr>
-    <tr><td>Security Reviewer</td><td>CLASSIFICATION</td><td>No</td><td>2.85x faster</td></tr>
-    <tr><td>Context Retrieval</td><td>RETRIEVAL / SIMILARITY</td><td>No</td><td>2.85x faster</td></tr>
+    <tr><td>Query Planner</td><td>ROUTING</td><td>No</td><td>Target: 2.85x (paper)</td></tr>
+    <tr><td>Security Reviewer</td><td>CLASSIFICATION</td><td>No</td><td>Target: 2.85x (paper)</td></tr>
+    <tr><td>Context Retrieval</td><td>RETRIEVAL / SIMILARITY</td><td>No</td><td>Target: 2.85x (paper)</td></tr>
     <tr><td>Coder Agent</td><td>CODE_GENERATION</td><td>Yes</td><td>1x (full pipeline)</td></tr>
     <tr><td>Explainability</td><td>EXPLANATION</td><td>Yes</td><td>1x (full pipeline)</td></tr>
   </table>
-  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">48 tests | 1,077 LOC | 50% fewer trainable parameters</div>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">48 tests | 1,091 LOC (package) | No trained weights yet</div>
 </section>
 
 <!-- 19. Context Provenance & Integrity -->
@@ -1136,13 +1137,13 @@ class JEPAConfig:
     <tr><td>ProvenanceAuditTable</td><td>Complete event trail</td><td>PK: audit_id, SK: timestamp. GSI: chunk-id, event-type. PITR enabled</td></tr>
     <tr><td>AuthorTrustTable</td><td>Trust scores per author</td><td>Reputation scores, anomaly detection baselines</td></tr>
   </table>
-  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">275 tests | ~3,400 LOC | CloudFormation: context-provenance.yaml (Layer 2.8)</div>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">275 tests | 3,849 LOC | CloudFormation: context-provenance.yaml (Layer 2.8)</div>
 </section>
 
 <!-- 20. Agent Memory Lifecycle -->
 <section id="agent-lifecycle">
   <h2>20. Agent Memory Lifecycle</h2>
-  <p>Every agent follows a structured memory lifecycle during task execution, loading relevant memories before work begins and persisting learnings after completion.</p>
+  <p>This is the target memory lifecycle for agent task execution: load relevant memories before work begins, then persist learnings after completion. <strong>Status:</strong> Today <code>System2Orchestrator.execute_request</code> runs step 2 (load cognitive context) and step 5 (record episode) only when Titan memory is attached (<code>ENABLE_TITAN_MEMORY=true</code>, off by default). Even then the episodic, semantic, and procedural stores and the embedding service are in-process mocks, and the neural model is never initialized, so no DynamoDB write, test-time training update, Evo-Memory trigger, or CloudWatch publish takes place. Step 3 uses the existing context retrieval service, not the three-way, HopRAG, or context-stack modules.</p>
 
   <div class="flow-diagram"><span class="hl-green">1. INIT</span> &mdash; Agent initialized with task parameters
          &darr;
@@ -1172,13 +1173,13 @@ class JEPAConfig:
    &bull; Audit trail written for compliance</div>
 
   <h3>Checkpoint Architecture</h3>
-  <p>The Agent Orchestrator (2,260 LOC) implements checkpoint/resume for long-running workflows. Each phase produces a serializable <code>AgentCheckpoint</code> containing workflow state, hybrid context data, and intermediate outputs, enabling recovery from failures at any phase.</p>
+  <p>The Agent Orchestrator (2,820 LOC) implements checkpoint/resume for long-running workflows. Each phase produces a serializable <code>AgentCheckpoint</code> containing workflow state, hybrid context data, and intermediate outputs, enabling recovery from failures at any phase.</p>
 </section>
 
 <!-- 21. Infrastructure & Storage -->
 <section id="infrastructure">
   <h2>21. Infrastructure &amp; Storage</h2>
-  <p>Memory systems are backed by purpose-selected AWS services with customer-managed KMS encryption, automated scaling, and compliance-ready configuration.</p>
+  <p>Memory systems are designed around purpose-selected AWS services with customer-managed KMS encryption, automated scaling, and compliance-ready configuration. <strong>Status:</strong> The templates below define the infrastructure. The memory services themselves do not yet read or write the memory-evolution table, and they do not persist episodes, semantic, or procedural memory to DynamoDB or neural checkpoints to S3. The <code>deploy/docker/memory-service/server.py</code> container serves health and Prometheus endpoints. Its gRPC <code>MemoryServicer</code> is constructed but never registered with the gRPC server (there is no <code>.proto</code> or generated stub), it never calls <code>TitanMemoryService.initialize()</code>, and no Aura component has a gRPC client for it.</p>
 
   <h3>Memory-Specific CloudFormation Templates</h3>
   <table>
@@ -1252,7 +1253,7 @@ class AuditRecord:
     <tr><th>Backend</th><th>Capacity</th><th>Use Case</th></tr>
     <tr><td>InMemoryAuditStorage</td><td>10,000 records</td><td>Development and testing</td></tr>
     <tr><td>FileAuditStorage</td><td>Disk-based</td><td>Local deployment</td></tr>
-    <tr><td>DynamoDB</td><td>Unlimited</td><td>Production (7-year SOX retention)</td></tr>
+    <tr><td>DynamoDB (planned)</td><td>Unlimited</td><td>Production (7-year SOX retention). Not implemented. <code>TitanMemoryService</code> currently always uses <code>InMemoryAuditStorage</code></td></tr>
   </table>
 
   <h3>CloudWatch Metrics (Aura/NeuralMemory)</h3>
@@ -1262,16 +1263,16 @@ class AuditRecord:
 <!-- 23. ADRs -->
 <section id="adrs">
   <h2>23. Architecture Decision Records</h2>
-  <p>Five ADRs define the architectural foundation for Aura's memory and cognitive systems:</p>
+  <p>Six ADRs define the architectural foundation for Aura's memory and cognitive systems. The status column describes the code, not the AWS deployment:</p>
 
   <table>
     <tr><th>ADR</th><th>Title</th><th>Status</th><th>Tests</th><th>Key Innovation</th></tr>
-    <tr><td>024</td><td>Titan Neural Memory</td><td><span class="badge badge-deployed">Deployed</span></td><td>237</td><td>Deep MLP + test-time training + MIRAS + surprise-driven memorization</td></tr>
-    <tr><td>029</td><td>Agent Optimization (Phase 1.3)</td><td><span class="badge badge-enabled">Enabled</span></td><td>187</td><td>Semantic caching with 60-70% hit rate, 97%+ accuracy</td></tr>
-    <tr><td>034</td><td>Context Engineering</td><td><span class="badge badge-deployed">Deployed</span></td><td>400+</td><td>7 services, 3-way retrieval (+22-25%), HopRAG (+65% F1)</td></tr>
-    <tr><td>051</td><td>Recursive Context &amp; Embedding</td><td><span class="badge badge-deployed">Deployed</span></td><td>167</td><td>RLM 100x context scaling + VL-JEPA 2.85x efficiency</td></tr>
+    <tr><td>024</td><td>Titan Neural Memory</td><td><span class="badge badge-deployed">Implemented (opt-in, mock stores)</span></td><td>426</td><td>Deep MLP + test-time training + MIRAS + surprise-driven memorization</td></tr>
+    <tr><td>029</td><td>Agent Optimization (Phase 1.3)</td><td><span class="badge badge-enabled">Enabled</span></td><td>187</td><td>Semantic caching (targets: 60-70% hit rate, 97%+ accuracy)</td></tr>
+    <tr><td>034</td><td>Context Engineering</td><td><span class="badge badge-deployed">Library (not wired)</span></td><td>400+</td><td>7 services, 3-way retrieval (research target +22-25%), HopRAG (research target +65% F1)</td></tr>
+    <tr><td>051</td><td>Recursive Context &amp; Embedding</td><td><span class="badge badge-deployed">Prototype (not wired)</span></td><td>167</td><td>RLM context decomposition (100x target) + VL-JEPA scaffold (2.85x target, untrained)</td></tr>
     <tr><td>067</td><td>Context Provenance &amp; Integrity</td><td><span class="badge badge-deployed">Deployed</span></td><td>275</td><td>6-layer verification, trust scoring, quarantine</td></tr>
-    <tr><td>080</td><td>Evo-Memory Enhancements</td><td><span class="badge badge-deployed">Deployed</span></td><td>336</td><td>7 ReMem operations, multi-agent sharing, ReAct loop</td></tr>
+    <tr><td>080</td><td>Evo-Memory Enhancements</td><td><span class="badge badge-deployed">Library (no storage adapters)</span></td><td>339</td><td>7 ReMem operations, multi-agent sharing, ReAct loop</td></tr>
   </table>
 </section>
 
@@ -1297,19 +1298,19 @@ class AuditRecord:
     </div>
     <div class="stat-card">
       <div class="value">100x</div>
-      <div class="label">Context Scaling (RLM)</div>
+      <div class="label">Context Scaling Target (RLM)</div>
     </div>
     <div class="stat-card">
       <div class="value">2.85x</div>
-      <div class="label">Inference Efficiency (JEPA)</div>
+      <div class="label">Inference Efficiency Target (JEPA)</div>
     </div>
     <div class="stat-card">
       <div class="value">+65%</div>
-      <div class="label">F1 Improvement (HopRAG)</div>
+      <div class="label">F1 Improvement, Research (HopRAG)</div>
     </div>
     <div class="stat-card">
       <div class="value">+22-25%</div>
-      <div class="label">MRR (Three-Way Retrieval)</div>
+      <div class="label">MRR, Research (Three-Way Retrieval)</div>
     </div>
     <div class="stat-card">
       <div class="value">100K</div>
@@ -1325,7 +1326,7 @@ class AuditRecord:
     </div>
     <div class="stat-card">
       <div class="value">85%</div>
-      <div class="label">Cost Savings (Semantic Cache)</div>
+      <div class="label">Projected Cost Savings (Semantic Cache)</div>
     </div>
   </div>
 
@@ -1333,29 +1334,29 @@ class AuditRecord:
   <table>
     <tr><th>Component</th><th>Tests</th><th>ADR</th></tr>
     <tr><td>Context Engineering (7 services)</td><td>400+</td><td>ADR-034</td></tr>
-    <tr><td>Evo-Memory Framework (7 operations)</td><td>336</td><td>ADR-080</td></tr>
+    <tr><td>Evo-Memory Framework (7 operations)</td><td>339</td><td>ADR-080</td></tr>
     <tr><td>Context Provenance &amp; Integrity</td><td>275</td><td>ADR-067</td></tr>
-    <tr><td>Titan Neural Memory (5 phases)</td><td>237</td><td>ADR-024</td></tr>
+    <tr><td>Titan Neural Memory (8 test files)</td><td>426</td><td>ADR-024</td></tr>
     <tr><td>Agent Optimization (Semantic Cache)</td><td>187</td><td>ADR-029</td></tr>
     <tr><td>Recursive Context &amp; Embedding</td><td>167</td><td>ADR-051</td></tr>
     <tr><td>Cognitive Memory Service</td><td>150+</td><td>&mdash;</td></tr>
-    <tr><td><strong>Total Memory-Related Tests</strong></td><td><strong>1,752+</strong></td><td>&mdash;</td></tr>
+    <tr><td><strong>Total Memory-Related Tests</strong></td><td><strong>1,944+</strong></td><td>&mdash;</td></tr>
   </table>
 
   <h3>Code Distribution</h3>
   <table>
     <tr><th>Category</th><th>LOC</th><th>Components</th></tr>
-    <tr><td>Titan Neural Memory</td><td>~4,660</td><td>Service, cognitive integration, embedding, backends</td></tr>
-    <tr><td>Evo-Memory Framework</td><td>~9,060</td><td>14 service modules (refiner, operations, sharing, metrics)</td></tr>
-    <tr><td>Cognitive Memory Service</td><td>~4,000</td><td>Unified interface, episodic, pattern completion, confidence</td></tr>
-    <tr><td>Context Engineering Pipeline</td><td>~5,040</td><td>7 services (scoring, 3-way, HopRAG, summarization, tools, MCP, stack)</td></tr>
-    <tr><td>Recursive Context (RLM)</td><td>~2,000</td><td>Engine, security guard, input sanitizer</td></tr>
-    <tr><td>VL-JEPA Embedding Predictor</td><td>~1,130</td><td>Predictor, masking strategy, task router</td></tr>
-    <tr><td>Context Provenance</td><td>~3,400</td><td>Trust scoring, quarantine, audit, anomaly detection</td></tr>
-    <tr><td>Semantic Cache Service</td><td>~900</td><td>Cache lookup, storage, metrics</td></tr>
+    <tr><td>Titan Neural Memory</td><td>4,681</td><td>Service, cognitive integration, embedding, backends</td></tr>
+    <tr><td>Evo-Memory Framework</td><td>9,123</td><td>14 service modules (refiner, operations, sharing, metrics)</td></tr>
+    <tr><td>Cognitive Memory Service</td><td>3,996</td><td>Unified interface, episodic, pattern completion, confidence</td></tr>
+    <tr><td>Context Engineering Pipeline</td><td>4,100</td><td>7 services (scoring, 3-way, HopRAG, summarization, tools, MCP, stack)</td></tr>
+    <tr><td>Recursive Context (RLM)</td><td>2,004</td><td>Engine, security guard, input sanitizer</td></tr>
+    <tr><td>VL-JEPA Embedding Predictor</td><td>1,091</td><td>Predictor, masking strategy, task router</td></tr>
+    <tr><td>Context Provenance</td><td>3,849</td><td>Trust scoring, quarantine, audit, anomaly detection</td></tr>
+    <tr><td>Semantic Cache Service</td><td>637</td><td>Cache lookup, storage, metrics</td></tr>
     <tr><td>Neural Memory Audit</td><td>778</td><td>Audit logger, storage backends, compliance</td></tr>
     <tr><td>Memory Consolidation</td><td>639</td><td>Pressure management, strategies</td></tr>
-    <tr><td><strong>Total Memory Architecture</strong></td><td><strong>~31,600</strong></td><td>&mdash;</td></tr>
+    <tr><td><strong>Total Memory Architecture</strong></td><td><strong>30,898</strong></td><td>&mdash;</td></tr>
   </table>
 </section>
 

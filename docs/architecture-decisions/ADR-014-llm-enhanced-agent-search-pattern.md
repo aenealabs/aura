@@ -1,6 +1,9 @@
 # ADR-014: LLM-Enhanced Agent Search and Ranking Pattern
 
-**Status:** Deployed
+**Status:** Implemented as library methods; not wired into context retrieval or the orchestrator (see status note)
+
+> **Status note (2026-10-26).** `FilesystemNavigatorAgent.intelligent_search` (`src/agents/filesystem_navigator_agent.py:374`) and `ResultSynthesisAgent.synthesize_with_llm` (`src/agents/result_synthesis_agent.py:352`) exist and fall back to embeddings, but no production code calls either one. `src/services/context_retrieval_service.py` calls only `search(..., search_type="semantic")` and `synthesize()`, and `AgentOrchestrator` uses its own `ContextRetrievalService` class (`src/agents/agent_orchestrator.py:328`) that uses neither agent. The Tier 3 orchestrator switch and the platform/user settings in the configuration table are not implemented. `intelligent_search` is tested in `tests/test_filesystem_navigator_agent.py`; `synthesize_with_llm` has no tests.
+
 **Date:** 2025-12-01
 **Decision Makers:** Project Aura Team
 **Related:** ADR-008 (Bedrock LLM Cost Controls), ADR-013 (Service Adapter Factory Pattern)

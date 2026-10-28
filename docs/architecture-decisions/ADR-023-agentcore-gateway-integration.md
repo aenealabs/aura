@@ -1,9 +1,11 @@
 # ADR-023: AgentCore Gateway Integration for Dual-Track Architecture
 
-**Status:** Deployed
+**Status:** Accepted (scaffolding only; Gateway calls return mock responses)
 **Date:** 2025-12-05
 **Decision Makers:** Project Aura Team
 **Related:** ADR-018 (MetaOrchestrator), ADR-021 (Guardrails Cognitive Architecture)
+
+> **Status note (2026-10-26).** `src/config/integration_config.py`, `src/services/mcp_gateway_client.py`, `src/services/mcp_tool_adapters.py` and `src/services/external_tool_registry.py` exist, and an `MCPGatewayClient` can be injected into `src/agents/base_agent.py` and the orchestrator. `MCPGatewayClient._execute_tool_invocation` (line 441) does not call AgentCore Gateway: the HTTP request is commented out and the method returns canned Slack, Jira, PagerDuty, GitHub and Datadog payloads after a 0.1 s sleep, and `_load_tool_cache` reads local configuration instead of the Gateway. No CloudFormation template provisions AgentCore, and the Phase 3 files `src/integrations/{slack,jira,pagerduty}_integration.py` do not exist (a Slack adapter lives at `src/services/integrations/slack_adapter.py`).
 
 ## Context
 
@@ -33,7 +35,7 @@ Amazon Bedrock AgentCore was announced with capabilities that complement but don
 | Memory System | Short/long-term | Neuroscience-inspired cognitive memory |
 | HITL Governance | Not built-in | 4 autonomy levels, 6 org presets |
 | Security Depth | Generic | Penetration testing, business logic analysis |
-| Compliance | Standard AWS | CMMC L3, FedRAMP, GovCloud-first |
+| Compliance | Standard AWS | CMMC L3 / FedRAMP-aligned controls (not certified), GovCloud-first |
 | Tool Gateway | MCP-compatible | Native implementation |
 
 **Strategic Opportunity:**

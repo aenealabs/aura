@@ -246,7 +246,12 @@
         and logged &mdash; at the cost of additional orchestration complexity. Aura absorbs that cost
         through <span class="highlight">6 specialized orchestrators</span> and a
         <span class="highlight">hierarchical tool registry</span> that caps agent-visible tools
-        at 20&ndash;30 to prevent cognitive overload.
+        at 20&ndash;30 to prevent cognitive overload. Implementation status (October 2026): the
+        governance layer (risk tiers, <code>CapabilityEnforcementMiddleware</code>, dynamic grants) is
+        implemented as a library and tested, but the running remediation agents do not yet call it. In the
+        job server, the Coder's read-only tools (<code>search_code</code>, <code>read_file</code>,
+        <code>list_directory</code>) are confined to the project root and write nothing, and every patch
+        goes to a human approval request.
       </p>
     </div>
 
@@ -288,9 +293,10 @@
         <h2>How Tools Work in Aura</h2>
       </div>
       <p class="section-intro">
-        Every agent action passes through a <code>CapabilityEnforcementMiddleware</code> that
+        The design routes every agent action through a <code>CapabilityEnforcementMiddleware</code> that
         evaluates identity, risk tier, execution context, and dynamic grants before rendering
-        one of four decisions.
+        one of four decisions. The middleware exists in <code>src/services/capability_governance/</code>;
+        wiring it into the agents' tool calls is planned.
       </p>
 
       <div class="diagram">
@@ -376,8 +382,9 @@
             <h4>Security-First Governance</h4>
             <p>
               Tools are discrete, auditable operations with explicit risk tiers.
-              Every invocation passes through <code>CapabilityEnforcementMiddleware</code>
-              with <code>ALLOW / DENY / ESCALATE / AUDIT_ONLY</code> decisions.
+              Invocations are designed to pass through <code>CapabilityEnforcementMiddleware</code>
+              with <code>ALLOW / DENY / ESCALATE / AUDIT_ONLY</code> decisions (not yet wired into
+              the running agents).
               A "skills" abstraction would hide this granularity and make it harder
               to enforce least-privilege.
             </p>

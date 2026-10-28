@@ -3,7 +3,7 @@
 **Proposal ID:** PROP-2026-002
 **Date:** 2026-01-21
 **Authors:** Platform Architecture Team
-**Status:** Draft - Pending Multi-Agent Review
+**Status:** Converted to ADR-063 (see the ADR for current implementation status)
 **Related ADRs:** ADR-052 (AI Alignment Principles), ADR-021 (Guardrails Cognitive Architecture), ADR-032 (Configurable Autonomy Framework)
 
 ---

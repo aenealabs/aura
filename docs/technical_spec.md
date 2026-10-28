@@ -3,6 +3,9 @@
 ---
 
 ## Comprehensive Technical Documentation
+
+> **Status note (October 2026).** This is the December 2025 design specification, retained as a record of design intent. Its "Production Ready" label, test-pass figures, performance percentages and business-impact figures are not current measurements. The current, code-verified status of each capability is in `docs/PROJECT_STATUS.md` (see the 2026-10-26 audit): for example, the agent workflow combines one graph traversal with one vector search, only Python and JavaScript/TypeScript are parsed into graph entities, and no GovCloud deployment exists.
+
 - Codebase Knowledge Graph Engine (CKGE) Technical Specification
 - Version: 1.0 - Production Ready (December 2025)
 - Purpose: Document the architecture, data flow, and compliance posture of the CKGE, the core component enabling System 2 AI autonomous software development.
@@ -201,7 +204,7 @@ The platform underwent comprehensive consolidation to establish a single source 
 | Step | Action | Status | Notes |
 | :--- | :--- | :--- | :--- |
 | **1. VPC Setup** | Verify VPC, subnets, and NAT Gateways are configured for **GovCloud** standards. | [ ] | Must use private subnets for all CKGE resources. |
-| **2. IAM Roles (PLP)** | Create `TaskRole` and `ExecutionRole` as defined in `fargate_task_definition.json`. | [ ] | Policies must be *minimal*; audited by **Saviynt** for CMMC compliance. |
+| **2. IAM Roles (PLP)** | Create `TaskRole` and `ExecutionRole` as defined in `fargate_task_definition.json`. | [ ] | Policies must be *minimal*; to be reviewed with **Saviynt** for CMMC-aligned least privilege (no CMMC assessment performed). |
 | **3. Secrets Manager** | Securely provision and store `LLM_API_KEY`, `NEPTUNE_ENDPOINT`, and `OPENSEARCH_ENDPOINT` secrets. | [ ] | Mandatory step for SOX compliance (no hardcoded credentials). |
 | **4. ECR Repository** | Create ECR repository: `ckge-context-retrieval`. | [ ] | Enable **Enhanced Scanning** on the repo for continuous vulnerability monitoring. |
 
@@ -297,7 +300,7 @@ This section provides the data necessary for the quarterly **SOX/CMMC compliance
 
 | Finding | Initial State | AI Agent Intervention | Final Status | Compliance Impact |
 | :--- | :--- | :--- | :--- | :--- |
-| **Weak Hash Function (SHA1)** | Detected by **Reviewer Agent** | Autonomous Fix (SHA1 -> SHA256) | **REMEDIATED** | Directly satisfies **CMMC/SOX Cryptography Standard**. |
+| **Weak Hash Function (SHA1)** | Detected by **Reviewer Agent** | Autonomous Fix (SHA1 -> SHA256) | **REMEDIATED** | Supports **CMMC/SOX-aligned cryptography** controls (not certified). |
 | **Missing Imports** | Detected by **Validation Agent** | Autonomous Fix | **REMEDIATED** | Code runnable and production-ready. |
 
 ### B. Contextual Intelligence (CKGE Effectiveness)

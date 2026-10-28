@@ -16,10 +16,17 @@ phases:
     commands:
       - echo "Installing cfn-lint..."
       - python -m pip install --upgrade pip
-      - pip3 install cfn-lint
+      - pip3 install cfn-lint==1.57.2
 
   pre_build:
     commands:
+      # ADR-092: deploy through the scoped CloudFormation service role when the
+      # environment opts in by publishing the role ARN in SSM. Unset means the
+      # stacks deploy as this CodeBuild role (the default).
+      - |
+        CFN_ROLE_ARN=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/cfn-service-role-arn" --query Parameter.Value --output text 2>/dev/null || echo "")
+        if [ -n "$CFN_ROLE_ARN" ] && [ "$CFN_ROLE_ARN" != "None" ]; then export CFN_ROLE_ARG="--role-arn $CFN_ROLE_ARN"; else export CFN_ROLE_ARG=""; fi
+        echo "CloudFormation service role: ${CFN_ROLE_ARN:-none, deploying as the CodeBuild role}"
       - echo "=========================================="
       - echo "Runtime Security Layer Deployment (ADR-083)"
       - echo "=========================================="
@@ -30,10 +37,10 @@ phases:
 
       # Validate templates
       - echo "Validating runtime security templates..."
-      - cfn-lint deploy/cloudformation/runtime-security-interceptor.yaml || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/runtime-security-discovery.yaml || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/runtime-security-baselines.yaml || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/runtime-security-correlation.yaml || echo "cfn-lint warnings (non-blocking)"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/runtime-security-interceptor.yaml || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/runtime-security-discovery.yaml || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/runtime-security-baselines.yaml || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/runtime-security-correlation.yaml || exit 1
 
   build:
     commands:
@@ -44,7 +51,7 @@ phases:
       - echo "Deploying Runtime Security Interceptor Stack..."
       - INTERCEPTOR_STACK="${PROJECT_NAME}-runtime-security-interceptor-${ENVIRONMENT}"
       - |
-        if aws cloudformation deploy \
+        if aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $INTERCEPTOR_STACK \
           --template-file deploy/cloudformation/runtime-security-interceptor.yaml \
           --parameter-overrides \
@@ -65,7 +72,7 @@ phases:
       - echo "Deploying Runtime Security Discovery Stack..."
       - DISCOVERY_STACK="${PROJECT_NAME}-runtime-security-discovery-${ENVIRONMENT}"
       - |
-        if aws cloudformation deploy \
+        if aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $DISCOVERY_STACK \
           --template-file deploy/cloudformation/runtime-security-discovery.yaml \
           --parameter-overrides \
@@ -86,7 +93,7 @@ phases:
       - echo "Deploying Runtime Security Baselines Stack..."
       - BASELINES_STACK="${PROJECT_NAME}-runtime-security-baselines-${ENVIRONMENT}"
       - |
-        if aws cloudformation deploy \
+        if aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $BASELINES_STACK \
           --template-file deploy/cloudformation/runtime-security-baselines.yaml \
           --parameter-overrides \
@@ -107,7 +114,7 @@ phases:
       - echo "Deploying Runtime Security Correlation Stack..."
       - CORRELATION_STACK="${PROJECT_NAME}-runtime-security-correlation-${ENVIRONMENT}"
       - |
-        if aws cloudformation deploy \
+        if aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $CORRELATION_STACK \
           --template-file deploy/cloudformation/runtime-security-correlation.yaml \
           --parameter-overrides \

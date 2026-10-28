@@ -2,7 +2,15 @@
 
 ## Status
 
-Deployed
+Implemented (library; mock signing and mock inference); not integrated -- no API or infrastructure templates
+
+> **Status note (2026-10-26).** `src/services/airgap/` is tested but not
+> called from any API or agent. `AirGapOrchestrator` hardcodes
+> `_use_mock_crypto = True` (`air_gap_orchestrator.py:61`), so keys are random
+> bytes; the edge runtime loads only `MockInferenceEngine`
+> (`edge_runtime.py:598`); the firmware analyzer is a byte-pattern scanner
+> without Binwalk or Clang. `deploy/airgap/scripts/create-airgap-bundle.sh`
+> exists; the four templates and the `/api/v1/edge` endpoints below do not.
 
 ## Date
 

@@ -351,6 +351,7 @@ Resources:
   SandboxTaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-sandbox-task-execution-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -389,6 +390,7 @@ Resources:
   SandboxTaskRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-sandbox-task-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -576,6 +578,7 @@ Resources:
   StepFunctionsExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-sandbox-stepfunctions-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

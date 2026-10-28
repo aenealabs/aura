@@ -13,14 +13,21 @@ env:
 phases:
   pre_build:
     commands:
+      # ADR-092: deploy through the scoped CloudFormation service role when the
+      # environment opts in by publishing the role ARN in SSM. Unset means the
+      # stacks deploy as this CodeBuild role (the default).
+      - |
+        CFN_ROLE_ARN=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/cfn-service-role-arn" --query Parameter.Value --output text 2>/dev/null || echo "")
+        if [ -n "$CFN_ROLE_ARN" ] && [ "$CFN_ROLE_ARN" != "None" ]; then export CFN_ROLE_ARG="--role-arn $CFN_ROLE_ARN"; else export CFN_ROLE_ARG=""; fi
+        echo "CloudFormation service role: ${CFN_ROLE_ARN:-none, deploying as the CodeBuild role}"
       - echo "=========================================="
       - echo "Chat Assistant Deployment (Layer 6 - Serverless)"
       - echo "=========================================="
       - echo "Installing dependencies..."
       - python -m pip install --upgrade pip
-      - pip3 install --quiet cfn-lint boto3
+      - pip3 install --quiet cfn-lint==1.57.2 boto3
       - echo "Validating CloudFormation template..."
-      - cfn-lint deploy/cloudformation/chat-assistant.yaml --ignore-checks W2001,W3002,W3005 || echo "Template has warnings (non-blocking)"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/chat-assistant.yaml --ignore-checks W2001,W3002,W3005 || exit 1
       - echo "Template validation complete"
 
   build:
@@ -29,7 +36,7 @@ phases:
       - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
       - echo "Deploying Chat Assistant CloudFormation stack..."
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name ${PROJECT_NAME}-chat-assistant-${ENVIRONMENT} \
           --template-file deploy/cloudformation/chat-assistant.yaml \
           --parameter-overrides \

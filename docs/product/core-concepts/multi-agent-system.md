@@ -11,6 +11,8 @@ Project Aura uses a multi-agent architecture where specialized AI agents collabo
 
 This document explains the agent architecture, individual agent responsibilities, communication patterns, and how agents learn from their experiences.
 
+> **Implementation status (October 2026).** The Coder, Reviewer, and Validator agents call the configured Bedrock model when an LLM client is present; with no client (or after an LLM error) they fall back to fixed templates and pattern checks. In the production job server (`src/agents/orchestrator_server.py`) these agents run in-process inside `System2Orchestrator`, not as separate services. Today the workflow patches the configured sample project (`get_sample_project_path()`, `src/config/paths.py:26`), not a customer repository selected per job; jobs carry a free-text prompt only. The sandbox step and the post-approval pull request are not yet connected end to end (see [HITL Workflow and the Job Server](#hitl-workflow-and-the-job-server)). Sections below that describe planned behavior are marked as such.
+
 ---
 
 ## Why Multi-Agent Architecture
@@ -101,39 +103,38 @@ The Orchestrator is the central coordinator that manages the remediation workflo
 
 ```python
 class WorkflowPhase(Enum):
-    INIT = "init"                    # Initialize workflow
-    PLANNING = "planning"            # Analyze task requirements
-    MEMORY_LOAD = "memory_load"      # Load relevant memories
-    CONTEXT_RETRIEVAL = "context"    # Retrieve code context
-    CODE_GENERATION = "code_gen"     # Generate patch
-    SECURITY_REVIEW = "review"       # Security validation
-    VALIDATION = "validation"        # Sandbox testing
-    REMEDIATION = "remediation"      # Apply fixes
-    MEMORY_STORE = "memory_store"    # Store learnings
-    COMPLETED = "completed"          # Success
-    FAILED = "failed"                # Failure
+    INIT = "init"                              # Initialize workflow
+    PLANNING = "planning"                      # Analyze task requirements
+    MEMORY_LOAD = "memory_load"                # Load relevant memories
+    CONTEXT_RETRIEVAL = "context_retrieval"    # Retrieve code context
+    CODE_GENERATION = "code_generation"        # Generate patch
+    SECURITY_REVIEW = "security_review"        # Security review
+    VALIDATION = "validation"                  # Static validation
+    REMEDIATION = "remediation"                # Feed findings back to the Coder
+    MEMORY_STORE = "memory_store"              # Store learnings
+    COMPLETED = "completed"                    # Success
+    FAILED = "failed"                          # Failure
 ```
 
 ### Checkpoint and Resume
 
-Long-running workflows can be interrupted and resumed:
+Long-running workflows can be interrupted and resumed with `execute_request_with_checkpoints` and `resume_from_checkpoint`:
 
 ```python
-# Checkpoint captures workflow state
+# Checkpoint captures workflow state (src/agents/agent_orchestrator.py)
 checkpoint = AgentCheckpoint(
     workflow_id="wf-123456",
     phase=WorkflowPhase.SECURITY_REVIEW,
-    created_at="2026-01-15T10:30:00Z",
-    context={
-        "vulnerability_id": "vuln-789",
-        "generated_patch": "...",
-        "coder_confidence": 0.85
-    }
+    user_prompt="Replace SHA1 with SHA256 in DataProcessor",
+    generated_code="...",
+    attempt_number=1,
 )
 
 # Later, resume from checkpoint
-orchestrator.resume_from_checkpoint(checkpoint)
+result = await orchestrator.resume_from_checkpoint(checkpoint)
 ```
+
+The production job server calls `execute_request_with_hitl`, which does not write checkpoints; checkpointing is used only when a caller invokes the checkpoint methods directly.
 
 ### Repair Loop
 
@@ -149,6 +150,13 @@ A patch is accepted only when it passes both the Reviewer's security review and 
 
 `execute_request_with_hitl` runs the standard workflow, then sandbox testing, then creates an approval request. The production job server (`src/agents/orchestrator_server.py`) runs this full HITL workflow for each job rather than the plain workflow, so patches it produces are sandbox-tested and then queued for human approval. A patch that fails its sandbox tests (after any repair runs) gets no approval request. If no sandbox orchestrator is configured, the sandbox step is reported as `SKIPPED` and the approval request shows that the patch was not runtime-tested.
 
+Current limits of this path:
+
+- The sandbox orchestrator is built only when `SANDBOX_ENABLED=true` (`src/services/service_adapters.py:511`). The orchestrator's Kubernetes ConfigMap does not set it, so deployed jobs report the sandbox step as `SKIPPED` unless an operator adds it.
+- When enabled, `ValidatorAgent.validate_in_sandbox` launches an ECS task but does not pass the patched code into it (`src/agents/validator_agent.py:701`), so the task cannot test the patch. Shipping the patch into the sandbox is planned.
+- Approving a request records the decision and sends a notification; it does not open a pull request or deploy. Pull-request creation exists in `PatchValidationWorkflow` and `GitHubPRService`, which the job server does not call yet.
+- Approval decisions made through the approvals API are not fed back into agent memory: `process_approval_decision` has no caller outside tests.
+
 ---
 
 ## Coder Agent
@@ -162,11 +170,13 @@ The Coder Agent generates security patches based on vulnerability information an
 | **Patch Generation** | Create fixes for identified vulnerabilities |
 | **Code Synthesis** | Generate new code following security patterns |
 | **Context Integration** | Incorporate structural and semantic context |
-| **Confidence Scoring** | Assess quality of generated patches |
+| **Confidence Scoring** | Planned: the Coder does not yet return a confidence score |
 
 ### Input/Output
 
-**Input:**
+In the orchestrator workflow the Coder receives the planner's task description and the hybrid context (`CoderAgent.generate_code(context, task_description)`). The structured vulnerability input below is the target shape for scanner-driven remediation, which is planned; the current `generate_code` result carries `code`, `language`, `has_remediation`, and `tokens_used` only.
+
+**Input (planned shape):**
 ```python
 {
     "vulnerability": {
@@ -189,7 +199,7 @@ The Coder Agent generates security patches based on vulnerability information an
 }
 ```
 
-**Output:**
+**Output (planned shape; `confidence` and `changes_made` are not yet returned):**
 ```python
 {
     "code": "def get_user(user_id: str) -> User:\n    # Parameterized query (security fix)\n    return db.query(User).filter(User.id == user_id).first()",
@@ -270,12 +280,12 @@ SECURITY_POLICIES = {
         "message": "Cryptographic operations must use FIPS-compliant algorithms"
     },
     "secrets": {
-        "patterns": ["password=", "api_key=", "secret=", "token="],
-        "message": "Hardcoded secrets detected - use Secrets Manager"
+        "patterns": ["password=", "api_key=", "secret=", "token=", "credential"],
+        "message": "Hardcoded secrets detected - use environment variables or Secrets Manager"
     },
     "injection": {
-        "patterns": ["eval(", "exec(", "subprocess.call(", "shell=True"],
-        "message": "Potential code injection vulnerability"
+        "patterns": ["eval(", "exec(", "subprocess.call(", "os.system(", "shell=True"],
+        "message": "Potential code injection vulnerability - sanitize inputs"
     }
 }
 ```
@@ -295,7 +305,9 @@ if self.enable_reflection:
         context=f"Code being reviewed:\n{code}",
         reflection_prompt=REVIEWER_REFLECTION_PROMPT
     )
-    # 30% fewer false positives with self-reflection
+    # Up to 3 reflection iterations (ReflectionModule.MAX_ITERATIONS).
+    # The "30% fewer false positives" figure is a design target from
+    # ADR-029, not a measurement of Aura's workloads.
 ```
 
 ### Structured Output
@@ -423,6 +435,8 @@ dangerous_patterns = [
 
 The Monitor Agent tracks system health, performance, and costs.
 
+> **Implementation status.** `MonitorAgent` (`src/agents/monitoring_service.py:19`) is an in-process counter: it records token estimates, lines of code generated, and security findings for one run, and `finalize_report()` returns them in the job result. It does not publish to CloudWatch, track health, or raise alerts. Token counts are fixed per-call estimates (for example 4000 per coder call), and `llm_cost_usd` uses a placeholder rate of 0.0003 per token. The health, alerting, and CloudWatch items below are planned.
+
 ### Responsibilities
 
 | Responsibility | Description |
@@ -439,7 +453,6 @@ The Monitor Agent tracks system health, performance, and costs.
 monitor.record_agent_activity(
     tokens_used=4000,
     loc_generated=15,
-    execution_time_ms=2500
 )
 
 # Security Findings
@@ -450,17 +463,13 @@ monitor.record_security_finding(
     status="Detected"
 )
 
-# System Health
-monitor.record_health_check(
-    agent=AgentRole.CODER,
-    status="healthy",
-    latency_ms=45
-)
+# Run summary returned in the job result
+report = monitor.finalize_report()
 ```
 
 ### CloudWatch Integration
 
-Metrics are published to CloudWatch for monitoring and alerting:
+Planned: publish these metrics to CloudWatch for monitoring and alerting. The orchestrator does not publish them today:
 
 | Metric Namespace | Metrics |
 |------------------|---------|
@@ -473,7 +482,7 @@ Metrics are published to CloudWatch for monitoring and alerting:
 
 ## Agent Communication Patterns
 
-Agents communicate through structured message passing.
+In the production job server the Coder, Reviewer, and Validator are called in-process as Python methods of `System2Orchestrator`; there is no message bus between them. An SQS-based path exists (`dispatch_task_async`, `src/agents/agent_worker.py`, schemas in `src/agents/messaging/`), but it runs only when `use_async_messaging=True`, which no deployed entry point sets, and the agent worker has no deployment manifest. The request/response and event examples below illustrate the planned message shapes; `AgentEvent` broadcasting is not implemented.
 
 ### Request/Response Pattern
 
@@ -522,7 +531,9 @@ event = AgentEvent(
 
 ### Agent-to-Agent (A2A) Security
 
-All agent communication is secured:
+The core agents call each other in-process, so there is no inter-agent network traffic to secure in the job server. Agent inputs are screened by the A2AS injection filter (`enable_a2as=True` by default), which blocks HIGH and CRITICAL threat assessments before planning.
+
+Planned for networked and external agents (the A2A gateway and registry in `src/services/a2a_*` are in-memory stubs whose router is not mounted):
 
 - **Authentication**: JWT-based agent identity verification
 - **Authorization**: Role-based permission enforcement
@@ -534,6 +545,8 @@ All agent communication is secured:
 ## Agent Memory and Learning
 
 Agents improve over time through shared memory systems.
+
+> **Implementation status.** Titan memory is off in the job server (`ENABLE_TITAN_MEMORY=false` in the orchestrator ConfigMap). When enabled through `create_system2_orchestrator(enable_titan_memory=True)`, the episodic, semantic, and procedural stores and the embedding service are `AsyncMock` placeholders (`src/agents/agent_orchestrator.py`, "Create mock stores for now"), so nothing persists between runs. Human approval decisions are recorded to memory only through `process_approval_decision`, which the approvals API does not call. Persistent cross-run learning is planned.
 
 ### Memory Types
 
@@ -581,7 +594,9 @@ reviewer_context = cognitive_service.load_cognitive_context(
 
 ## Constitutional AI Integration
 
-All agent outputs pass through Constitutional AI before reaching users or downstream systems. This ensures outputs align with explicit safety, compliance, and quality principles.
+Constitutional AI is designed to review agent outputs against explicit safety, compliance, and quality principles.
+
+> **Implementation status.** `ConstitutionalMixin` (`src/agents/constitutional_mixin.py`) exists and is tested, but no agent class in the remediation workflow inherits it: `CoderAgent`, `ReviewerAgent`, and `ValidatorAgent` are plain classes, and `System2Orchestrator` does not call the critique service. Wiring critique-revision into the Coder and Reviewer outputs is planned. The example below shows the intended integration.
 
 ### ConstitutionalMixin
 
@@ -664,13 +679,13 @@ Revised Output (with audit trail)
 
 > **Specialized agents outperform monolithic models.** Each agent is optimized for its specific task, resulting in better overall performance.
 
-> **Agents validate each other's work.** The Reviewer checks the Coder's output; the Validator tests the Reviewer's conclusions.
+> **Agents validate each other's work.** The Reviewer checks the Coder's output and the Validator statically checks the reviewed patch; failures from either are fed back to the Coder.
 
-> **Constitutional AI ensures principled behavior.** All agent outputs pass through critique-revision before reaching users.
+> **Constitutional AI is planned for agent outputs.** The mixin exists; the remediation agents do not use it yet.
 
-> **Communication is structured and auditable.** All agent interactions are logged and can be traced for compliance.
+> **Agent results are structured.** Each run returns the review, validation, sandbox status, and metrics in the job result; approval decisions are written to the HITL audit log.
 
-> **Memory enables continuous improvement.** Agents learn from every remediation and share knowledge across the system.
+> **Memory is designed for continuous improvement.** Neural memory guidance reaches the Coder and Reviewer prompts when a memory service is configured; persistent memory stores are planned.
 
 ---
 

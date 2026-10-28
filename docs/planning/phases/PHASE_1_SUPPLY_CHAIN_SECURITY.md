@@ -4,6 +4,8 @@
 **Market Focus:** Snyk, Wiz, Defense
 **Dependencies:** Existing `SBOMDetectionService`
 
+> **Status (2026-10-26):** Planning document. The services in this phase were built as library code under ADR-076 (`src/services/supply_chain/`): SBOM generation, dependency-confusion and license checks work, but Sigstore signing and Rekor logging are simulated, no API router exists, and nothing outside the package calls it. See ADR-076 and ADR-076.1 for current status.
+
 ---
 
 ## Service 1: SBOM Attestation Service

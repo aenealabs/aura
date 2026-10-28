@@ -291,7 +291,7 @@ kubectl get configmap dnsmasq-blocklist -n aura-network-services -o jsonpath='{.
 - All feeds are fetched over HTTPS
 - Response validation before processing
 - Size limits to prevent DoS
-- Graceful fallback on API failures
+- Graceful fallback on API failures. Note: when an NVD, CISA KEV, or GitHub Advisory request fails or is rate-limited, `ThreatFeedClient` currently returns built-in sample records (for example `CVE-2025-0001`) instead of an empty result, and logs the fallback only as a warning or error. Monitor the `BlocklistUpdateFailure` metric and logs; distinguishing sample data from live data in the output is a planned fix.
 
 ### False Positive Prevention
 

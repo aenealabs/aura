@@ -10,6 +10,10 @@
 
 ---
 
+> **Implementation Status (code audit):** Email (SES) and SNS delivery are implemented in `src/services/notification_service.py` and are what the HITL approval, escalation, expiration, and threat-alert flows use today. Slack and Microsoft Teams incoming-webhook delivery is implemented in the same service but is only reachable through `NotificationService.send_to_channel()`, which no runtime flow calls yet, so approval and alert events are not currently sent to Slack or Teams. Generic Webhook and PagerDuty delivery are **Planned** (the channel names exist in the service, but no delivery code does; a standalone `PagerDutyConnector` exists in `src/services/external_tool_connectors.py` but is not wired to notifications). The Settings > Notifications UI, channel test button, event routing, event preferences, and quiet hours described below are **Planned**: the frontend client calls `/api/v1/notifications/*`, but the backend currently serves only read-only development sample data for those paths (`src/api/dev_mocks_endpoints.py`). Environment variables are the supported way to configure Slack and Teams today. `NotificationService` does not check the integration mode itself.
+
+---
+
 ## Table of Contents
 
 1. [Overview](#overview)
@@ -35,11 +39,11 @@ Aura Platform provides multi-channel notification capabilities to keep your team
 
 ### Key Features
 
-- **Six Notification Channels:** Email, SNS, Slack, Microsoft Teams, Generic Webhooks, PagerDuty
-- **Priority-Based Routing:** Route alerts based on severity (Critical, High, Normal, Low)
+- **Six Notification Channels:** Email, SNS, Slack, Microsoft Teams, Generic Webhooks (Planned), PagerDuty (Planned)
+- **Priority Levels:** Notifications carry a priority (Critical, High, Normal, Low) used for message colors and subjects; priority-based channel routing is Planned
 - **Rich Message Formatting:** Attachments, colors, and action buttons for supported channels
-- **Quiet Hours:** Suppress non-critical notifications during off-hours
-- **Event-Based Routing:** Configure which events go to which channels
+- **Quiet Hours (Planned):** Suppress non-critical notifications during off-hours
+- **Event-Based Routing (Planned):** Configure which events go to which channels
 
 ### Prerequisites
 
@@ -57,8 +61,8 @@ Aura Platform provides multi-channel notification capabilities to keep your team
 | **SNS** | All modes | AWS-based automation and custom integrations |
 | **Slack** | Enterprise/Hybrid | Team collaboration and instant alerts |
 | **Microsoft Teams** | Enterprise/Hybrid | Enterprise collaboration integration |
-| **Webhook** | Enterprise/Hybrid | Custom integrations and automation |
-| **PagerDuty** | Enterprise/Hybrid | Incident management and on-call escalation |
+| **Webhook** (Planned) | Enterprise/Hybrid | Custom integrations and automation |
+| **PagerDuty** (Planned) | Enterprise/Hybrid | Incident management and on-call escalation |
 
 ### Channel Comparison
 
@@ -101,7 +105,7 @@ SLACK_CHANNEL=#aura-alerts
 SLACK_BOT_NAME=Aura Bot
 ```
 
-**Option B: UI Configuration**
+**Option B: UI Configuration (Planned)**
 
 1. Navigate to **Settings > Notifications**
 2. Click **Add Channel** and select **Slack**
@@ -181,7 +185,7 @@ Aura uses Microsoft Teams incoming webhooks with MessageCard format for enterpri
 TEAMS_WEBHOOK_URL=https://outlook.office.com/webhook/...
 ```
 
-**Option B: UI Configuration**
+**Option B: UI Configuration (Planned)**
 
 1. Navigate to **Settings > Notifications**
 2. Click **Add Channel** and select **Microsoft Teams**
@@ -253,7 +257,7 @@ Email configuration is typically set at the infrastructure level:
 | Setting | Description | Default |
 |---------|-------------|---------|
 | `SES_SENDER_EMAIL` | Verified sender address | aura-noreply@{project}.local |
-| `SES_REGION` | AWS region for SES | us-east-1 |
+| `AWS_REGION` | AWS region used for SES and SNS clients | us-east-1 |
 
 ### Email Requirements
 
@@ -320,6 +324,8 @@ SNS messages include filterable attributes:
 
 ## Webhook Integration
 
+> **Planned.** `NotificationService` has no generic webhook delivery path; the configuration steps and authentication options below describe the intended design.
+
 Generic webhooks allow integration with custom systems and automation platforms.
 
 ### Configuration
@@ -359,6 +365,8 @@ Generic webhooks allow integration with custom systems and automation platforms.
 
 ## PagerDuty Integration
 
+> **Planned.** `NotificationService` has no PagerDuty delivery path. A standalone `PagerDutyConnector` (Events API v2) exists in `src/services/external_tool_connectors.py` but is not called by the notification flows. The configuration steps below describe the intended design.
+
 PagerDuty integration enables incident management and on-call escalation.
 
 ### Configuration
@@ -380,6 +388,8 @@ PagerDuty integration enables incident management and on-call escalation.
 ---
 
 ## Event Routing
+
+> **Planned.** There is no event-routing engine or preferences API. Today each HITL flow (approval request, decision, expiration warning/notice, escalation, threat alert) is hard-coded to send email plus SNS. The event types and matrix below describe the intended routing.
 
 Configure which events are sent to which notification channels.
 
@@ -444,6 +454,8 @@ Aura uses four priority levels to categorize notifications:
 ---
 
 ## Quiet Hours
+
+> **Planned.** No quiet-hours logic exists in `NotificationService`, and the quiet-hours API returns development sample data only.
 
 Suppress non-critical notifications during specified hours.
 
@@ -517,16 +529,18 @@ Complete list of notification-related environment variables:
 
 ## Testing Integrations
 
-### Using the Test Button
+### Using the Test Button (Planned)
+
+The backend has no channel test endpoint yet; use mock mode (below) or send a test webhook manually.
 
 1. Navigate to **Settings > Notifications**
 2. Click the **Play** icon next to a configured channel
 3. A test notification is sent
 4. Verify receipt in the target channel
 
-### Command-Line Testing
+### Command-Line Testing (Planned)
 
-For administrators with access to the API:
+The endpoint below is not implemented in the backend yet. Intended usage:
 
 ```bash
 # Test Slack notification

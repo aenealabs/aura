@@ -71,6 +71,8 @@ history can reference a control without disclosing who asked for it or how they 
 | `AURA-CTL-001` | **Model I/O Audit Logging** -- Bedrock model invocation input and output are captured as audit records. Every record is delivered in full to an encrypted S3 corpus; CloudWatch Logs, encrypted with a customer-managed key, carries the same records for operational query, with bodies over 100 KB referenced from S3 rather than dropped. | **Implemented, not deployed** | `deploy/cloudformation/bedrock-invocation-logging.yaml` (Layer 4.15) | NIST 800-53 AU-2, AU-3, AU-9, AU-11, SC-28 |
 | `AURA-CTL-002` | **Sandbox Network Boundary Truthfulness** -- the sandbox provisioning path refuses any network isolation level it does not actually enforce, instead of accepting the request and provisioning a weaker boundary under the stronger name. `ENFORCED_ISOLATION_LEVELS` is the single source of truth for what is implemented. | Implemented | `src/services/sandbox_network_service.py:79` (`ENFORCED_ISOLATION_LEVELS`, `UnsupportedIsolationLevelError`); `deploy/cloudformation/sandbox.yaml` (Layer 7.1) | NIST 800-53 SC-7, SC-7(21), AC-4, SA-4(9), CM-4 |
 | `AURA-CTL-003` | **Error Response Detail Suppression** -- unhandled API exceptions return a generic body. The exception message is never included in any environment, and a debug request is honored only where the resolved environment is debug-safe. Full detail is logged server-side against the `request_id` the caller receives. | Implemented | `src/api/security_middleware.py:34` (`DEBUG_SAFE_ENVIRONMENTS`), `:283-301` (interlock), `:334-341` (response body); `src/api/main.py:395`, `:481` (wiring) | NIST 800-53 SI-11, AU-3, AU-9, CM-7(1) |
+| `AURA-CTL-004` | **Pipeline IAM Privilege-Escalation Guards** -- no role the build and deploy pipeline creates can be created without an approved permission boundary, and no build role can change its own permissions, the pipeline's other roles, or the boundary policies. Every CodeBuild `iam:PassRole` grant is limited to named services. | Implemented, not deployed | `deploy/cloudformation/iam-permission-boundaries.yaml` (Layer 0.1); `PermissionsBoundary` on every pipeline role; `CfnServiceRolePolicy` in each `codebuild-*.yaml`; `tests/architecture/test_iam_escalation_guards.py` | NIST 800-53 AC-6, AC-6(1), AC-6(10), AC-2(7), CM-5 |
+| `AURA-CTL-005` | **Operator Least Privilege** -- people deploy Aura through a scoped `AuraDeployer` IAM Identity Center permission set instead of `AdministratorAccess`; full administration is a separate one-hour `AuraBreakGlass` set; viewers get metadata-only access. | Implemented, not deployed | `deploy/cloudformation/identity-center-permission-sets.yaml` (Layer 0.2); `tests/architecture/test_iam_escalation_guards.py` | NIST 800-53 AC-6, AC-6(2), AC-6(5), AC-2(7), AC-12 |
 
 ---
 
@@ -317,6 +319,60 @@ disagree, and the middleware re-checks rather than relying on the call site havi
   refused: environment=prod ...` at `ERROR`, and that a 500 response carries no `debug` key.
 
 ---
+
+## AURA-CTL-004: Pipeline IAM Privilege-Escalation Guards
+
+**Status:** Implemented, not deployed (2026-10-26). Statically verified; no deploy has run with it.
+
+### Requirement
+
+The identities that deploy Aura (the bootstrap CodeBuild role, 23 layer CodeBuild roles, and the CloudFormation service role) hold IAM write permissions on project roles because their stacks create roles. They must not be able to use those permissions to escalate: rewrite their own policy or trust policy, change another pipeline role, create a role without a boundary, attach an administrator policy, or pass a role to a service outside the stack's needs (MITRE ATT&CK T1098.001, T1078.004).
+
+### Implementation
+
+- **Deployer boundary** (`aura-deployer-boundary-{env}`) on all build and deploy roles. Deny statements: `DenyModifyPipelineIdentities` (only the bootstrap role may change the CodeBuild roles; the deployment-pipeline roles are not listed because the serverless layer owns that stack), `DenyModifyBootstrapRole`, `DenyAssumeSameAccountRoles` (builds never assume same-account roles, which closes "edit a project role's trust policy, then assume it"), `DenyModifyBoundaryPolicies`, `DenyRoleWithoutApprovedBoundary` (`iam:CreateRole` and `iam:PutRolePermissionsBoundary` need one of six approved boundaries; a missing boundary also matches), `DenyBoundaryRemoval`, `DenyAdminPolicyAttachment`, `DenyDataPlaneReads` and `DenyObjectReadsOutsideProjectBuckets` (cap the data-plane half of `ReadOnlyAccess`), `DenyLongLivedCredentials`.
+- **Workload boundary** (`aura-workload-boundary-{env}`) on runtime roles: denies all IAM changes and organization/account changes. `iam:CreateServiceLinkedRole` stays allowed (the ALB controller needs it). Roles that already had a purpose-built boundary (serverless, test environment, model-assurance sandbox, taint resolver) keep it; the model-assurance sandbox boundary gained an IAM-change deny.
+- **Deployment order:** `deploy/scripts/bootstrap-fresh-account.sh` deploys the boundaries stack before any stack that creates a role.
+- **PassRole:** every CodeBuild `iam:PassRole` grant is a standalone statement with an `iam:PassedToService` list derived from the trust principals of the roles that layer's stacks create.
+- **Opt-in CloudFormation service role (ADR-092):** layer buildspecs pass `--role-arn` when `/{project}/{env}/cfn-service-role-arn` is set in SSM; each layer role can pass `aura-cfn-role-{env}` only to `cloudformation.amazonaws.com`.
+
+### Scope and limitations
+
+- Roles in management-account and customer Service Catalog templates are exempt (`account-bootstrap.yaml`, `account-migration-bootstrap.yaml`, `org-cloudtrail.yaml`, `route53-cross-account-role.yaml`, `service-catalog-products/`).
+- A layer can still grant the runtime roles it owns any non-IAM permission the workload boundary allows (for example by passing a role to a Lambda it creates). This is inherent to a pipeline that deploys infrastructure; the boundary caps it at no IAM and no account changes.
+- The boundaries have not been exercised by a live deploy. A static check maps every role-taking resource in each layer's stacks to its receiving service and finds none missing (it found `states.amazonaws.com` missing for the serverless layer, now fixed).
+- Operator access is AURA-CTL-005.
+
+### Evidence
+
+- `tests/architecture/test_iam_escalation_guards.py` covers every role's boundary, the boundary denies, CodeBuild PassRole conditions and service coverage, the opt-in deploy role in buildspecs and `cfn-deploy-helpers.sh`, the single-command deploy path (no layer deploys a role the boundary protects from it), and build-time linting. Fault injection (a removed boundary, a renamed deny, an unwired deploy, a protected pipeline role, a removed `states.amazonaws.com`) fails the corresponding tests.
+- `scripts/cfn-lint-wrapper.sh` passes on all changed templates.
+
+## AURA-CTL-005: Operator Least Privilege
+
+**Status:** Implemented, not deployed (2026-10-26).
+
+### Requirement
+
+Human operators must be able to bootstrap and deploy DEV and QA with the single command `deploy.sh deploy <env>` without holding account-wide administrator rights. Full administration must be separate, short-lived and used only for teardown, kill switches and incidents.
+
+### Implementation
+
+- `AuraDeployer` (4-hour sessions): AWS-managed `ViewOnlyAccess` plus an inline policy scoped to `aura-*` stacks, roles, policies, CodeBuild projects, state machines, Lambda functions, topics, alarms, log groups, buckets, ECR repositories and `/aura/*` SSM parameters. It denies creating a role without an `aura-*boundary-*` permission boundary, removing a boundary, attaching administrator-class policies, and creating users or access keys.
+- `AuraReadOnly` (8-hour sessions): `ViewOnlyAccess` only, so metadata and no application data.
+- `AuraBreakGlass` (1-hour sessions): `AdministratorAccess`.
+- Assignments to the DEV and QA accounts per Identity Store group, each optional.
+
+### Scope and limitations
+
+- The template is deployed by an administrator in the management account; it is not part of `deploy.sh`.
+- The inline policy names the `aura` prefix literally because one permission set spans accounts.
+- No alarm on `AuraBreakGlass` use yet. Sign-ins land in each member account's CloudTrail, so an alert needs a rule per account or organization-level event delivery.
+- Not exercised against a live deploy.
+
+### Evidence
+
+- `tests/architecture/test_iam_escalation_guards.py` checks that `AuraDeployer` grants the create actions for every resource in the four bootstrap stacks and every AWS CLI call in `deploy.sh`, `bootstrap-fresh-account.sh` and `bootstrap-base-images.sh`. Removing `lambda:CreateFunction` or `states:StartExecution` fails it.
 
 ## Adding a Control
 

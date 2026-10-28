@@ -2,7 +2,15 @@
 
 ## Status
 
-Deployed
+Implemented (library; signing and Rekor simulated); not integrated -- no API
+
+> **Status note (2026-10-26).** `src/services/supply_chain/` generates
+> CycloneDX/SPDX documents and has real DynamoDB/S3 write paths, typosquatting
+> detection, and a license engine. Signing is simulated: `_sign_with_sigstore`
+> stores a SHA-256 of the content as the signature and a fabricated
+> `rekor_log_index` (`sbom_attestation.py:604`), and `_verify_*` returns
+> VERIFIED whenever a signature is present. No FastAPI router, no
+> SBOM/attestation table template, and no cosign step in any buildspec exist.
 
 ## Date
 

@@ -511,7 +511,7 @@ Conduct immediately after exercise (15 minutes):
 
 ## 5. Compliance Mapping
 
-### 5.1 CMMC Requirements Satisfied
+### 5.1 CMMC Practices Supported (alignment only; not certified)
 
 | Control | Description | How Exercise Satisfies |
 |---------|-------------|----------------------|

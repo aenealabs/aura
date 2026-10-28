@@ -1,6 +1,9 @@
 # ADR-054: Multi-Identity Provider Authentication System
 
-**Status:** Proposed
+**Status:** Implemented (library); not integrated -- identity routers not mounted
+
+> **Status note (2026-10-26).** `src/services/identity/` contains LDAP, SAML, OIDC, PingID (an OIDC subclass), and Cognito providers, a token service, IdP config/routing, and a session store, with 225 tests in `tests/services/identity/` (no SAML or PingID test files). `src/api/identity_endpoints.py` (`/auth`) and `src/api/idp_admin_endpoints.py` (`/admin/identity-providers`) are not included in `src/api/main.py`, and `frontend/src/services/identityProviderApi.js` returns simulated responses with no `fetch` calls. `deploy/cloudformation/idp-infrastructure.yaml` exists; `certificate_manager.py` and `src/api/schemas/identity_schemas.py` do not.
+
 **Date:** 2026-01-06
 **Decision Makers:** Project Aura Platform Team, Security Architecture Team
 **Related:** ADR-004 (Cloud Abstraction Layer), ADR-053 (Enterprise Security Integrations)

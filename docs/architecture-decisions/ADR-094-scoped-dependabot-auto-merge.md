@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** — September 28, 2026
+**Implemented** — September 28, 2026 (workflow `.github/workflows/dependabot-auto-merge.yml` in repo; status reviewed 2026-10-26)
 
 ## Context
 

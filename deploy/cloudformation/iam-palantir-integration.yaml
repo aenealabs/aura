@@ -54,6 +54,7 @@ Resources:
   PalantirIntegrationRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-palantir-integration-role-${Environment}'
       AssumeRolePolicyDocument: !If
         - HasOIDCProvider

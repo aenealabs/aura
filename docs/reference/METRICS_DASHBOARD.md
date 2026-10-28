@@ -3,6 +3,8 @@
 **Scope:** Context Retrieval Service Feature Deployment (Last 24 Hours)
 **Audience:** Senior Leadership (CIO, Engineering Directors)
 
+> **Sample report (October 2025):** This is a point-in-time illustration from a single demonstration run. Durations are labelled mocked, Neptune queries were mocked, and the figures are not live platform metrics or a recurring report produced by a metrics service.
+
 ## I. Executive Summary: AI Velocity and Quality
 
 The autonomous AI development process successfully generated, tested, and validated the new **secure hash method** for the DataProcessor class in **4 hours** (mocked duration), bypassing manual security and QA iterations.
@@ -20,7 +22,7 @@ The autonomous AI development process successfully generated, tested, and valida
 
 | Finding | Initial State | AI Agent Intervention | Final Status | Compliance Impact |
 | :--- | :--- | :--- | :--- | :--- |
-| **Weak Hash Function (SHA1)** | Detected by **Reviewer Agent** | Autonomous Fix (SHA1 -> SHA256) | **REMEDIATED** | Directly satisfies **CMMC/SOX Cryptography Standard**. |
+| **Weak Hash Function (SHA1)** | Detected by **Reviewer Agent** | Autonomous Fix (SHA1 -> SHA256) | **REMEDIATED** | Supports **CMMC/SOX-aligned cryptography** controls (not certified). |
 | **Missing Imports** | Detected by **Validation Agent** | Autonomous Fix | **REMEDIATED** | Code runnable and production-ready. |
 
 ### B. Contextual Intelligence (CKGE Effectiveness)

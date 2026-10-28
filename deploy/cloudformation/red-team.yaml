@@ -341,6 +341,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: CreateResources
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-red-team-task-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -407,6 +408,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: CreateResources
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-red-team-execution-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented (in-memory/mock-graph mode; Neptune persistence not implemented)
+Implemented (library; in-memory/mock-graph mode; Neptune persistence not implemented); not integrated -- router not mounted
 
 > **Status note (2026-10-14).** The services, analyzer and REST router exist
 > and are tested, but "Deployed" overstated them. `PolicyGraphSynchronizer`

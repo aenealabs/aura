@@ -1,7 +1,7 @@
 # Autonomous Security Intelligence
 
 **Version:** 1.0
-**Last Updated:** January 2026
+**Last Updated:** October 2026
 
 ---
 
@@ -49,10 +49,12 @@ Awaiting approval for deployment...
 
 Aura autonomously:
 1. **Understands** the vulnerability in context
-2. **Generates** a production-ready patch
-3. **Validates** the patch in isolation
-4. **Queues** for human approval (configurable)
-5. **Deploys** upon approval
+2. **Generates** a patch, with security review and static validation feeding failures back to the Coder
+3. **Validates** the patch in isolation (runtime sandbox testing is not yet connected; see [Sandbox Security](./sandbox-security.md))
+4. **Queues** for human approval (every patch today; policy-based auto-approval is planned)
+5. **Deploys** upon approval (planned; approval currently records the decision only)
+
+> **Implementation status (October 2026).** The job server runs steps 1, 2, and 4 for a free-text prompt against the configured sample project. Starting from a scanner finding in a customer repository, runtime sandbox testing, and deployment or pull-request creation after approval are planned. The example output above is illustrative.
 
 ---
 
@@ -62,7 +64,7 @@ Aura's intelligence comes from several interconnected AI systems.
 
 ### Large Language Models (LLMs)
 
-Aura uses foundation models from leading AI providers, accessed through AWS Bedrock for FedRAMP High compliance:
+Aura uses foundation models from leading AI providers, accessed through AWS Bedrock (Bedrock holds its own FedRAMP High authorization in AWS GovCloud; Aura itself is not FedRAMP authorized):
 
 | Tier | Model family | Use Case |
 |------|--------------|----------|
@@ -126,7 +128,7 @@ Action: Memorize with high priority
 
 ### Feedback Loops
 
-Human decisions create feedback that improves the system:
+Planned: human decisions create feedback that improves the system. Today approval decisions are stored in the HITL service but are not fed back into agent memory (`process_approval_decision` has no caller outside tests), and the orchestrator's Titan memory uses placeholder stores. The table shows the intended loop:
 
 | Human Action | System Learning |
 |--------------|-----------------|
@@ -137,7 +139,7 @@ Human decisions create feedback that improves the system:
 
 ### Organization-Specific Learning
 
-Aura learns your organization's coding patterns and preferences:
+Planned: Aura learns your organization's coding patterns and preferences:
 
 - **Naming conventions**: Understands your variable and function naming patterns
 - **Architecture patterns**: Recognizes your service structure and dependencies
@@ -147,7 +149,9 @@ Aura learns your organization's coding patterns and preferences:
 
 ## Confidence Scoring
 
-Every Aura decision includes a confidence score that quantifies uncertainty.
+Aura is designed to attach a confidence score to each decision.
+
+> **Implementation status.** The remediation workflow records one confidence value per approval request: the Reviewer's self-reflection confidence when reflection ran, otherwise a fixed prior of 0.8 (`DEFAULT_DECISION_CONFIDENCE`), labeled with its source. Confidence does not route work: every patch goes to human review regardless of score. The weighted multi-factor score, thresholds, and uncertainty intervals below are planned.
 
 ### Confidence Levels
 
@@ -160,7 +164,7 @@ Every Aura decision includes a confidence score that quantifies uncertainty.
 
 ### Confidence Factors
 
-Confidence is computed from multiple signals:
+Planned: confidence computed from multiple signals:
 
 ```python
 confidence_factors = {
@@ -180,7 +184,7 @@ final_confidence = weighted_average(confidence_factors, weights)
 
 ### Uncertainty Quantification
 
-Beyond a single confidence score, Aura provides uncertainty details:
+Planned: beyond a single confidence score, uncertainty details:
 
 ```json
 {
@@ -224,7 +228,7 @@ Aura is powerful, but not omniscient. Understanding its limitations helps you co
 
 ### Guardrails That Always Require Humans
 
-Regardless of autonomy settings, these operations always require human approval:
+Regardless of autonomy settings, these operations always require human approval when a policy is evaluated (the first two are hard-coded; the rest are in every default policy):
 
 - **Production deployments**: Changes to production systems
 - **Credential modifications**: API keys, secrets, passwords
@@ -236,7 +240,7 @@ Regardless of autonomy settings, these operations always require human approval:
 
 ## Recursive Context Scaling
 
-For large codebases that exceed LLM context windows, Aura uses Recursive Language Model (RLM) techniques to analyze code at scale.
+For large codebases that exceed LLM context windows, Aura includes Recursive Language Model (RLM) techniques to analyze code at scale. The RLM package (`src/services/rlm/`) is not yet called by the remediation agents.
 
 ### The Context Problem
 
@@ -276,7 +280,7 @@ This enables analysis of codebases with 10M+ tokens while maintaining context co
 
 ## Selective Decoding (JEPA)
 
-Not every task requires full text generation. Aura uses Joint Embedding Predictive Architecture (JEPA) for efficient task routing.
+Not every task requires full text generation. Aura includes a Joint Embedding Predictive Architecture (JEPA) package (`src/services/jepa/`) for efficient task routing; the remediation agents do not route through it yet, and the latencies below are design targets.
 
 ### Non-Generative Tasks (Fast Path)
 
@@ -299,7 +303,7 @@ Tasks that require text output:
 | Code explanation | ~1500ms | Full LLM decoding |
 | Fix suggestion | ~1800ms | Full LLM decoding |
 
-By routing simple tasks through the fast path, Aura achieves 2.85x efficiency improvement overall.
+The design target is a 2.85x efficiency improvement from routing simple tasks through the fast path; this has not been measured on Aura workloads.
 
 ---
 
@@ -307,11 +311,11 @@ By routing simple tasks through the fast path, Aura achieves 2.85x efficiency im
 
 > **Aura is autonomous, not automatic.** It makes intelligent decisions based on context, confidence, and policy, but humans remain in control of critical operations.
 
-> **Confidence scores guide intervention.** Low confidence triggers human review automatically, ensuring AI uncertainty is addressed by human judgment.
+> **Humans review every patch today.** Confidence-based routing is planned; until then, all patches go to human review.
 
-> **The system learns continuously.** Every remediation, approval, and rejection improves future performance for your organization.
+> **The system is designed to learn continuously.** Memory guidance reaches the agent prompts when a memory service is configured; learning from approvals and rejections is planned.
 
-> **Guardrails cannot be bypassed.** Critical operations always require human approval, regardless of autonomy settings.
+> **Guardrails cannot be bypassed.** Production deployment and credential changes always require human approval in policy evaluation, regardless of autonomy settings.
 
 ---
 

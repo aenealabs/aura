@@ -40,8 +40,8 @@ Features when Defense Mode is enabled:
 | MCP Gateway | Disabled |
 | External tools | Unavailable |
 | Air-gap deployment | Supported |
-| CMMC L3 compliant | Yes |
-| FedRAMP High compatible | Yes |
+| Suitable for CMMC L3 environments | Designed for (certification not yet pursued) |
+| FedRAMP High | Designed for (authorization not yet pursued) |
 
 ### Enterprise Mode
 
@@ -164,7 +164,7 @@ Available tools (when MCP is enabled):
 |--------|------|------------------|
 | 30 days | 30 | Below CMMC minimum |
 | 60 days | 60 | Below CMMC minimum |
-| **90 days** | 90 | CMMC L2 compliant |
+| **90 days** | 90 | Meets CMMC L2 retention guidance |
 | 180 days | 180 | Enhanced compliance |
 | **365 days** | 365 | GovCloud/FedRAMP |
 
@@ -370,17 +370,19 @@ Auto-approve minor patches: Enabled
 
 ## Configuration via API
 
+> The settings routes below exist. They apply the admin rate-limit tier but do not yet enforce authentication or an admin role check; restrict network access to the API accordingly. Request bodies use snake_case field names.
+
 ### Get Current Settings
 
 ```bash
-curl -X GET https://api.aenealabs.com/api/v1/settings \
+curl -X GET https://{your-aura-api-host}/api/v1/settings \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 ### Update Integration Mode
 
 ```bash
-curl -X PUT https://api.aenealabs.com/api/v1/settings/integration-mode \
+curl -X PUT https://{your-aura-api-host}/api/v1/settings/integration-mode \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"mode": "hybrid"}'
@@ -389,13 +391,13 @@ curl -X PUT https://api.aenealabs.com/api/v1/settings/integration-mode \
 ### Update HITL Settings
 
 ```bash
-curl -X PUT https://api.aenealabs.com/api/v1/settings/hitl \
+curl -X PUT https://{your-aura-api-host}/api/v1/settings/hitl \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "requireApprovalForPatches": true,
-    "approvalTimeoutHours": 48,
-    "minApprovers": 2
+    "require_approval_for_patches": true,
+    "approval_timeout_hours": 48,
+    "min_approvers": 2
   }'
 ```
 

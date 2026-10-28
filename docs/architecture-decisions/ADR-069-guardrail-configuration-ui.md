@@ -2,7 +2,15 @@
 
 ## Status
 
-Deployed
+In Progress (settings UI and API built; configuration held in process memory; not applied to enforcement)
+
+> **Status note (2026-10-26).** The UI (`frontend/src/components/guardrails/`,
+> `frontend/src/services/guardrailsApi.js`) calls the mounted router
+> `src/api/guardrails_endpoints.py`, which stores configuration in the
+> module-level `_current_config` dict and returns `random`-generated activity
+> metrics. The validation and compliance-profile package
+> `src/services/guardrail_config/` (tested, in-memory) is not imported by the
+> router or by any guardrail enforcement path. `audit_service.py` was not built.
 
 ## Date
 

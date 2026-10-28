@@ -332,6 +332,8 @@ python scripts/aura_security_cli.py quick
 
 ### Accessing Security Alerts
 
+`get_alerts_service()` returns a per-process, in-memory instance, so a new Python session sees only alerts raised in that session. The dashboard Alerts panel is served by `src/api/security_alerts_endpoints.py`, which keeps a separate in-memory store that is seeded with demo alerts unless `AURA_SEED_MOCK_ALERTS=false`; check for demo alerts before acting on panel data. Durable alert history is planned.
+
 ```python
 from src.services.security_alerts_service import get_alerts_service, AlertStatus
 

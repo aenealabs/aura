@@ -1,14 +1,14 @@
 # Security Architecture
 
 **Version:** 1.0
-**Last Updated:** January 2026
+**Last Updated:** October 2026
 **Product:** Project Aura by Aenea Labs
 
 ---
 
 ## Overview
 
-This document describes Project Aura's security architecture, including network isolation, encryption, access control, and compliance controls. The architecture is designed for regulated industries requiring CMMC Level 3, SOX, and FedRAMP compliance.
+This document describes Project Aura's security architecture, including network isolation, encryption, access control, and compliance controls. The architecture is designed to support controls aligned with CMMC Level 3, SOX, and FedRAMP requirements for regulated industries. Aura is not certified or authorized under CMMC or FedRAMP; those certifications are planned, and no filing has been submitted.
 
 ---
 
@@ -230,7 +230,9 @@ Project Aura implements RBAC at two levels: **Agent Capability Governance** for 
 
 ### Agent Capability Governance (ADR-066)
 
-AI agents operate under strict capability policies that enforce the principle of least privilege. Each agent type has an explicit allowlist of tools it can invoke.
+AI agents are designed to operate under strict capability policies that enforce the principle of least privilege. Each agent type has an explicit allowlist of tools it can invoke.
+
+> **Status (October 2026):** The capability-governance package is implemented and tested, but no agent or MCP tool path calls `CapabilityEnforcementMiddleware` yet, so these policies are not enforced at runtime today. The guarantees below describe the middleware's behavior once it is wired.
 
 #### Tool Classification Tiers
 
@@ -506,7 +508,7 @@ Referrer-Policy: strict-origin-when-cross-origin
 
 | Threat | Control | Implementation |
 |--------|---------|----------------|
-| Prompt injection | Input sanitization | LLM prompt sanitizer |
+| Prompt injection | Input sanitization | LLM prompt sanitizer on every Bedrock call; A2AS assessment at orchestrator entry |
 | Data exfiltration | Output filtering | Guardrails |
 | Model abuse | Rate limiting | Per-user token limits |
 | Jailbreak attempts | Content filtering | Bedrock Guardrails |
@@ -626,7 +628,7 @@ TopicPolicyConfig:
 
 ## Compliance Controls
 
-### CMMC Level 3 Mapping
+### CMMC Level 3 Control Alignment (not certified)
 
 | Domain | Control | Implementation |
 |--------|---------|----------------|
@@ -638,7 +640,7 @@ TopicPolicyConfig:
 | MA | Maintenance | Patch management |
 | MP | Media Protection | S3 encryption, versioning |
 | PE | Physical | AWS data centers |
-| PS | Personnel | SOC 2 attestation |
+| PS | Personnel | Planned (no SOC 2 attestation exists) |
 | RA | Risk Assessment | Security assessments |
 | SC | System/Comms | Network isolation, TLS |
 | SI | System/Info | Vulnerability management |

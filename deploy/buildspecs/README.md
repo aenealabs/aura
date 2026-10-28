@@ -108,7 +108,7 @@ validate_eks_cluster CLUSTER_NAME
 
 ## Guidelines
 
-1. **Max 600 lines** - Keep buildspec files under 600 lines
+1. **Runtime budget** - Keep each parent layer within its runtime budget (the former 600-line cap is retired; see `CLAUDE.md` in this directory)
 2. **Use helper functions** - Prefer `cfn_deploy_stack` over verbose create/update logic
 3. **Validate dependencies** - Check required stacks exist before deploying
 4. **Use deploy instead of create/update** - `aws cloudformation deploy --no-fail-on-empty-changeset`

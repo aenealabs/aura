@@ -169,7 +169,7 @@ These steps MUST be completed before any CloudFormation deployment.
 
 ```bash
 # Only required once in the Management Account (DEV)
-export AWS_PROFILE=aura-admin
+export AWS_PROFILE=aura-breakglass   # organization-level, one-time (AuraBreakGlass)
 aws organizations create-organization --feature-set ALL
 
 # Note the Organization ID
@@ -194,15 +194,15 @@ aws organizations list-create-account-status \
 #### 0.3 Configure SSO Access to New Account
 
 1. Navigate to IAM Identity Center in AWS Console
-2. Assign AdministratorAccess permission set to new account
+2. Assign the `AuraDeployer`, `AuraReadOnly` and `AuraBreakGlass` permission sets by adding the account to `deploy/cloudformation/identity-center-permission-sets.yaml` (AURA-CTL-005)
 3. Configure AWS CLI profile:
 
 ```bash
 # Add to ~/.aws/config
-[profile aura-admin]
+[profile aura-breakglass]
 sso_session = aenealabs
 sso_account_id = 234567890123
-sso_role_name = AdministratorAccess
+sso_role_name = AuraBreakGlass   # one-time account bootstrap; use AuraDeployer for deploys
 region = us-east-1
 output = json
 ```
@@ -223,13 +223,13 @@ CodeConnections require manual OAuth authorization and cannot be created via Clo
 Deploy the account bootstrap stack FIRST. This creates foundational resources required by all other stacks.
 
 ```bash
-# Switch to target account
-export AWS_PROFILE=aura-admin
+# Switch to target account (one-time bootstrap uses break-glass)
+export AWS_PROFILE=aura-breakglass
 aws sts get-caller-identity  # Verify account
 
-# Get SSO admin role ARN
+# EKS cluster-admin principal: the AuraBreakGlass SSO role
 ADMIN_ROLE_ARN=$(aws iam list-roles \
-  --query "Roles[?contains(RoleName, 'AdministratorAccess')].Arn" \
+  --query "Roles[?contains(RoleName, 'AuraBreakGlass')].Arn" \
   --output text | head -1)
 
 # Deploy account-bootstrap.yaml
@@ -265,7 +265,7 @@ Only deploy this in the Management Account to set up SCPs.
 
 ```bash
 # Switch to Management Account
-export AWS_PROFILE=aura-admin
+export AWS_PROFILE=aura-breakglass   # organization-level, one-time (AuraBreakGlass)
 
 # Get Organization and Root IDs
 ORG_ID=$(aws organizations describe-organization --query 'Organization.Id' --output text)
@@ -295,8 +295,8 @@ aws cloudformation deploy \
 The Bootstrap Layer solves the chicken-and-egg problem by deploying ALL 18 CodeBuild projects in one automated step. This is the **recommended approach** for fresh account deployments.
 
 ```bash
-# Switch to target account
-export AWS_PROFILE=aura-admin
+# Switch to target account (one-time bootstrap uses break-glass)
+export AWS_PROFILE=aura-breakglass
 
 # Store CodeConnections ARN in global SSM parameter first
 aws ssm put-parameter \

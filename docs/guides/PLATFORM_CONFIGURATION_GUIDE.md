@@ -24,6 +24,23 @@
 14. [Troubleshooting](#troubleshooting)
 15. [Glossary](#glossary)
 
+### Implementation Status by Section
+
+Several Settings screens render before their backend exists. Where a backend route is missing, the console falls back to built-in demo or default data, so the screen looks functional but changes are not saved on the server.
+
+| Section | Backend | Status |
+|---------|---------|--------|
+| Integration Mode | `GET/PUT /api/v1/settings/integration-mode` (settings persistence service, DynamoDB) | Implemented; the route does not yet enforce authentication |
+| Agent Registry | Page renders a built-in demo agent list; start/stop/pause/restart/config actions call `/api/v1/agents/{id}/...` routes that do not exist. The mounted `/api/v1/agents` registry router returns a static internal-agent list and simulated connection tests | Demo data |
+| Autonomy Policies | Autonomy router is written but not mounted; the console falls back to a default policy on `404` | Demo data (Planned) |
+| Orchestrator Mode | `/api/v1/orchestrator/settings` (in-memory unless `USE_AWS_DYNAMODB` is set) | Implemented (in-memory by default) |
+| Agent Configuration | `/api/v1/agents/{id}/config/*` routes do not exist | Planned |
+| Environment Administration | `/api/v1/environments` user routes exist; `/api/v1/environments/admin/*` (templates, quotas, defaults, cleanup) do not | Partial |
+| Notification Settings | Channels, preferences, and quiet hours are read from the dev-mock router; create, update, and test routes do not exist | Demo data |
+| Sandbox Isolation | `/api/v1/environments/{id}/isolation` does not exist | Planned |
+| Rate Limiting Settings | Limits are fixed in code (`src/services/api_rate_limiter.py`); the settings screen does not save to an API | Planned |
+| Security Alert Configuration | `/api/v1/alerts` routes exist; demo alerts are seeded by default (`AURA_SEED_MOCK_ALERTS`) | Implemented with seeded demo data |
+
 ---
 
 ## Getting Started
@@ -125,8 +142,8 @@ Defense Mode prioritizes security over convenience. External network access is b
 | MCP Gateway | Disabled |
 | External tools (Slack, Jira) | Unavailable |
 | Air-gap deployment | Fully supported |
-| CMMC Level 3 compliant | Yes |
-| FedRAMP High compatible | Yes |
+| Suitable for CMMC Level 3 environments | Designed for (certification not yet pursued) |
+| FedRAMP High | Designed for (authorization not yet pursued) |
 
 **When to Choose Defense Mode:**
 
@@ -953,6 +970,8 @@ View which endpoints belong to each rate limit category:
 
 1. Click **View Endpoint Groups** in the rate limits panel
 2. Expand each category to see included endpoints
+
+> The categories in this table are the planned configurable model. The rate limiter in use today assigns each route one of the fixed tiers `public` (100/min), `standard` (60/min), `sensitive` (10/min), `admin` (5/min), `critical` (2/min), or `webhook` (200/min).
 
 | Category | Example Endpoints |
 |----------|-------------------|

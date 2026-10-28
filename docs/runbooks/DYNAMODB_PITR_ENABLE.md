@@ -44,7 +44,7 @@ The following resource(s) failed to update: [Table1, Table2, ...]
 Check the current PITR status for each table:
 
 ```bash
-export AWS_PROFILE=aura-admin
+export AWS_PROFILE=aura-breakglass-dev
 export AWS_REGION=us-east-1
 
 # Check single table
@@ -77,7 +77,7 @@ aura-user-sessions-dev: DISABLED
 Run the following script to enable PITR:
 
 ```bash
-export AWS_PROFILE=aura-admin
+export AWS_PROFILE=aura-breakglass-dev
 export AWS_REGION=us-east-1
 
 TABLES=(

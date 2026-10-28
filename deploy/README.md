@@ -1,5 +1,7 @@
 # Aura Infrastructure Deployment
 
+> **Accuracy note (October 2026):** This document describes the original nested-stack design. The repository no longer contains `deploy/cloudformation/master-stack.yaml`, `deploy/cloudformation/codebuild.yaml`, `deploy/cloudformation/neptune.yaml` (now `neptune-simplified.yaml`) or `deploy/buildspec-modular.yml`, and `deploy/deploy.sh` supports only `deploy <env>`, `redeploy <env>`, `status <env>`, `destroy <env>` and `validate` (no `init`, `outputs`, `--email` or `--delete`). Infrastructure is deployed by per-layer CodeBuild projects (`deploy/cloudformation/codebuild-*.yaml`, `deploy/buildspecs/buildspec-*.yml`) driven by the deployment-pipeline state machine. The canonical, current procedure is `docs/deployment/DEPLOYMENT_GUIDE.md`; treat the commands and file lists below as historical.
+
 This directory contains all Infrastructure as Code (IaC) for deploying Project Aura to AWS.
 
 ## 🚀 New: Modular CI/CD Pipeline

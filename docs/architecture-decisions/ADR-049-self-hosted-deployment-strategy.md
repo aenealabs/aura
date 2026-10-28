@@ -1,10 +1,20 @@
 # ADR-049: Self-Hosted Deployment Strategy
 
-**Status:** Deployed (All Phases Complete)
+**Status:** Deployed (Phases 0-4 largely built; see status note for missing items)
 **Date:** 2025-12-31
 **Decision Makers:** Project Aura Platform Team
 **Related:** ADR-004 (Cloud Abstraction Layer), ADR-036 (Multi-Platform Container Builds)
 
+> **Status note (2026-10-26) -- three checklist items not found.** The
+> self-hosted adapters (`src/services/providers/self_hosted/`, selected in
+> `src/services/providers/factory.py`), Ed25519 licensing
+> (`src/services/licensing/license_service.py`), migration toolkit, Helm chart
+> (`deploy/helm/aura/`), NetworkPolicies, air-gap bundle script and native
+> installers exist with tests. Not found: the Podman Compose file
+> (`deploy/self-hosted/podman-compose.yml`), backup/restore tooling, and a
+> bundled Keycloak (a generic SAML provider exists in
+> `src/services/identity/providers/saml_provider.py`).
+>
 > **Implementation Details:** See [ADR-049-IMPLEMENTATION-DETAILS.md](../self-hosted/ADR-049-IMPLEMENTATION-DETAILS.md) for technical specifications, expert reviews, and appendices.
 
 ---

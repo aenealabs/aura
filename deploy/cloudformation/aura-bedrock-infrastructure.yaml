@@ -142,6 +142,7 @@ Resources:
   AuraServiceRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/aura-workload-boundary-${Environment}'
       # Naming: aura-role-{env}-bedrock-service
       RoleName:
         Fn::Sub:

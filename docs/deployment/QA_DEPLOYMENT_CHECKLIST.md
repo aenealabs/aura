@@ -21,7 +21,7 @@
 ### AWS Account Setup
 
 - [ ] QA AWS account created and configured
-- [ ] IAM roles for deployment created (AdministratorAccess or equivalent)
+- [ ] IAM Identity Center permission sets assigned for QA: `AuraDeployer` (deploys) and `AuraBreakGlass` (one-time setup, teardown) (`identity-center-permission-sets.yaml`, AURA-CTL-005)
 - [ ] AWS CLI configured with QA account credentials
 - [ ] Verify correct account: `aws sts get-caller-identity`
 
@@ -70,7 +70,7 @@ aws cloudformation deploy \
   --stack-name aura-account-bootstrap-qa \
   --parameter-overrides \
     Environment=qa \
-    AdminRoleArn=arn:aws:iam::QA_ACCOUNT_ID:role/AWSAdministratorAccess \
+    AdminRoleArn=arn:aws:iam::QA_ACCOUNT_ID:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AuraBreakGlass_XXXXXXXX \
     AlertEmail=alerts-qa@aenealabs.com \
     CodeConnectionsArn=arn:aws:codeconnections:us-east-1:QA_ACCOUNT_ID:connection/xxx \
   --capabilities CAPABILITY_NAMED_IAM \

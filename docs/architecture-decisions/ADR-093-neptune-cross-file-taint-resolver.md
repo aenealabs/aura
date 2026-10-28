@@ -2,7 +2,9 @@
 
 ## Status
 
-**Accepted (v2)** | May 13, 2026 — Phase 0 complete; Phase 1 unblocked. Phases 6–7 Deferred (Cost Gate).
+**Accepted (v2)** | May 13, 2026 — Phases 0–5 implemented (library, offline); not integrated -- no composition root; Phases 6–7 Deferred (Cost Gate).
+
+> **Status note (2026-10-26).** The phase tracker below understates progress: Phases 1-5 landed in commits `ca39a6f`, `5c8926b`, `d86de8e`, `096c0ea` and `5e40a8b` (`src/services/vulnerability_scanner/parsing/taint_context_factory.py`, `neptune_taint_repository.py`, `neptune_taint_aws_deps.py`, `tenant_scoped_gremlin_client.py`; `scripts/disable_neptune_taint_resolver.py`, `revoke_summary_signatures.py`, `adr_093_taint_{schema,query}_static_scan.py`; `deploy/cloudformation/taint-resolver-iam.yaml`; `docs/runbooks/NEPTUNE_TAINT_RESOLVER_RUNBOOK.md`). The related test files run 132 passed and 14 skipped (TinkerGraph-dependent) on 2026-10-26. No composition root injects the boto3-backed deps into `build_taint_context`, so the default flag reader keeps scans on the in-memory path, and the scanner itself has no deployed entrypoint (see ADR-084).
 
 ### Revision history
 
@@ -12,7 +14,7 @@
   - Added §Network architecture (VPC endpoints for KMS / S3 / DynamoDB; SG rules; partition-templated ARNs for GovCloud/FIPS).
   - Added §Audit trail durability (S3 Object-Lock WORM destination with tier-parameterized retention; CloudWatch Logs alone is insufficient for AU-11).
   - Added §Key lifecycle (annual KMS asymmetric-key rotation; old keys retained `Disabled` for historical verification; compromised-signer revocation runbook + DynamoDB `summary_revocations` table consulted on every read).
-  - Expanded NIST control mapping to FedRAMP-Moderate-complete (added AC-3(7), AC-6(9), SC-7(21), SC-12, SC-28, SI-7(1), SI-7(6), AU-2, AU-11).
+  - Expanded NIST control mapping to cover the FedRAMP Moderate baseline controls in scope (mapping only; no FedRAMP filing submitted) (added AC-3(7), AC-6(9), SC-7(21), SC-12, SC-28, SI-7(1), SI-7(6), AU-2, AU-11).
   - Expanded threat model: T1212 (KMS key protection), T1136 (TenantScopedGremlinClient bypass via string-mode Gremlin and `.E()` entries), T1499.004 (per-tenant write-rate quota), T1556 (HITL-bypass via raised confidence — HITL gate re-verifies signature), T1565.002 (transport-bound signature payload binding session nonce + commit_sha + scan_id).
   - Hardened TenantScopedGremlinClient: reject string-mode Gremlin entirely; require tenant predicate on `.E()` entries; per-tenant write-rate quota for T1499.004.
   - T1 commercial SaaS now uses a per-tenant data-key envelope-encrypted by a shared KMS CMK for SC-28; T2/T3 break-glass approval required for Aura admin `kms:Decrypt` on tenant CMKs.
@@ -26,11 +28,11 @@
 | Phase | Description | State | Blocker | Re-engage when |
 |---|---|---|---|---|
 | **0 — ADR + three-agent review** | This document; Tara / Sally / Jake review captured in §Three-agent review | ✅ **Done** (v2, May 13, 2026) | — | — |
-| **1 — Test substrate** | TinkerGraph session-JVM + function-graph fixture, equivalence harness (12 fixtures × {in-memory, Neptune} backends), fault-injection harness, static schema scan script | Planned | Phase 0 v2 accepted | Owner accepts v2 |
-| **2 — Resolver (read path)** | `TaintContext` Protocol, `InMemoryTaintContext` (renamed), `NeptuneBackedTaintContext` (composes InMemory for preload cache), `TenantScopedGremlinClient` (bytecode-only, reject string-mode), `build_taint_context` factory, lazy Gremlin lookup with whole-scan fail-safe | Planned | Phase 1 complete; §Key lifecycle (Sally C-2) and write-fence KMS scoping (Sally C-4) finalized | Phase 1 green |
-| **3 — Writer (GraphBuildStage)** | Batched vertex+edge upserts (bytecode/bindings, no string concat), KMS-signed summaries with transport-bound payload, monotonic `summary_version`, DynamoDB write-fence under per-tenant KMS CMK, per-tenant write-rate quota, S3 Object-Lock audit export | Planned | Phase 2 complete; rescan-equivalence test in Phase 1 harness validates write→read round-trip | Phase 2 green |
-| **4 — Kill-switch + observability + runbook** | `scripts/disable_neptune_taint_resolver.py`, CloudWatch namespace `Aura/Scanner/TaintResolver` with 5 named alarms, IAM permission boundary on writer role, `scripts/revoke_summary_signatures.py`, `docs/runbooks/NEPTUNE_TAINT_RESOLVER_RUNBOOK.md` | Planned | Phase 3 complete | Phase 3 green |
-| **5 — Offline static-scan substitute** | `scripts/adr_093_taint_schema_static_scan.py` (ADR-092 pattern) + `scripts/adr_093_taint_query_static_scan.py` (CI AST gate enforcing tenant predicate + ARN-walk for `arn:${AWS::Partition}`) | Planned | Phase 3 complete | Phase 3 green |
+| **1 — Test substrate** | TinkerGraph session-JVM + function-graph fixture, equivalence harness (12 fixtures × {in-memory, Neptune} backends), fault-injection harness, static schema scan script | ✅ **Done (offline)** | Phase 0 v2 accepted | Owner accepts v2 |
+| **2 — Resolver (read path)** | `TaintContext` Protocol, `InMemoryTaintContext` (renamed), `NeptuneBackedTaintContext` (composes InMemory for preload cache), `TenantScopedGremlinClient` (bytecode-only, reject string-mode), `build_taint_context` factory, lazy Gremlin lookup with whole-scan fail-safe | ✅ **Done (offline)** | Phase 1 complete; §Key lifecycle (Sally C-2) and write-fence KMS scoping (Sally C-4) finalized | Phase 1 green |
+| **3 — Writer (GraphBuildStage)** | Batched vertex+edge upserts (bytecode/bindings, no string concat), KMS-signed summaries with transport-bound payload, monotonic `summary_version`, DynamoDB write-fence under per-tenant KMS CMK, per-tenant write-rate quota, S3 Object-Lock audit export | ✅ **Done (offline)** | Phase 2 complete; rescan-equivalence test in Phase 1 harness validates write→read round-trip | Phase 2 green |
+| **4 — Kill-switch + observability + runbook** | `scripts/disable_neptune_taint_resolver.py`, CloudWatch namespace `Aura/Scanner/TaintResolver` with 5 named alarms, IAM permission boundary on writer role, `scripts/revoke_summary_signatures.py`, `docs/runbooks/NEPTUNE_TAINT_RESOLVER_RUNBOOK.md` | ✅ **Done (offline)** | Phase 3 complete | Phase 3 green |
+| **5 — Offline static-scan substitute** | `scripts/adr_093_taint_schema_static_scan.py` (ADR-092 pattern) + `scripts/adr_093_taint_query_static_scan.py` (CI AST gate enforcing tenant predicate + ARN-walk for `arn:${AWS::Partition}`) | ✅ **Done (offline)** | Phase 3 complete | Phase 3 green |
 | **6 — Live validation** | First-prod-scan against single test tenant with feature flag on, kill-switch hot-standby, all 5 alarms armed | **Deferred (Cost Gate)** | Requires live AWS Neptune cluster | Live-AWS budget restored AND Phases 1–5 green |
 | **7 — GA enablement** | Flip feature flag default on for enterprise tenants, tiered (T1 first; T2 after observation window; T3 after GovCloud parity validation) | **Deferred (Cost Gate)** | Phase 6 green | After Phase 6 validates |
 

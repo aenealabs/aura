@@ -119,7 +119,7 @@
     <div class="header-meta">
       <span>Project Aura &mdash; Aenea Labs</span>
       <span>Version 1.0</span>
-      <span>Last Updated: February 2026</span>
+      <span>Last Updated: October 2026</span>
     </div>
   </div>
 </header>
@@ -166,8 +166,14 @@
       <p class="intro">
         HITL in Aura is not a single service &mdash; it is a cross-cutting concern woven through
         autonomy policies, capability governance, sandbox testing, Constitutional AI, and real-time
-        intervention. The diagram below shows how a patch moves from detection to production with
-        every human checkpoint marked.
+        intervention. The diagram below shows the target design for how a patch moves from detection
+        to production with every human checkpoint marked. Implementation status (October 2026): the
+        job server creates a manual approval request for every patch that passes review and validation,
+        without consulting an autonomy policy (the autonomy API router is not mounted and
+        <code>create_or_auto_approve</code> has no production caller). The sandbox step runs before the
+        approval request, not after, and is skipped unless <code>SANDBOX_ENABLED=true</code>; when enabled
+        the patched code is not yet passed into the task. Approval records the decision and notifies; the
+        deployment and post-deploy verification stages are planned.
       </p>
       <div class="diagram">
         <div class="dt">End-to-End HITL Flow</div>
@@ -308,7 +314,10 @@
       <p class="intro">
         Organizations select from 7 industry-tailored presets that map to 4 autonomy levels.
         A master HITL toggle and 5 non-bypassable guardrails provide safety rails even in
-        fully-autonomous mode. Target: 85% autonomous operation for commercial enterprises.
+        fully-autonomous mode. Target: 85% autonomous operation for commercial enterprises. The policy
+        service is implemented as a library and tested, but is not yet invoked by the running service.
+        Only <code>production_deployment</code> and <code>credential_modification</code> are hard-coded
+        (immutable); the other three guardrails are in every default policy and a custom policy can omit them.
       </p>
 
       <h3 style="font-size:15px;margin-bottom:12px;color:var(--slate-800)">4 Autonomy Levels</h3>
@@ -368,7 +377,9 @@
       <div class="sh"><div class="si si-red">&#x23F8;</div><h2>4. Real-Time Agent Intervention (ADR-042)</h2></div>
       <p class="intro">
         Execution checkpoints pause agents mid-action for human approval via WebSocket streaming.
-        Trust rules enable auto-approval for frequently-approved action patterns.
+        Trust rules enable auto-approval for frequently-approved action patterns. Status: the service
+        is implemented as a library; its API router (<code>src/api/checkpoint_endpoints.py</code>) is not
+        mounted, the service is never initialized, and no agent creates checkpoints yet.
       </p>
       <div class="cg">
         <div class="c c-accent">
@@ -517,8 +528,11 @@ Middleware: Grant found → ALLOW</pre>
     <section class="section" id="sec-sandbox">
       <div class="sh"><div class="si si-teal">&#x1F9EA;</div><h2>6. Sandbox Approval Workflow (ADR-005)</h2></div>
       <p class="intro">
-        The 7-stage remediation workflow provisions isolated ECS Fargate environments,
-        runs comprehensive test suites, and gates production deployment behind human approval.
+        The 7-stage remediation workflow is designed to provision isolated ECS Fargate environments,
+        run comprehensive test suites, and gate production deployment behind human approval. Status:
+        stages 1, 4, and 5 run today (approve or reject; modify is planned); stages 2 and 3 are partial
+        (see the overview note); stages 6 and 7 are planned. The Step Functions state machine is
+        defined as IaC but no application code starts it.
       </p>
       <div class="tw">
         <table>
@@ -536,8 +550,9 @@ Middleware: Grant found → ALLOW</pre>
       </div>
       <div class="callout cb">
         <strong>What the Reviewer Sees</strong>
-        Original vulnerable code, AI-generated patch diff, sandbox test results (pass/fail counts),
-        SAST/SCA security scan results, deployment plan with blast radius estimate, and any
+        Today: the patch diff against the original file, the sandbox status (PASSED, FAILED, or
+        SKIPPED, with test counts when reported), severity, decision confidence and its source, and the
+        original prompt. Planned: SAST/SCA scan results, deployment plan with blast radius estimate, and
         Constitutional AI critique findings.
       </div>
     </section>
@@ -549,7 +564,8 @@ Middleware: Grant found → ALLOW</pre>
       <div class="sh"><div class="si si-rose">&#x2696;</div><h2>7. Constitutional AI Escalation (ADR-063)</h2></div>
       <p class="intro">
         The critique pipeline evaluates agent outputs against 16 constitutional principles.
-        MAJOR and CRITICAL severity critiques automatically escalate to HITL.
+        MAJOR and CRITICAL severity critiques are designed to escalate to HITL. The remediation agents
+        do not yet route their outputs through the critique pipeline.
       </p>
       <div class="tw">
         <table>
@@ -633,7 +649,7 @@ Middleware: Grant found → ALLOW</pre>
           </tbody>
         </table>
       </div>
-      <h3 style="font-size:14px;margin:16px 0 10px">Autonomy Endpoints <span style="font-weight:400;color:var(--slate-500)">&mdash; /api/v1/autonomy</span></h3>
+      <h3 style="font-size:14px;margin:16px 0 10px">Autonomy Endpoints <span style="font-weight:400;color:var(--slate-500)">&mdash; /api/v1/autonomy (defined in <code>src/api/autonomy_endpoints.py</code>; router not yet mounted)</span></h3>
       <div class="tw">
         <table>
           <thead><tr><th>Method</th><th>Path</th><th>Role</th><th>Rate Limit</th><th>Purpose</th></tr></thead>
@@ -663,8 +679,9 @@ Middleware: Grant found → ALLOW</pre>
           <div class="cp">frontend/src/components/ApprovalDashboard.jsx</div>
           <p>
             Full-featured approval UI: list/detail views, code diff viewer (vulnerable vs. patched),
-            sandbox test results display, approve/reject actions with reason entry, and real-time
-            WebSocket updates.
+            sandbox status display, and approve/reject actions with comment entry. Request-changes
+            (no backend endpoint yet) and real-time updates are planned; the page shows demo data
+            when the API is unreachable.
           </p>
         </div>
         <div class="c">
@@ -708,8 +725,9 @@ Middleware: Grant found → ALLOW</pre>
     <section class="section" id="sec-audit">
       <div class="sh"><div class="si si-indigo">&#x1F4DD;</div><h2>11. Audit &amp; Compliance</h2></div>
       <p class="intro">
-        Every HITL decision produces an immutable audit record covering who, when, what, why,
-        and result. Three DynamoDB tables with retention policies aligned to SOX, HIPAA, and PCI-DSS.
+        Every HITL decision produces an audit record covering who, when, what, why, and result,
+        built from the decided approval record (90-day TTL). Immutable records, the policy-context
+        fields, and retention aligned to SOX, HIPAA, and PCI-DSS are planned.
       </p>
       <div class="cg">
         <div class="c" style="grid-column:1/-1">
@@ -723,7 +741,7 @@ Middleware: Grant found → ALLOW</pre>
                 <tr><td><strong>What</strong></td><td>Request identifiers</td><td><code>approval_id, patch_id, vulnerability_id</code></td></tr>
                 <tr><td><strong>Why</strong></td><td>Decision rationale</td><td><code>decision_reason: "Patch verified safe"</code></td></tr>
                 <tr><td><strong>Result</strong></td><td>Outcome + test data</td><td><code>status: APPROVED, sandbox_results: {passed: 10}</code></td></tr>
-                <tr><td><strong>Context</strong></td><td>Policy context</td><td><code>severity, operation, autonomy_level, guardrail_triggered</code></td></tr>
+                <tr><td><strong>Context</strong></td><td>Policy context</td><td><code>severity</code> (planned: <code>operation, autonomy_level, guardrail_triggered</code>)</td></tr>
               </tbody>
             </table>
           </div>
@@ -741,16 +759,16 @@ Middleware: Grant found → ALLOW</pre>
           <thead><tr><th>Component</th><th>Service</th><th>ADR</th><th>Status</th><th>Purpose</th></tr></thead>
           <tbody>
             <tr><td>Approval Service</td><td><code>HITLApprovalService</code></td><td>&mdash;</td><td>Deployed</td><td>Core approval lifecycle</td></tr>
-            <tr><td>Autonomy Framework</td><td><code>AutonomyPolicyService</code></td><td>032</td><td>Deployed</td><td>7 presets, 4 levels, 5 guardrails</td></tr>
-            <tr><td>Execution Checkpoints</td><td><code>ExecutionCheckpointService</code></td><td>042</td><td>Phase 1</td><td>Real-time agent pausing</td></tr>
+            <tr><td>Autonomy Framework</td><td><code>AutonomyPolicyService</code></td><td>032</td><td>Partial (library; not applied to the pipeline)</td><td>7 presets, 4 levels, 5 guardrails</td></tr>
+            <tr><td>Execution Checkpoints</td><td><code>ExecutionCheckpointService</code></td><td>042</td><td>Phase 1 (library; router not mounted)</td><td>Real-time agent pausing</td></tr>
             <tr><td>Dynamic Grants</td><td><code>DynamicGrantManager</code></td><td>066</td><td>Deployed</td><td>HITL-approved capability elevation</td></tr>
-            <tr><td>Sandbox Workflow</td><td>Step Functions state machine</td><td>005</td><td>Deployed</td><td>7-stage patch approval</td></tr>
-            <tr><td>Constitutional Escalation</td><td><code>CritiqueService</code></td><td>063</td><td>Deployed</td><td>MAJOR/CRITICAL &rarr; HITL</td></tr>
-            <tr><td>Approval Callbacks</td><td>Lambda handler</td><td>&mdash;</td><td>Deployed</td><td>Step Functions task tokens</td></tr>
+            <tr><td>Sandbox Workflow</td><td>Step Functions state machine</td><td>005</td><td>IaC deployed; not started by the application</td><td>7-stage patch approval</td></tr>
+            <tr><td>Constitutional Escalation</td><td><code>CritiqueService</code></td><td>063</td><td>Partial (not wired to remediation agents)</td><td>MAJOR/CRITICAL &rarr; HITL</td></tr>
+            <tr><td>Approval Callbacks</td><td>Lambda handler</td><td>&mdash;</td><td>Deployed (idle until the state machine is started)</td><td>Step Functions task tokens</td></tr>
             <tr><td>Expiration Scheduler</td><td>CloudWatch Events</td><td>&mdash;</td><td>Deployed</td><td>Timeout &amp; escalation</td></tr>
             <tr><td>WebSocket Streaming</td><td>API Gateway WebSocket</td><td>&mdash;</td><td>Deployed</td><td>Real-time checkpoint UI</td></tr>
             <tr><td>Approval Dashboard</td><td>React component</td><td>&mdash;</td><td>Deployed</td><td>Human approval interface</td></tr>
-            <tr><td>Autonomy API</td><td>FastAPI endpoints</td><td>&mdash;</td><td>Deployed</td><td>Policy management (12 endpoints)</td></tr>
+            <tr><td>Autonomy API</td><td>FastAPI endpoints</td><td>&mdash;</td><td>Not mounted</td><td>Policy management (12 endpoints defined)</td></tr>
             <tr><td>Notification Service</td><td>SNS / SES / Slack</td><td>&mdash;</td><td>Deployed</td><td>Multi-channel alerts</td></tr>
           </tbody>
         </table>

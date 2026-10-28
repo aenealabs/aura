@@ -60,12 +60,12 @@ Aura requires network connectivity to your source control provider:
 
 | Provider | Endpoints | Authentication |
 |----------|-----------|----------------|
-| **GitHub Cloud** | `github.com`, `api.github.com` | OAuth App or GitHub App |
-| **GitHub Enterprise** | Your GHE URL | OAuth App |
-| **GitLab SaaS** | `gitlab.com` | OAuth |
-| **GitLab Self-Managed** | Your GitLab URL | OAuth or Personal Access Token |
-| **Bitbucket Cloud** | `bitbucket.org` | OAuth |
-| **Azure DevOps** | `dev.azure.com` | OAuth |
+| **GitHub Cloud** | `github.com`, `api.github.com` | OAuth App or personal access token |
+| **GitHub Enterprise** (planned) | Your GHE URL | OAuth App |
+| **GitLab SaaS** | `gitlab.com` | OAuth or personal access token |
+| **GitLab Self-Managed** (planned) | Your GitLab URL | OAuth or Personal Access Token |
+| **Bitbucket Cloud** (planned) | `bitbucket.org` | OAuth |
+| **Azure DevOps** (planned) | `dev.azure.com` | OAuth |
 
 ---
 
@@ -248,7 +248,7 @@ Podman is preferred for:
 
 ### Database Requirements (Self-Hosted)
 
-For Podman deployments, you can use containerized or external databases:
+For Podman deployments (planned packaging; see [Installation](./installation.md#self-hosted-podman-deployment)), the self-hosted provider adapters target containerized or external databases:
 
 **Option 1: Containerized (Development/Small Teams)**
 
@@ -274,14 +274,14 @@ For Podman deployments, you can use containerized or external databases:
 
 | Platform | Version | Features |
 |----------|---------|----------|
-| **GitHub Cloud** | Current | Full support |
-| **GitHub Enterprise Server** | 3.8+ | Full support |
-| **GitLab SaaS** | Current | Full support |
-| **GitLab Self-Managed** | 15.0+ | Full support |
-| **Bitbucket Cloud** | Current | Full support |
-| **Bitbucket Data Center** | 8.0+ | Full support |
-| **Azure DevOps Services** | Current | Full support |
-| **Azure DevOps Server** | 2022+ | Full support |
+| **GitHub Cloud** | Current | Supported (OAuth onboarding, push webhook) |
+| **GitHub Enterprise Server** | 3.8+ | Planned |
+| **GitLab SaaS** | Current | Supported (OAuth onboarding) |
+| **GitLab Self-Managed** | 15.0+ | Planned |
+| **Bitbucket Cloud** | Current | Planned |
+| **Bitbucket Data Center** | 8.0+ | Planned |
+| **Azure DevOps Services** | Current | Planned for onboarding (a connector module exists) |
+| **Azure DevOps Server** | 2022+ | Planned |
 
 ### Required Permissions
 
@@ -290,8 +290,9 @@ For Podman deployments, you can use containerized or external databases:
 | Scope | Purpose |
 |-------|---------|
 | `repo` | Repository read/write access |
-| `read:org` | Organization membership |
-| `workflow` | CI/CD trigger (optional) |
+| `admin:repo_hook` | Create the push webhook |
+
+These are the scopes requested by `src/services/oauth_provider_service.py`.
 
 **GitLab:**
 
@@ -299,9 +300,8 @@ For Podman deployments, you can use containerized or external databases:
 |-------|---------|
 | `api` | Full API access |
 | `read_repository` | Clone repositories |
-| `write_repository` | Push patches |
 
-**Bitbucket:**
+**Bitbucket (planned):**
 
 | Scope | Purpose |
 |-------|---------|
@@ -358,11 +358,11 @@ For air-gapped or multi-provider deployments:
 
 | Method | Requirement | Notes |
 |--------|-------------|-------|
-| **SAML 2.0** | IdP with SAML support | Recommended for enterprise |
-| **OIDC** | OpenID Connect provider | Alternative SSO |
-| **Local Auth** | Argon2id password hashing | Available but not recommended for enterprise |
+| **Amazon Cognito** | Cognito user pool (deployed by `deploy/cloudformation/cognito.yaml`) | Current sign-in method for the console and API |
+| **SAML 2.0** | IdP with SAML support | Planned (provider code exists but is not wired) |
+| **OIDC** | OpenID Connect provider | Planned (provider code exists but is not wired) |
 
-**Supported Identity Providers:**
+**Supported Identity Providers (planned for SSO federation):**
 - Okta
 - Azure AD / Entra ID
 - PingIdentity
@@ -409,7 +409,7 @@ Organizations pursuing CMMC certification should verify:
 
 ### FedRAMP
 
-For federal deployments:
+Aura is not FedRAMP authorized; authorization is planned and no filing has been submitted. For federal deployments:
 
 | Requirement | Implementation |
 |-------------|----------------|

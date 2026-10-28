@@ -1,9 +1,9 @@
 # Project Aura - System Architecture
 
 **Version:** 2.7
-**Last Updated:** May 9, 2026
-**Status:** All 9 Phases Deployed (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**.
-**ADRs:** 91 Architecture Decision Records (88 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089])
+**Last Updated:** October 26, 2026
+**Status:** All 9 infrastructure phases templated and deployed to DEV; DEV and QA are currently spun down for cost. Many application capabilities below are implemented as libraries but not yet invoked by the running service; see `docs/PROJECT_STATUS.md` (2026-10-26 audit) for verified per-capability status. Phases: (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**.
+**ADRs:** 95 Architecture Decision Records plus 1 reserved number [082]; verified statuses in `docs/architecture-decisions/README.md`
 
 ---
 
@@ -223,7 +223,7 @@ llm = factory.create_llm_service()
 │  │  │                                                                │  │        │
 │  │  │  ┌──────────────────────────────────────────────────────────┐  │  │        │
 │  │  │  │  • 2x t3.small.search instances (Multi-AZ)               │  │  │        │
-│  │  │  │  • KNN vector fields (1536 dimensions, HNSW)             │  │  │        │
+│  │  │  │  • KNN vector fields (1024 dimensions, HNSW)             │  │  │        │
 │  │  │  │  • Filesystem metadata index                             │  │  │        │
 │  │  │  │  • Code embeddings                                       │  │  │        │
 │  │  │  │  • Lambda auto-index creation                            │  │  │        │
@@ -246,7 +246,7 @@ llm = factory.create_llm_service()
 │  │  ┌────────────────────────────────────────────────────────────────┐  │        │
 │  │  │  VPC Endpoints (9 endpoints)                                   │  │        │
 │  │  │  • S3, DynamoDB, Bedrock, CodeConnections, Logs, Secrets, ECR  │  │        │
-│  │  │  • No NAT Gateways (CMMC L3 compliant - no internet egress)    │  │        │
+│  │  │  • No NAT Gateways (CMMC L3 aligned - no internet egress)     │  │        │
 │  │  └────────────────────────────────────────────────────────────────┘  │        │
 │  └──────────────────────────────────────────────────────────────────────┘        │
 │                                                                                  │
@@ -268,7 +268,7 @@ llm = factory.create_llm_service()
 
 ## Agentic Search System
 
-**Status:** ✅ Full Hybrid GraphRAG Complete (Dec 29, 2025)
+**Status:** Partial. The agent workflow combines one Neptune graph traversal with one OpenSearch k-NN search; `QueryPlanningAgent` and the multi-strategy search below are implemented, while BM25 + RRF three-way fusion is implemented but not wired (October 2026 audit).
 
 Multi-strategy context retrieval system that combines graph, vector, filesystem, and git search for optimal code discovery within token budgets.
 
@@ -451,7 +451,7 @@ The Agent Orchestrator uses a warm pool deployment pattern that provides zero co
 │  │  • HTTP Server: /health/live, /health/ready, /metrics                │   │
 │  │  • SQS Consumer: Long-polls for jobs (5s interval)                   │   │
 │  │  • Zero cold start: Always-on replica waiting for work               │   │
-│  │  • Runs the full HITL workflow per job (sandbox, then approval)      │   │
+│  │  • Runs the HITL workflow per job (sandbox step, then approval)      │   │
 │  └────────────────────────────────┬─────────────────────────────────────┘   │
 │                                   │                                         │
 │                                   ▼                                         │
@@ -502,8 +502,8 @@ The Agent Orchestrator uses a warm pool deployment pattern that provides zero co
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
 │  │  Phase 5: VALIDATE (Sandbox Testing)                                 │   │
 │  │  • FargateSandboxOrchestrator.create_sandbox()                       │   │
-│  │  • Apply patch in isolated environment                               │   │
-│  │  • Run test suite                                                    │   │
+│  │  • Planned: apply patch in sandbox (code not yet passed)             │   │
+│  │  • Planned: run test suite (requires SANDBOX_ENABLED=true)           │   │
 │  │  • Collect results                                                   │   │
 │  │  • FargateSandboxOrchestrator.destroy_sandbox()                      │   │
 │  │  • Tests fail → Coder repair run with failing tests and errors       │   │
@@ -727,7 +727,7 @@ Platform Default: on_demand
 
 ## Network Architecture
 
-**Status:** ✅ Phase 1 Deployed (CMMC L3 Compliant)
+**Status:** ✅ Phase 1 Deployed (CMMC L3 aligned controls; not certified)
 
 **VPC Configuration:**
 - **VPC:** vpc-0123456789abcdef0 (10.0.0.0/16)
@@ -848,7 +848,7 @@ Platform Default: on_demand
 
 ## Security Architecture
 
-**Status:** Infrastructure controls: 96% GovCloud-ready | Security Services: 100% Deployed | CMMC Level 2 Progress: ~50-60%
+**Status:** Infrastructure controls: 96% GovCloud-ready | Security services: built as libraries, not yet wired onto API routes | CMMC Level 2: not yet pursued (no assessment performed)
 
 > **Related Documentation:**
 > - **Adaptive Security Intelligence:** `agent-config/agents/security-code-reviewer.md#adaptive-security-intelligence-workflow` - Proactive threat monitoring, assessment, and remediation workflow
@@ -893,7 +893,7 @@ Platform Default: on_demand
 - **Security Infrastructure:** EventBridge bus, SNS topic, 7 CloudWatch alarms, 3 log groups
 - **Test Coverage:** 328 security-specific tests across all services
 
-**Compliance:** CMMC Level 3, SOX, NIST 800-53, SOC2, WCAG 2.1 AA (future)
+**Compliance (aligned, not certified):** CMMC Level 3, SOX, NIST 800-53, SOC2; WCAG 2.1 AA (future)
 
 **Detailed Security Documentation:**
 - [SECURITY_FIXES_QUICK_REFERENCE.md](SECURITY_FIXES_QUICK_REFERENCE.md)
@@ -971,7 +971,7 @@ Platform Default: on_demand
 - **91 ADRs** - Architecture Decision Records (88 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089]); ADR-090 GraphRAG ingestion edge completeness and ADR-091 Cognito cross-region DR added in May 2026
 - **Disaster Recovery initiative complete** - Umbrella #143 closed with all 13 sub-issues; SaaS now has audit-defensible cross-region failover with HITL gates and evidence packages (DR-1 DynamoDB Global Tables, DR-2 Cognito Lambda mirror per ADR-091, DR-3 Neptune AWS Backup CRR, DR-4 OpenSearch hourly snapshot CRR, DR-5 S3 CRR, DR-6 Secrets Manager multi-region replicas, DR-7 Step Functions failover pipeline, DR-8 NIST 800-53 evidence packages, DR-9 drift detection)
 - **Buildspec line-cap remediation complete** - Umbrella #131 closed; runtime-budget rule (cold-start `TimeoutInMinutes` 480) replaces 600-line cap; 11 dead scaffold buildspecs deleted (-1,467 LOC); parent->sub-layer CodeBuild nesting forbidden; sub-layer indirection now flows through Step Functions (#157 wired application-identity loud-fail and serverless-documentation non-blocking)
-- **Full Hybrid GraphRAG Complete** - Vector + Graph + BM25 search with 5 query types (Issue #151)
+- **Hybrid GraphRAG** - Vector + Graph search with 5 graph query types (Issue #151); BM25/RRF three-way service implemented, not yet wired
 - **Agent Orchestrator Warm Pool** - Hybrid architecture with zero cold start
 - **UI-Configurable Deployment Modes** - On-demand, warm pool, and hybrid with per-org overrides
 - **Cloud Abstraction Layer (ADR-004)** - Multi-cloud AWS/Azure support, 5 service abstractions
@@ -979,7 +979,7 @@ Platform Default: on_demand
 - **Context Engineering (ADR-034)** - 7 services deployed: scoring, registry, stack, retrieval, hoprag, mcp, summarization
 - **AWS Agent Parity (ADR-037)** - 27 services total: AgentCore, Security, DevOps, Transform, Phase 2
 - **EKS Cluster Operational** - EC2 Managed Node Groups for GovCloud compatibility
-- **Security Services Deployed** - 5 Python services, 328 tests, CloudFormation infrastructure
+- **Security Services** - 5 Python services (285 tests) built as libraries; not yet wired onto API routes
 - **IAM Permissions Scoped** - Neptune/RDS and OpenSearch permissions scoped to project-specific ARNs
 - **24,800+ Tests Passing** - Comprehensive test coverage (0 failures) including 328 security-specific tests
 - **Comprehensive Documentation** - Security incident response, developer guidelines, compliance mapping
@@ -987,9 +987,9 @@ Platform Default: on_demand
 **Architecture Highlights:**
 - **Hybrid Deployment:** ECS Fargate (dev/sandboxes) + EKS EC2 (production)
 - **Agent Orchestrator:** Warm pool deployment with SQS job dispatch and DynamoDB state
-- **Hybrid GraphRAG:** Vector (semantic) + Graph (structural) + BM25 (keyword) search
+- **Hybrid GraphRAG:** Vector (semantic) + Graph (structural) search; BM25 (keyword) fusion implemented, not yet wired
 - **Graph Query Types:** CALL_GRAPH, DEPENDENCIES, INHERITANCE, REFERENCES, RELATED
-- **Security:** 7-layer defense-in-depth with CMMC Level 3 compliance
+- **Security:** 7-layer defense-in-depth aligned to CMMC Level 3 controls (certification not yet pursued)
 - **Security Services:** Input validation, secrets detection, audit, alerts, API integration
 - **Resource Optimization:** Scale-to-zero for sandboxes and FARGATE_SPOT for non-production workloads
 
@@ -1004,11 +1004,11 @@ Platform Default: on_demand
 - 1 SNS topic with email subscriptions
 - CMMC, SOC2, NIST 800-53 compliance mapping
 
-**Deployed** to AWS Commercial Cloud with clear path to GovCloud migration.
+**Deployed** to AWS Commercial Cloud (DEV and QA; currently spun down for cost) with a planned path to GovCloud migration.
 
 ---
 
 **Document Version:** 2.7
-**Last Updated:** May 9, 2026
-**Status:** Current and Accurate
-**ADRs:** 91 Architecture Decision Records (88 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089])
+**Last Updated:** October 26, 2026
+**Status:** Corrected against code on 2026-10-26; see `docs/PROJECT_STATUS.md` for per-capability status
+**ADRs:** 95 Architecture Decision Records plus 1 reserved number [082]; verified statuses in `docs/architecture-decisions/README.md`

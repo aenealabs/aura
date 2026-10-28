@@ -102,7 +102,7 @@ Resources:
       PermissionsBoundary: !If
         - UsePermissionBoundary
         - !Ref PermissionBoundaryArn
-        - !Ref 'AWS::NoValue'
+        - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -512,7 +512,7 @@ Resources:
       PermissionsBoundary: !If
         - UsePermissionBoundary
         - !Ref PermissionBoundaryArn
-        - !Ref 'AWS::NoValue'
+        - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:

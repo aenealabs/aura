@@ -1,0 +1,250 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 0.1 - IAM Permission Boundaries (Privilege Escalation Guards)'
+
+# Deployed by deploy/scripts/bootstrap-fresh-account.sh before any other
+# stack, using the operator's credentials. Every IAM role created by the
+# build and deploy pipeline must carry one of the boundaries below; the
+# deployer boundary enforces that rule on the build roles themselves.
+#
+# Policy names are fixed (no stack-generated suffix) so templates can build
+# the boundary ARN with !Sub instead of a cross-stack import.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+  Environment:
+    Type: String
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+
+Resources:
+  # Applied to the build and deploy identities: the bootstrap CodeBuild role,
+  # every layer CodeBuild role, and the CloudFormation service role. Allows
+  # what their identity policies grant, minus privilege escalation.
+  DeployerPermissionBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-deployer-boundary-${Environment}'
+      Description: Permission boundary for build and deploy roles; blocks self-modification and privilege escalation
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowWithinIdentityPolicy
+            Effect: Allow
+            Action: '*'
+            Resource: '*'
+
+          # Only the bootstrap build may change the CodeBuild roles; no build role
+          # may change its own or another layer's permissions. (The serverless
+          # layer owns the deployment-pipeline stack, so its roles are not listed.)
+          - Sid: DenyModifyPipelineIdentities
+            Effect: Deny
+            Action:
+              - iam:PutRolePolicy
+              - iam:DeleteRolePolicy
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:UpdateAssumeRolePolicy
+              - iam:PutRolePermissionsBoundary
+              - iam:DeleteRolePermissionsBoundary
+              - iam:UpdateRole
+              - iam:DeleteRole
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-build-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-test-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-deploy-role-${Environment}'
+            Condition:
+              ArnNotLike:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-bootstrap-codebuild-role-${Environment}'
+
+          - Sid: DenyModifyBootstrapRole
+            Effect: Deny
+            Action:
+              - iam:PutRolePolicy
+              - iam:DeleteRolePolicy
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:UpdateAssumeRolePolicy
+              - iam:PutRolePermissionsBoundary
+              - iam:DeleteRolePermissionsBoundary
+              - iam:UpdateRole
+              - iam:DeleteRole
+            Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-bootstrap-codebuild-role-${Environment}'
+
+          # Builds never assume roles in their own account (the only assume-role
+          # in the pipeline targets the management account's Route 53 role).
+          # Denying it closes "edit a project role's trust policy, then assume it".
+          - Sid: DenyAssumeSameAccountRoles
+            Effect: Deny
+            Action:
+              - sts:AssumeRole
+              - sts:AssumeRoleWithWebIdentity
+            Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/*'
+
+          - Sid: DenyModifyBoundaryPolicies
+            Effect: Deny
+            Action:
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicy
+              - iam:DeletePolicyVersion
+              - iam:SetDefaultPolicyVersion
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-deployer-boundary-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
+
+          # A role can only be created, or have its boundary changed, with one
+          # of the approved boundaries. A missing boundary also matches this
+          # negated condition, so boundary-less roles are refused.
+          - Sid: DenyRoleWithoutApprovedBoundary
+            Effect: Deny
+            Action:
+              - iam:CreateRole
+              - iam:PutRolePermissionsBoundary
+            Resource: '*'
+            Condition:
+              StringNotEquals:
+                iam:PermissionsBoundary:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-deployer-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-test-env-permission-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-ma-sandbox-permissions-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-taint-resolver-writer-boundary-${Environment}'
+
+          - Sid: DenyBoundaryRemoval
+            Effect: Deny
+            Action: iam:DeleteRolePermissionsBoundary
+            Resource: '*'
+
+          - Sid: DenyAdminPolicyAttachment
+            Effect: Deny
+            Action:
+              - iam:AttachRolePolicy
+              - iam:AttachUserPolicy
+              - iam:AttachGroupPolicy
+            Resource: '*'
+            Condition:
+              ArnLike:
+                iam:PolicyARN:
+                  - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AdministratorAccess'
+                  - !Sub 'arn:${AWS::Partition}:iam::aws:policy/IAMFullAccess'
+                  - !Sub 'arn:${AWS::Partition}:iam::aws:policy/PowerUserAccess'
+
+          # Build roles carry ReadOnlyAccess for CloudFormation's describe calls.
+          # Deploys never read application data, so cap the data-plane half of
+          # it: table items, secrets, queue messages, stream records, log events
+          # and search/graph queries.
+          - Sid: DenyDataPlaneReads
+            Effect: Deny
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:BatchGetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:PartiQLSelect
+              - dynamodb:GetRecords
+              - dynamodb:ExportTableToPointInTime
+              - secretsmanager:GetSecretValue
+              - sqs:ReceiveMessage
+              - kinesis:GetRecords
+              - kinesis:GetShardIterator
+              - logs:GetLogEvents
+              - logs:FilterLogEvents
+              - logs:StartQuery
+              - logs:GetQueryResults
+              - es:ESHttpGet
+              - es:ESHttpPost
+              - neptune-db:ReadDataViaQuery
+              - rds-data:ExecuteStatement
+              - athena:GetQueryResults
+            Resource: '*'
+
+          # Object reads stay allowed for project buckets (build artifacts and
+          # Lambda code, which CloudFormation and Lambda read with the caller's
+          # credentials) and for buckets outside the account (AWS-hosted tools).
+          - Sid: DenyObjectReadsOutsideProjectBuckets
+            Effect: Deny
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+            NotResource: !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*/*'
+            Condition:
+              StringEquals:
+                aws:ResourceAccount: !Ref AWS::AccountId
+
+          - Sid: DenyLongLivedCredentials
+            Effect: Deny
+            Action:
+              - iam:CreateUser
+              - iam:CreateAccessKey
+              - iam:CreateLoginProfile
+              - iam:UpdateLoginProfile
+            Resource: '*'
+
+  # Applied to runtime roles: EKS, IRSA, ECS tasks, Lambda, Step Functions and
+  # service roles. Allows what their identity policies grant, minus any change
+  # to IAM. Service-linked role creation stays allowed (ALB controller).
+  WorkloadPermissionBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-workload-boundary-${Environment}'
+      Description: Permission boundary for runtime roles; blocks all IAM changes and long-lived credentials
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowWithinIdentityPolicy
+            Effect: Allow
+            Action: '*'
+            Resource: '*'
+
+          - Sid: DenyIAMModification
+            Effect: Deny
+            Action:
+              - iam:CreateRole
+              - iam:DeleteRole
+              - iam:UpdateRole
+              - iam:PutRolePolicy
+              - iam:DeleteRolePolicy
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:UpdateAssumeRolePolicy
+              - iam:PutRolePermissionsBoundary
+              - iam:DeleteRolePermissionsBoundary
+              - iam:CreatePolicy
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicy
+              - iam:DeletePolicyVersion
+              - iam:SetDefaultPolicyVersion
+              - iam:CreateUser
+              - iam:DeleteUser
+              - iam:PutUserPolicy
+              - iam:AttachUserPolicy
+              - iam:CreateAccessKey
+              - iam:CreateLoginProfile
+              - iam:UpdateLoginProfile
+              - iam:AddUserToGroup
+              - iam:AttachGroupPolicy
+              - iam:PutGroupPolicy
+            Resource: '*'
+
+          - Sid: DenyAccountAndOrganizationChanges
+            Effect: Deny
+            Action:
+              - organizations:*
+              - account:*
+            Resource: '*'
+
+Outputs:
+  DeployerBoundaryArn:
+    Description: ARN of the deployer permission boundary
+    Value: !Ref DeployerPermissionBoundary
+    Export:
+      Name: !Sub '${AWS::StackName}-DeployerBoundaryArn'
+  WorkloadBoundaryArn:
+    Description: ARN of the workload permission boundary
+    Value: !Ref WorkloadPermissionBoundary
+    Export:
+      Name: !Sub '${AWS::StackName}-WorkloadBoundaryArn'

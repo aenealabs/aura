@@ -268,7 +268,7 @@
 <!-- 1. Architecture Overview -->
 <section id="overview">
   <h2>1. Architecture Overview</h2>
-  <p>Project Aura's agent architecture implements a hierarchical multi-agent system where a Meta-Orchestrator dynamically spawns and coordinates specialized agents to perform autonomous code intelligence, vulnerability remediation, and security analysis. The system is secured by layered AI governance including Constitutional AI principles, capability governance, semantic guardrails, and configurable human-in-the-loop workflows.</p>
+  <p>Project Aura's agent architecture implements a hierarchical multi-agent system where a Meta-Orchestrator dynamically spawns and coordinates specialized agents to perform autonomous code intelligence, vulnerability remediation, and security analysis. The system is secured by layered AI governance including Constitutional AI principles, capability governance, semantic guardrails, and configurable human-in-the-loop workflows. Implementation status (October 2026): the running job server (<code>src/agents/orchestrator_server.py</code>) uses the System 2 Orchestrator, which calls the Coder, Reviewer, and Validator in-process and creates a human approval request for every patch. The Meta-Orchestrator is implemented as a library and tested but is not yet invoked by the running service; several agents in the catalog below are likewise library-only. Runtime sandbox testing of the patch, deployment after approval, policy-driven auto-approval, and Constitutional AI review of agent outputs are planned.</p>
 
   <div class="flow-diagram"><span class="hl">                         ┌──────────────────────────────────────────┐</span>
 <span class="hl">                         │          META-ORCHESTRATOR              │</span>
@@ -281,7 +281,7 @@
 <span class="hl-green">       ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐</span>
 <span class="hl-green">       │   SYSTEM 2       │   │   SECURITY       │   │   DEVOPS         │</span>
 <span class="hl-green">       │   ORCHESTRATOR   │   │   ORCHESTRATOR   │   │   ORCHESTRATOR   │</span>
-<span class="hl-green">       │   (2,260 LOC)    │   │   (1,313 LOC)    │   │   (1,028 LOC)    │</span>
+<span class="hl-green">       │   (2,820 LOC)    │   │   (1,313 LOC)    │   │   (1,028 LOC)    │</span>
 <span class="hl-green">       └───────┬─────────┘   └───────┬─────────┘   └───────┬─────────┘</span>
                │                     │                     │
        ┌───────┼───────┐     ┌───────┼───────┐     ┌───────┼───────┐
@@ -315,7 +315,7 @@
   <h2>2. Multi-Agent Orchestration</h2>
 
   <h3>Meta-Orchestrator (ADR-018)</h3>
-  <p>The Meta-Orchestrator dynamically spawns agents based on task requirements, performing recursive task decomposition and parallel execution of independent sub-tasks. It manages 20 agent capabilities and routes tasks across 4 configurable autonomy levels.</p>
+  <p>The Meta-Orchestrator dynamically spawns agents based on task requirements, performing recursive task decomposition and parallel execution of independent sub-tasks. It manages 20 agent capabilities and routes tasks across 4 configurable autonomy levels. Its only caller is <code>create_patch_validation_workflow</code>, which no running service calls, and its autonomy check is applied after the agent DAG has run rather than before each gated step.</p>
 
   <div class="two-col">
     <div>
@@ -346,7 +346,7 @@
     </div>
     <div>
       <h4>Workflow Execution Phases</h4>
-      <p>The System 2 Orchestrator executes a 10-phase workflow with checkpoint/resume support:</p>
+      <p>The System 2 Orchestrator executes a 10-phase workflow with checkpoint/resume support (checkpointing is used only when a caller invokes the checkpoint methods; the job server does not):</p>
       <ol>
         <li><strong>INIT</strong> &mdash; Initialize task context and parameters</li>
         <li><strong>PLANNING</strong> &mdash; Decompose task into sub-tasks via DAG</li>
@@ -354,7 +354,7 @@
         <li><strong>CONTEXT_RETRIEVAL</strong> &mdash; Fetch code context via GraphRAG</li>
         <li><strong>CODE_GENERATION</strong> &mdash; Coder Agent generates patches</li>
         <li><strong>SECURITY_REVIEW</strong> &mdash; Security analysis of generated code</li>
-        <li><strong>VALIDATION</strong> &mdash; Validator Agent runs tests in sandbox</li>
+        <li><strong>VALIDATION</strong> &mdash; Validator Agent runs static checks (sandbox step follows in the HITL workflow)</li>
         <li><strong>REMEDIATION</strong> &mdash; Apply fixes based on review feedback</li>
         <li><strong>MEMORY_STORE</strong> &mdash; Persist learnings to cognitive memory</li>
         <li><strong>COMPLETED</strong> &mdash; Final result aggregation</li>
@@ -395,34 +395,34 @@ class AgentResult:
 <!-- 3. Specialized Agent Catalog -->
 <section id="agents">
   <h2>3. Specialized Agent Catalog</h2>
-  <p>Project Aura implements 28+ specialized agent types organized into functional categories. All agents inherit from a common <code>BaseAgent</code> class (25,054 lines) with MCP tool support, SQS messaging, and async execution.</p>
+  <p>Project Aura implements 28+ specialized agent types organized into functional categories. A common <code>BaseAgent</code> class (771 lines) provides MCP tool support and async execution; the MetaOrchestrator's agents use it, while the Coder, Reviewer, and Validator are standalone classes.</p>
 
   <h3>Core Workflow Agents</h3>
   <div class="card-grid">
     <div class="card">
       <h4>Coder Agent</h4>
-      <p>Generates code patches and remediation for identified vulnerabilities. Produces diff-format output with test coverage.</p>
-      <div class="stats"><span>383 LOC</span> <span>|</span> <span>Code generation, patch creation</span></div>
+      <p>Generates code patches and remediation for identified vulnerabilities. Returns generated code (the orchestrator builds the diff); test generation is planned.</p>
+      <div class="stats"><span>537 LOC</span> <span>|</span> <span>Code generation, patch creation</span></div>
     </div>
     <div class="card">
       <h4>Reviewer Agent</h4>
       <p>Reviews generated code for quality, security, and correctness. Multi-pass review with severity scoring.</p>
-      <div class="stats"><span>558 LOC</span> <span>|</span> <span>Code review, validation</span></div>
+      <div class="stats"><span>711 LOC</span> <span>|</span> <span>Code review, validation</span></div>
     </div>
     <div class="card">
       <h4>Validator Agent</h4>
-      <p>Executes patches in sandbox environments, running unit, integration, security, and performance tests.</p>
-      <div class="stats"><span>839 LOC</span> <span>|</span> <span>Sandbox testing, verification</span></div>
+      <p>Runs static validation (syntax, structure, type hints, dangerous patterns) and launches sandbox tasks when a sandbox orchestrator is configured. Shipping the patch into the sandbox and the unit, integration, security, and performance test categories are planned.</p>
+      <div class="stats"><span>918 LOC</span> <span>|</span> <span>Sandbox testing, verification</span></div>
     </div>
     <div class="card">
       <h4>Agent Orchestrator (System 2)</h4>
       <p>Coordinates the full remediation lifecycle with checkpoint/resume support for long-running workflows.</p>
-      <div class="stats"><span>2,260 LOC</span> <span>|</span> <span>10-phase execution pipeline</span></div>
+      <div class="stats"><span>2,820 LOC</span> <span>|</span> <span>10-phase execution pipeline</span></div>
     </div>
     <div class="card">
       <h4>Meta-Orchestrator</h4>
       <p>Dynamic agent spawning based on task requirements. Recursive task decomposition with parallel execution.</p>
-      <div class="stats"><span>1,463 LOC</span> <span>|</span> <span>ADR-018, DAG-based task routing</span></div>
+      <div class="stats"><span>1,611 LOC</span> <span>|</span> <span>ADR-018, DAG-based task routing; not yet invoked by the running service</span></div>
     </div>
   </div>
 
@@ -548,7 +548,7 @@ class AgentResult:
 <!-- 4. Agent Communication & A2A Protocol -->
 <section id="communication">
   <h2>4. Agent Communication &amp; A2A Protocol</h2>
-  <p>Agents communicate through a structured Agent-to-Agent (A2A) protocol implemented via three core services, with SQS-based async queuing for task distribution.</p>
+  <p>The A2A protocol below is the design for networked agent communication. Status: the A2A gateway and registry are in-memory stubs (external calls return mock responses) and their API router is not mounted; the SQS queue path is implemented but off by default (<code>use_async_messaging=False</code>) and the agent worker has no deployment manifest. In the running job server, agents call each other in-process; the A2AS security service screens agent inputs.</p>
 
   <div class="card-grid">
     <div class="card">
@@ -569,7 +569,7 @@ class AgentResult:
     <div class="card">
       <h4>Agent Queue Service</h4>
       <p>SQS-based async agent task queuing with priority scheduling, retry logic, and dead-letter handling.</p>
-      <div class="stats"><span>20,948 LOC</span></div>
+      <div class="stats"><span>615 LOC</span></div>
     </div>
   </div>
 
@@ -581,7 +581,7 @@ class AgentResult:
 <span class="hl">Agent Worker</span> (dequeue &amp; execute)                                      <span class="hl">Result Aggregation</span></div>
 
   <h3>Agent Runtime Service</h3>
-  <p>The Agent Runtime Service (1,020 LOC) manages the full agent lifecycle: spawning, health monitoring, resource tracking, error handling, and graceful shutdown. Agents operate as async workers with configurable timeouts and automatic retry on transient failures.</p>
+  <p>The Agent Runtime Service (1,020 LOC) is designed to manage the full agent lifecycle: spawning, health monitoring, resource tracking, error handling, and graceful shutdown. Status: it has no callers outside its tests and its agent execution returns a placeholder result.</p>
 </section>
 
 <!-- 5. Cognitive Memory Architecture -->
@@ -840,7 +840,7 @@ class AgentResult:
 
   <h3>5 Mandatory Guardrails</h3>
   <div class="callout callout-critical">
-    <strong>Always require HITL approval regardless of autonomy level:</strong>
+    <strong>Always require HITL approval regardless of autonomy level (the first two are hard-coded immutable guardrails; the other three are in every default policy):</strong>
     <ol style="margin-top:8px; margin-bottom:0;">
       <li><code>production_deployment</code> &mdash; Any deployment to production environments</li>
       <li><code>credential_modification</code> &mdash; Changes to secrets, keys, or credentials</li>
@@ -853,8 +853,8 @@ class AgentResult:
   <h3>Override Hierarchy (Priority Order)</h3>
   <ol>
     <li><strong>Guardrails</strong> (highest) &mdash; 5 mandatory approvals, cannot be overridden</li>
-    <li><strong>Repository Overrides</strong> &mdash; Per-repo policy adjustments</li>
     <li><strong>Operation Overrides</strong> &mdash; Per-operation type settings</li>
+    <li><strong>Repository Overrides</strong> &mdash; Per-repo policy adjustments</li>
     <li><strong>Severity Overrides</strong> &mdash; Severity-based thresholds</li>
     <li><strong>Default Level</strong> (lowest) &mdash; Policy preset baseline</li>
   </ol>
@@ -863,7 +863,7 @@ class AgentResult:
   <table>
     <tr><th>Component</th><th>Details</th></tr>
     <tr><td>Service</td><td><code>src/services/autonomy_policy_service.py</code></td></tr>
-    <tr><td>API</td><td><code>src/api/autonomy_endpoints.py</code> (10 REST endpoints)</td></tr>
+    <tr><td>API</td><td><code>src/api/autonomy_endpoints.py</code> (router not yet mounted in <code>src/api/main.py</code>; policies are not yet applied to the remediation pipeline)</td></tr>
     <tr><td>Tests</td><td>37 tests</td></tr>
     <tr><td>Storage</td><td>3 DynamoDB tables: policies, audit, decisions</td></tr>
   </table>
@@ -872,7 +872,7 @@ class AgentResult:
 <!-- 10. Sandbox Architecture -->
 <section id="sandbox">
   <h2>10. Sandbox Architecture &amp; Patch Workflow</h2>
-  <p>The HITL Sandbox Architecture defines a 7-stage workflow for safe patch validation in isolated environments with human approval gates before production deployment.</p>
+  <p>The HITL Sandbox Architecture defines a 7-stage workflow for safe patch validation in isolated environments with human approval gates before production deployment. Status: stages 1, 4, and 5 run today (prompt-driven generation, approval request with SES/SNS notification, approve or reject). Stages 2 and 3 are partial: the sandbox step is skipped unless <code>SANDBOX_ENABLED=true</code>, and when enabled the patched code is not yet passed to the task. Request-changes and stages 6 and 7 are planned.</p>
 
   <div class="flow-diagram"><span class="hl-red">Stage 1</span>: Detection &amp; Generation
   Reviewer Agent detects vulnerability &rarr; Coder Agent generates patch
@@ -899,7 +899,7 @@ class AgentResult:
   Verify patch is live &rarr; Track errors/performance/security &rarr; Completion notice</div>
 
   <h3>AWS Step Functions State Machine</h3>
-  <p>The workflow is orchestrated by a 14-state Step Functions state machine:</p>
+  <p>The target design orchestrates the workflow with a Step Functions state machine. A state machine (<code>deploy/cloudformation/hitl-workflow.yaml</code>) is defined as IaC but no application code starts it; the states below are the design:</p>
   <pre><code>DetectVulnerability &rarr; GeneratePatch &rarr; ProvisionSandbox &rarr; RunSandboxTests
     &rarr; EvaluateTestResults &rarr; CreateApprovalRequest &rarr; SendNotification
     &rarr; WaitForHumanApproval &rarr; ProcessApprovalDecision
@@ -915,13 +915,13 @@ class AgentResult:
     <tr><td>Human approval</td><td>&lt; 24 hours</td></tr>
     <tr><td>Production deployment</td><td>&lt; 30 minutes</td></tr>
   </table>
-  <div class="callout callout-info"><strong>Cost:</strong> ~$0.03 per patch validation cycle (~$3/month for 100 patches). DynamoDB approval records retained for 7 years (SOX compliance).</div>
+  <div class="callout callout-info"><strong>Cost:</strong> ~$0.03 per patch validation cycle (~$3/month for 100 patches). Approval records currently carry a 90-day DynamoDB TTL; 7-year retention for SOX is planned.</div>
 </section>
 
 <!-- 11. Constitutional AI Governance -->
 <section id="constitutional">
   <h2>11. Constitutional AI Governance</h2>
-  <p>The Constitutional AI Integration (ADR-063) enforces 16 principles across 7 categories through a critique-revision pipeline targeting &lt;500ms P95 latency. Every agent output is evaluated against these principles before delivery.</p>
+  <p>The Constitutional AI Integration (ADR-063) enforces 16 principles across 7 categories through a critique-revision pipeline targeting &lt;500ms P95 latency. The remediation agents (Coder, Reviewer, Validator) do not yet route their outputs through this pipeline; wiring it in is planned.</p>
 
   <h3>16 Constitutional Principles</h3>
   <table>
@@ -1311,13 +1311,13 @@ class AgentResult:
       <div class="label">SWE-Bench Pro improvement (21.1% &rarr; 28.9%)</div>
     </div>
   </div>
-  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">354 tests | ~15,900 LOC | All phases deployed</div>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">354 tests | ~15,900 LOC | Implemented as a library; not yet invoked by a running service (without an LLM and sandbox it uses mock responses)</div>
 </section>
 
 <!-- 19. Agent Optimization -->
 <section id="optimization">
   <h2>19. Agent Optimization &amp; Enhancement</h2>
-  <p>The Agent Optimization Roadmap (ADR-029) delivers performance enhancements that are enabled by default for all agents. Three phases are currently active in production.</p>
+  <p>The Agent Optimization Roadmap (ADR-029) delivers performance enhancements. All three phases below are enabled by default in <code>create_system2_orchestrator</code>, which the job server uses.</p>
 
   <h3>Active Optimizations</h3>
   <div class="card-grid">
@@ -1327,11 +1327,11 @@ class AgentResult:
     </div>
     <div class="card" style="border-left: 4px solid var(--success);">
       <h4>Phase 2.2: Self-Reflection <span class="badge badge-deployed">ENABLED</span></h4>
-      <p>Agents critique their own output before submission. Catches errors, improves quality, and reduces reviewer workload.</p>
+      <p>The Reviewer Agent critiques its own review (up to 3 iterations) before returning it, to reduce false positives.</p>
     </div>
     <div class="card" style="border-left: 4px solid var(--success);">
       <h4>Phase 2.3: A2AS Security <span class="badge badge-deployed">ENABLED</span></h4>
-      <p>Agent-to-Agent Security with input validation. Prevents cross-agent injection attacks and validates all inter-agent messages.</p>
+      <p>Agent-to-Agent Security with input validation. Screens the orchestrator's incoming prompt for injection and blocks HIGH and CRITICAL threats; validation of inter-agent messages is planned for the networked agent path.</p>
     </div>
   </div>
 
@@ -1385,7 +1385,7 @@ For generation: Y-Decoder &rarr; Text</code></pre>
     <tr><td>Security Reviewer</td><td>Handles 10M+ token codebases</td><td>Fast classification without generation</td></tr>
     <tr><td>Query Planner</td><td>Decomposes complex multi-hop queries</td><td>Embedding-only path for strategy routing</td></tr>
   </table>
-  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">167 tests (119 RLM + 48 JEPA) | Fully deployed</div>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">167 tests (119 RLM + 48 JEPA) | Implemented as a library; not yet called by the remediation agents</div>
 </section>
 
 <!-- 21. ADRs -->
@@ -1395,15 +1395,15 @@ For generation: Y-Decoder &rarr; Text</code></pre>
 
   <table>
     <tr><th>ADR</th><th>Title</th><th>Status</th><th>Tests</th><th>Key Capabilities</th></tr>
-    <tr><td>018</td><td>Meta-Orchestrator Dynamic Agent Spawning</td><td><span class="badge badge-deployed">Deployed</span></td><td>187</td><td>Recursive decomposition, parallel execution</td></tr>
+    <tr><td>018</td><td>Meta-Orchestrator Dynamic Agent Spawning</td><td><span class="badge badge-phase1">Partial</span></td><td>187</td><td>Recursive decomposition, parallel execution</td></tr>
     <tr><td>024</td><td>Titan Neural Memory</td><td><span class="badge badge-deployed">Deployed</span></td><td>237</td><td>Deep MLP memory, test-time training, MIRAS</td></tr>
     <tr><td>029</td><td>Agent Optimization Roadmap</td><td><span class="badge badge-deployed">Deployed</span></td><td>187</td><td>Semantic caching, self-reflection, A2AS security</td></tr>
-    <tr><td>032</td><td>Configurable Autonomy Framework</td><td><span class="badge badge-deployed">Deployed</span></td><td>37</td><td>4 autonomy levels, 7 policy presets, 5 guardrails</td></tr>
+    <tr><td>032</td><td>Configurable Autonomy Framework</td><td><span class="badge badge-phase1">Partial</span></td><td>37</td><td>4 autonomy levels, 7 policy presets, 5 guardrails</td></tr>
     <tr><td>034</td><td>Context Engineering</td><td><span class="badge badge-deployed">Deployed</span></td><td>400+</td><td>7 services, 3-way retrieval, HopRAG</td></tr>
     <tr><td>042</td><td>Real-Time Agent Intervention</td><td><span class="badge badge-phase1">Phase 1</span></td><td>&mdash;</td><td>Checkpoints, WebSocket streaming, action approval</td></tr>
-    <tr><td>050</td><td>Self-Play SWE-RL</td><td><span class="badge badge-deployed">Deployed</span></td><td>354</td><td>Dual-role training, bug artifacts, curriculum learning</td></tr>
-    <tr><td>051</td><td>Recursive Context &amp; Embedding</td><td><span class="badge badge-deployed">Deployed</span></td><td>167</td><td>100x context scaling, 2.85x inference efficiency</td></tr>
-    <tr><td>063</td><td>Constitutional AI Integration</td><td><span class="badge badge-deployed">Deployed</span></td><td>463</td><td>16 principles, critique-revision, &lt;500ms P95</td></tr>
+    <tr><td>050</td><td>Self-Play SWE-RL</td><td><span class="badge badge-phase1">Partial</span></td><td>354</td><td>Dual-role training, bug artifacts, curriculum learning</td></tr>
+    <tr><td>051</td><td>Recursive Context &amp; Embedding</td><td><span class="badge badge-phase1">Partial</span></td><td>167</td><td>100x context scaling, 2.85x inference efficiency</td></tr>
+    <tr><td>063</td><td>Constitutional AI Integration</td><td><span class="badge badge-phase1">Partial</span></td><td>463</td><td>16 principles, critique-revision, &lt;500ms P95</td></tr>
     <tr><td>065</td><td>Semantic Guardrails Engine</td><td><span class="badge badge-deployed">Deployed</span></td><td>793</td><td>6-layer threat detection, 95%+ accuracy</td></tr>
     <tr><td>066</td><td>Agent Capability Governance</td><td><span class="badge badge-deployed">Deployed</span></td><td>322</td><td>4-tier classification, runtime enforcement</td></tr>
     <tr><td>080</td><td>Evo-Memory Enhancements</td><td><span class="badge badge-deployed">Deployed</span></td><td>336</td><td>ReMem 7 operations, multi-agent memory sharing</td></tr>
@@ -1420,7 +1420,7 @@ For generation: Y-Decoder &rarr; Text</code></pre>
       <div class="label">Specialized Agent Types</div>
     </div>
     <div class="stat-card">
-      <div class="value">24,973</div>
+      <div class="value">29,353</div>
       <div class="label">Agent Code (LOC)</div>
     </div>
     <div class="stat-card">

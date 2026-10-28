@@ -1,7 +1,7 @@
 # Human-in-the-Loop Workflows
 
 **Version:** 1.0
-**Last Updated:** January 2026
+**Last Updated:** October 2026
 
 ---
 
@@ -10,6 +10,13 @@
 Human-in-the-Loop (HITL) Workflows form the governance layer of Project Aura, ensuring that autonomous AI operations are subject to appropriate human oversight. HITL is not simply a brake on automation; it is a configurable policy framework that allows organizations to balance automation speed with compliance requirements.
 
 This document explains how HITL works, the four configurable autonomy levels, industry-specific policy presets, and the guardrails that always require human approval regardless of policy settings.
+
+> **Implementation status (October 2026).** What runs today:
+>
+> - The production job server (`src/agents/orchestrator_server.py`) runs `execute_request_with_hitl` for every job and **always** creates a manual approval request for a patch that passes review, validation, and the sandbox step. It does not consult an autonomy policy, so no patch is auto-approved.
+> - Approval requests are stored in DynamoDB (`aura-approval-requests-{env}`) when `AWS_REGION` is set, otherwise in memory with seeded demo data. The approvals API (`/api/v1/approvals`) supports list, detail, stats, approve, reject, and cancel, with role checks and separation of duties.
+> - Approving a request records the decision and notifies; it does **not** deploy or open a pull request. Deployment after approval is planned.
+> - Autonomy policies and presets are implemented in `AutonomyPolicyService`, but its REST router (`src/api/autonomy_endpoints.py`) is not mounted in `src/api/main.py`, and `HITLApprovalService.create_or_auto_approve` has no production caller. Policy-driven auto-approval (the per-level behavior described below) is planned.
 
 ---
 
@@ -60,7 +67,7 @@ Aura provides four configurable autonomy levels that determine when human approv
 
 ### Level 1: FULL_HITL
 
-**Human approval required for all operations.**
+**Human approval required for all operations.** This is the behavior every job gets today, regardless of the configured policy.
 
 | Aspect | Behavior |
 |--------|----------|
@@ -71,7 +78,7 @@ Aura provides four configurable autonomy levels that determine when human approv
 | **Use Case** | Defense contractors, healthcare, government |
 
 ```python
-# FULL_HITL behavior
+# FULL_HITL behavior (illustrative; deployment after approval is planned)
 patch_generated = coder_agent.generate_patch(vulnerability)
 sandbox_result = sandbox.validate(patch_generated)
 
@@ -86,7 +93,7 @@ if approval.status == "APPROVED":
     deployer.deploy(patch_generated)
 ```
 
-### Level 2: HITL_CRITICAL (Critical HITL)
+### Level 2: CRITICAL_HITL (Critical HITL)
 
 **Human approval required for HIGH and CRITICAL severity only.**
 
@@ -95,11 +102,11 @@ if approval.status == "APPROVED":
 | **Approval Required** | HIGH and CRITICAL severity vulnerabilities |
 | **Automatic Actions** | LOW/MEDIUM severity patches auto-deploy after sandbox |
 | **Human Actions** | Review HIGH/CRITICAL patches only |
-| **Timeout** | 24 hours for CRITICAL, 48 hours for HIGH |
+| **Timeout** | 24 hours (single default for all severities) |
 | **Use Case** | Financial services, enterprise standard |
 
 ```python
-# CRITICAL_HITL behavior
+# CRITICAL_HITL behavior (planned; not yet applied by the job server)
 if vulnerability.severity in ["CRITICAL", "HIGH"]:
     approval = hitl_service.request_approval(patch, sandbox_results)
     if approval.status != "APPROVED":
@@ -124,7 +131,7 @@ deployer.deploy(patch_generated)
 | **Use Case** | Internal tools, low-risk repositories |
 
 ```python
-# AUDIT_ONLY behavior
+# AUDIT_ONLY behavior (planned; not yet applied by the job server)
 audit_log.record(
     decision="AUTO_APPROVE",
     vulnerability=vulnerability,
@@ -155,7 +162,7 @@ deployer.deploy(patch_generated)
 | Level | CRITICAL | HIGH | MEDIUM | LOW | Guardrails |
 |-------|----------|------|--------|-----|------------|
 | FULL_HITL | Human | Human | Human | Human | Human |
-| HITL_CRITICAL | Human | Human | Auto | Auto | Human |
+| CRITICAL_HITL | Human | Human | Auto | Auto | Human |
 | AUDIT_ONLY | Auto (logged) | Auto (logged) | Auto (logged) | Auto (logged) | Human |
 | FULL_AUTONOMOUS | Auto | Auto | Auto | Auto | Human |
 
@@ -163,42 +170,43 @@ deployer.deploy(patch_generated)
 
 ## Industry Policy Presets
 
-Aura includes seven pre-built policy presets designed for specific industries and compliance frameworks. Organizations can use these presets as-is or customize them.
+Aura includes seven pre-built policy presets (`AutonomyPolicy.from_preset`, `src/services/autonomy_policy_service.py:321`). Organizations can use these presets as-is or customize them.
 
 ### Preset Overview
 
-| Preset | Default Level | HITL Enabled | Target Industry | Compliance Frameworks |
-|--------|---------------|--------------|-----------------|----------------------|
-| `defense_contractor` | FULL_HITL | Yes | Defense, Aerospace | CMMC L3+, NIST 800-171 |
-| `financial_services` | FULL_HITL | Yes | Banking, Insurance | SOX, PCI-DSS, GLBA |
-| `healthcare` | FULL_HITL | Yes | Hospitals, Pharma | HIPAA, HITECH, FDA 21 CFR |
-| `government_contractor` | FULL_HITL | Yes | Federal Systems | FedRAMP, FISMA |
-| `fintech_startup` | HITL_CRITICAL | Yes | Growth Companies | SOC 2, limited SOX |
-| `enterprise_standard` | HITL_CRITICAL | Yes | Fortune 500 | General enterprise |
-| `internal_tools` | AUDIT_ONLY | No | Internal Dev Teams | Minimal compliance |
+| Preset | Default Level | Severity / Operation Overrides | HITL Enabled | Target Industry |
+|--------|---------------|-------------------------------|--------------|-----------------|
+| `defense_contractor` | FULL_HITL | LOW: CRITICAL_HITL | Yes | Defense, Aerospace (CMMC) |
+| `financial_services` | FULL_HITL | LOW: AUDIT_ONLY | Yes | Banking, Insurance (SOX, PCI-DSS) |
+| `healthcare` | FULL_HITL | LOW: AUDIT_ONLY | Yes | Hospitals, Pharma (HIPAA) |
+| `fintech_startup` | CRITICAL_HITL | LOW, MEDIUM: AUDIT_ONLY | Yes | Growth Companies |
+| `enterprise_standard` | CRITICAL_HITL | LOW: FULL_AUTONOMOUS, MEDIUM: AUDIT_ONLY | Yes | General enterprise |
+| `internal_tools` | FULL_AUTONOMOUS | `credential_modification`: FULL_HITL, `production_deployment`: CRITICAL_HITL | Yes | Internal Dev Teams |
+| `fully_autonomous` | FULL_AUTONOMOUS | None | No (guardrails still apply) | Commercial dev/test |
+
+Every preset also carries the default guardrail list (see [Guardrails](#guardrails-operations-that-always-require-approval)).
+
+> **Not yet implemented.** Per-preset approval timeouts, approver requirements (minimum approvers, required roles, clearance or training flags), and compliance-framework tags are not part of `AutonomyPolicy`. All approval requests use a single timeout (24 hours by default, `HITLApprovalService.DEFAULT_TIMEOUT_HOURS`). The preset JSON below shows the fields the policy actually stores.
 
 ### Defense Contractor Preset
 
 ```json
 {
-  "preset_id": "defense_contractor",
-  "default_level": "FULL_HITL",
+  "preset_name": "defense_contractor",
+  "name": "Defense Contractor Policy",
+  "description": "Maximum oversight for CMMC Level 3+ compliance",
   "hitl_enabled": true,
-  "description": "Strictest oversight for classified and controlled systems",
-  "compliance_frameworks": ["CMMC_L3", "NIST_800_171", "ITAR"],
-  "severity_overrides": {},
+  "default_level": "full_hitl",
+  "severity_overrides": {"LOW": "critical_hitl"},
   "operation_overrides": {},
-  "timeout_hours": {
-    "CRITICAL": 12,
-    "HIGH": 24,
-    "MEDIUM": 48,
-    "LOW": 72
-  },
-  "approver_requirements": {
-    "min_approvers": 2,
-    "require_security_clearance": true,
-    "allowed_roles": ["CISO", "Security Manager", "Cleared Engineer"]
-  }
+  "repository_overrides": {},
+  "guardrails": [
+    "production_deployment",
+    "credential_modification",
+    "access_control_change",
+    "database_migration",
+    "infrastructure_change"
+  ]
 }
 ```
 
@@ -206,26 +214,13 @@ Aura includes seven pre-built policy presets designed for specific industries an
 
 ```json
 {
-  "preset_id": "financial_services",
-  "default_level": "FULL_HITL",
+  "preset_name": "financial_services",
+  "name": "Financial Services Policy",
+  "description": "High oversight for SOX/PCI-DSS compliance",
   "hitl_enabled": true,
-  "description": "SOX and PCI-DSS compliant change management",
-  "compliance_frameworks": ["SOX", "PCI_DSS", "GLBA"],
-  "severity_overrides": {},
-  "operation_overrides": {
-    "database_migration": "DUAL_APPROVAL"
-  },
-  "timeout_hours": {
-    "CRITICAL": 4,
-    "HIGH": 12,
-    "MEDIUM": 24,
-    "LOW": 48
-  },
-  "approver_requirements": {
-    "min_approvers": 1,
-    "require_change_ticket": true,
-    "allowed_roles": ["Change Manager", "Security Lead", "Release Manager"]
-  }
+  "default_level": "full_hitl",
+  "severity_overrides": {"LOW": "audit_only"},
+  "operation_overrides": {}
 }
 ```
 
@@ -233,27 +228,13 @@ Aura includes seven pre-built policy presets designed for specific industries an
 
 ```json
 {
-  "preset_id": "healthcare",
-  "default_level": "FULL_HITL",
+  "preset_name": "healthcare",
+  "name": "Healthcare Policy",
+  "description": "High oversight for HIPAA compliance",
   "hitl_enabled": true,
-  "description": "HIPAA-compliant workflow with PHI protections",
-  "compliance_frameworks": ["HIPAA", "HITECH", "FDA_21_CFR_11"],
-  "severity_overrides": {},
-  "operation_overrides": {
-    "phi_access_code": "DUAL_APPROVAL",
-    "encryption_change": "DUAL_APPROVAL"
-  },
-  "timeout_hours": {
-    "CRITICAL": 4,
-    "HIGH": 8,
-    "MEDIUM": 24,
-    "LOW": 48
-  },
-  "approver_requirements": {
-    "min_approvers": 1,
-    "require_hipaa_training": true,
-    "allowed_roles": ["Privacy Officer", "Security Officer", "Compliance Lead"]
-  }
+  "default_level": "full_hitl",
+  "severity_overrides": {"LOW": "audit_only"},
+  "operation_overrides": {}
 }
 ```
 
@@ -261,24 +242,16 @@ Aura includes seven pre-built policy presets designed for specific industries an
 
 ```json
 {
-  "preset_id": "enterprise_standard",
-  "default_level": "HITL_CRITICAL",
+  "preset_name": "enterprise_standard",
+  "name": "Enterprise Standard Policy",
+  "description": "Standard enterprise autonomy with oversight for critical",
   "hitl_enabled": true,
-  "description": "Balanced automation with critical oversight",
-  "compliance_frameworks": ["SOC2", "ISO_27001"],
+  "default_level": "critical_hitl",
   "severity_overrides": {
-    "LOW": "AUDIT_ONLY",
-    "MEDIUM": "AUDIT_ONLY"
+    "LOW": "full_autonomous",
+    "MEDIUM": "audit_only"
   },
-  "operation_overrides": {},
-  "timeout_hours": {
-    "CRITICAL": 8,
-    "HIGH": 24
-  },
-  "approver_requirements": {
-    "min_approvers": 1,
-    "allowed_roles": ["Security Engineer", "DevOps Lead", "Engineering Manager"]
-  }
+  "operation_overrides": {}
 }
 ```
 
@@ -286,17 +259,15 @@ Aura includes seven pre-built policy presets designed for specific industries an
 
 ```python
 # Apply a preset to an organization
-from aura.services import AutonomyPolicyService
+from src.services.autonomy_policy_service import create_autonomy_policy_service
 
-policy_service = AutonomyPolicyService()
+policy_service = create_autonomy_policy_service()
 
 # Create policy from preset
 policy = policy_service.create_policy_from_preset(
     organization_id="org-acme-defense",
-    preset_id="defense_contractor",
-    customizations={
-        "timeout_hours": {"CRITICAL": 8}  # Override default
-    }
+    preset_name="defense_contractor",
+    created_by="admin@example.com",
 )
 
 # Policy is now active for the organization
@@ -306,7 +277,7 @@ policy = policy_service.create_policy_from_preset(
 
 ## Guardrails: Operations That Always Require Approval
 
-Regardless of autonomy level or policy preset, certain operations always require human approval. These guardrails cannot be bypassed, disabled, or overridden.
+Regardless of autonomy level or policy preset, certain operations always require human approval when a policy is evaluated. Two of them, `production_deployment` and `credential_modification`, are hard-coded in `AutonomyPolicy.IMMUTABLE_GUARDRAILS` and cannot be removed by any policy. The other three are in every policy's default `guardrails` list; a custom policy that supplies its own list can omit them.
 
 ### Guardrail Operations
 
@@ -321,30 +292,19 @@ Regardless of autonomy level or policy preset, certain operations always require
 ### Guardrail Enforcement
 
 ```python
-# Guardrails are enforced at the service layer, not configurable
-GUARDRAIL_OPERATIONS = frozenset([
-    "production_deployment",
-    "credential_modification",
-    "access_control_change",
-    "database_migration",
-    "infrastructure_change"
-])
+# src/services/autonomy_policy_service.py (abridged)
+class AutonomyPolicy:
+    IMMUTABLE_GUARDRAILS = frozenset({
+        "credential_modification",
+        "production_deployment",
+    })
 
-def requires_hitl_approval(
-    operation: str,
-    severity: str,
-    policy: AutonomyPolicy
-) -> bool:
-    """
-    Determine if HITL approval is required.
-    Guardrails are checked FIRST and cannot be bypassed.
-    """
-    # Guardrails always require approval - no exceptions
-    if operation in GUARDRAIL_OPERATIONS:
-        return True
-
-    # Policy-based determination
-    return policy.requires_approval(operation, severity)
+    def get_autonomy_level(self, severity, operation, repository=""):
+        if operation in self.IMMUTABLE_GUARDRAILS:
+            return AutonomyLevel.FULL_HITL
+        if operation in self.guardrails:  # default list of five
+            return AutonomyLevel.FULL_HITL
+        ...
 ```
 
 ### Why Guardrails Are Non-Negotiable
@@ -376,18 +336,18 @@ When evaluating whether HITL approval is required, Aura follows a strict priorit
 │                           │                                             │
 │                           ▼                                             │
 │                                                                         │
-│  Priority 2: REPOSITORY OVERRIDES                                       │
+│  Priority 2: OPERATION OVERRIDES                                        │
 │  ─────────────────────────────────                                      │
-│  Per-repository configurations                                          │
-│  Example: "legacy-monolith" repo requires FULL_HITL                     │
+│  Per-operation type configurations                                      │
+│  Example: "encryption_change" always requires approval                  │
 │                                                                         │
 │                           │                                             │
 │                           ▼                                             │
 │                                                                         │
-│  Priority 3: OPERATION OVERRIDES                                        │
+│  Priority 3: REPOSITORY OVERRIDES                                       │
 │  ─────────────────────────────────                                      │
-│  Per-operation type configurations                                      │
-│  Example: "encryption_change" always requires approval                  │
+│  Per-repository configurations                                          │
+│  Example: "legacy-monolith" repo requires FULL_HITL                     │
 │                                                                         │
 │                           │                                             │
 │                           ▼                                             │
@@ -403,7 +363,7 @@ When evaluating whether HITL approval is required, Aura follows a strict priorit
 │  Priority 5 (Lowest): DEFAULT LEVEL                                     │
 │  ─────────────────────────────────                                      │
 │  Policy's default autonomy level                                        │
-│  Example: HITL_CRITICAL as base policy                                  │
+│  Example: CRITICAL_HITL as base policy                                  │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -413,7 +373,7 @@ When evaluating whether HITL approval is required, Aura follows a strict priorit
 ```json
 {
   "organization_id": "org-acme-corp",
-  "default_level": "HITL_CRITICAL",
+  "default_level": "CRITICAL_HITL",
   "repository_overrides": {
     "payment-gateway": "FULL_HITL",
     "internal-docs": "FULL_AUTONOMOUS"
@@ -429,15 +389,18 @@ When evaluating whether HITL approval is required, Aura follows a strict priorit
 }
 ```
 
-**Resolution for "payment-gateway" repo, MEDIUM severity:**
+**Resolution for "payment-gateway" repo, MEDIUM severity, standard patch:**
+
 1. Guardrails? No (not a guardrail operation)
-2. Repository override? Yes -> FULL_HITL
-3. Result: Requires human approval (repository override takes precedence)
+2. Operation override? No (standard patch)
+3. Repository override? Yes -> FULL_HITL
+4. Result: Requires human approval (repository override takes precedence over severity)
 
 **Resolution for "main-app" repo, LOW severity:**
+
 1. Guardrails? No
-2. Repository override? No (not specified)
-3. Operation override? No (standard patch)
+2. Operation override? No (standard patch)
+3. Repository override? No (not specified)
 4. Severity override? Yes -> FULL_AUTONOMOUS
 5. Result: Auto-approve
 
@@ -445,7 +408,15 @@ When evaluating whether HITL approval is required, Aura follows a strict priorit
 
 ## The Approval Workflow
 
-When HITL approval is required, Aura executes a structured workflow.
+When HITL approval is required, Aura executes a structured workflow. The stages below show the target design; current status per stage:
+
+| Stage | Status today |
+|-------|--------------|
+| 1. Detection and generation | Implemented as prompt-driven generation: the job's prompt, not a scanner finding, selects the target, and the code comes from the configured sample project. |
+| 2. Sandbox validation | Partial. Skipped unless `SANDBOX_ENABLED=true`; when enabled, the ECS task does not yet receive the patched code. The per-category test list below is planned. |
+| 3. Approval request | Implemented. Notifications go by SES email (and Slack or Teams when a webhook is configured). |
+| 4. Human review | Implemented: approve, reject, cancel. "Request changes" is planned; the dashboard button calls `/request-changes`, which the API does not serve. |
+| 5. Deployment / closure | Planned. Approval records the decision only. |
 
 ### Workflow Stages
 
@@ -497,7 +468,7 @@ When HITL approval is required, Aura executes a structured workflow.
 │  DECISIONS:                                                             │
 │  [APPROVE] ──▶ Proceed to deployment                                    │
 │  [REJECT] ──▶ Patch discarded, logged                                   │
-│  [REQUEST CHANGES] ──▶ Feedback to Coder Agent                          │
+│  [REQUEST CHANGES] ──▶ Feedback to Coder Agent (planned)                │
 └─────────────────────────────────────────────────────────────────────────┘
                                    │
                           ┌────────┴────────┐
@@ -522,7 +493,7 @@ When HITL approval is required, Aura executes a structured workflow.
 
 ### Approval Request Contents
 
-Reviewers receive comprehensive information for decision-making:
+The mock-up below shows the target layout. A request created by the job server today carries the patch ID, vulnerability ID (the job's task ID unless supplied), severity (mapped from the reviewer's severity), a line-by-line diff against the sample project file, the sandbox result block (often `SKIPPED`, marked as not runtime-tested), the decision confidence and its source, and the original prompt. File/line, CVE, reasoning text, and per-category test results are not populated yet.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -575,12 +546,16 @@ Approval requests do not wait indefinitely. Aura implements a timeout and escala
 
 ### Timeout Behavior
 
-| Severity | Default Timeout | Warning At | Escalation Timeout |
-|----------|-----------------|------------|-------------------|
-| CRITICAL | 24 hours | 18 hours (75%) | 12 hours |
-| HIGH | 24 hours | 18 hours (75%) | 12 hours |
-| MEDIUM | 48 hours | 36 hours (75%) | N/A (expires) |
-| LOW | 72 hours | 54 hours (75%) | N/A (expires) |
+All severities share one timeout (`DEFAULT_TIMEOUT_HOURS = 24`, or the `TimeoutHours` parameter of `deploy/cloudformation/hitl-scheduler.yaml`). Severity changes only what happens at expiry:
+
+| Severity | Default Timeout | Warning At | On Expiry |
+|----------|-----------------|------------|-----------|
+| CRITICAL | 24 hours | 18 hours (75%) | Escalate to next backup reviewer (up to 2 times), then expire |
+| HIGH | 24 hours | 18 hours (75%) | Escalate to next backup reviewer (up to 2 times), then expire |
+| MEDIUM | 24 hours | 18 hours (75%) | Expire |
+| LOW | 24 hours | 18 hours (75%) | Expire |
+
+Each escalation extends the deadline by `escalation_timeout_hours`, which defaults to the main timeout.
 
 ### Escalation Logic
 
@@ -589,7 +564,7 @@ Approval requests do not wait indefinitely. Aura implements a timeout and escala
 │                     ESCALATION PROCESSING FLOW                          │
 └─────────────────────────────────────────────────────────────────────────┘
                                    │
-                    [Hourly EventBridge Trigger]
+                    [EventBridge schedule, default rate(3 hours)]
                                    │
                                    ▼
                     ┌──────────────────────────┐
@@ -611,8 +586,8 @@ Approval requests do not wait indefinitely. Aura implements a timeout and escala
                                                     ▼                  ▼
                                               ESCALATE            EXPIRE
                                            - New reviewer      - Mark expired
-                                           - Reset timeout     - Re-queue
-                                           - Notify backup     - Notify team
+                                           - Reset timeout     - Notify team
+                                           - Notify backup
 ```
 
 ### Escalation Configuration
@@ -621,7 +596,7 @@ Approval requests do not wait indefinitely. Aura implements a timeout and escala
 {
   "escalation_config": {
     "timeout_hours": 24,
-    "escalation_timeout_hours": 12,
+    "escalation_timeout_hours": 24,
     "warning_threshold_percent": 0.75,
     "max_escalations": 2,
     "backup_reviewers": [
@@ -638,16 +613,18 @@ Approval requests do not wait indefinitely. Aura implements a timeout and escala
 
 Every HITL decision is logged for compliance and auditing.
 
+> **Retention.** Approval records carry a 90-day DynamoDB TTL (`hitl_approval_service.py:295`). The 7-year retention shown below is a compliance target that is not yet configured. The audit-log example shows the target format. `HITLApprovalService.get_audit_log` builds entries from decided approval records and returns the approval ID, patch ID, vulnerability ID, status, severity, reviewer, review time, decision reason, and creation time; it does not record IP address, user agent, policy context, compliance tags, or an immutable hash.
+
 ### Logged Events
 
 | Event | Data Captured | Retention |
 |-------|---------------|-----------|
-| Approval Request Created | Vulnerability, patch, sandbox results, timestamp | 7 years |
-| Notification Sent | Recipient, channel, timestamp, delivery status | 7 years |
-| Human Decision | Approver identity, decision, comments, timestamp | 7 years |
-| Escalation | Original reviewer, backup reviewer, escalation reason | 7 years |
-| Deployment | Patch applied, environment, deployment timestamp | 7 years |
-| Timeout/Expiration | Original request, timeout duration, final status | 7 years |
+| Approval Request Created | Vulnerability, patch, sandbox results, timestamp | 90 days (7-year target planned) |
+| Notification Sent | Recipient, channel, timestamp, delivery status | 90 days (7-year target planned) |
+| Human Decision | Approver identity, decision, comments, timestamp | 90 days (7-year target planned) |
+| Escalation | Original reviewer, backup reviewer, escalation reason | 90 days (7-year target planned) |
+| Deployment | Planned (no deployment step yet) | Planned |
+| Timeout/Expiration | Original request, timeout duration, final status | 90 days (7-year target planned) |
 
 ### Audit Log Format
 
@@ -672,7 +649,7 @@ Every HITL decision is logged for compliance and auditing.
     "severity": "CRITICAL"
   },
   "policy_context": {
-    "autonomy_level": "HITL_CRITICAL",
+    "autonomy_level": "CRITICAL_HITL",
     "preset": "financial_services",
     "override_applied": null
   },
@@ -687,7 +664,7 @@ Every HITL decision is logged for compliance and auditing.
 |-----------|------------------|-----------------|
 | **SOX Section 404** | Change management approval | Full audit trail |
 | **CMMC Level 3** | Access control (AC.2.016) | Approver role enforcement |
-| **HIPAA** | Audit controls (164.312) | 7-year retention |
+| **HIPAA** | Audit controls (164.312) | Audit log (7-year retention planned) |
 | **PCI-DSS 4.0** | Change control (6.5.3) | Separation of duties |
 | **NIST 800-53** | CM-3 Configuration Change | Documented approvals |
 | **FedRAMP** | CM-3, CM-4 Impact Analysis | Sandbox validation |
@@ -696,41 +673,48 @@ Every HITL decision is logged for compliance and auditing.
 
 ## Configuring HITL Policies
 
-### Via API
+### Via the Python Service
+
+The REST router for policies (`src/api/autonomy_endpoints.py`, prefix `/api/v1/autonomy`) is not mounted in the API yet, so policies are managed through the service directly:
 
 ```python
-from aura.services import AutonomyPolicyService
-from aura.models import AutonomyLevel
+from src.services.autonomy_policy_service import (
+    AutonomyLevel,
+    create_autonomy_policy_service,
+)
 
-policy_service = AutonomyPolicyService()
+policy_service = create_autonomy_policy_service()
 
 # Create a new policy
 policy = policy_service.create_policy(
     organization_id="org-acme-corp",
-    default_level=AutonomyLevel.HITL_CRITICAL,
+    default_level=AutonomyLevel.CRITICAL_HITL,
     hitl_enabled=True,
-    severity_overrides={
-        "LOW": AutonomyLevel.FULL_AUTONOMOUS,
-        "MEDIUM": AutonomyLevel.AUDIT_ONLY
-    },
-    repository_overrides={
-        "payment-gateway": AutonomyLevel.FULL_HITL
-    }
+)
+
+# Add overrides
+policy_service.add_override(
+    policy.policy_id, "severity", "LOW", AutonomyLevel.FULL_AUTONOMOUS
+)
+policy_service.add_override(
+    policy.policy_id, "repository", "payment-gateway", AutonomyLevel.FULL_HITL
 )
 
 # Check if HITL is required for a specific operation
 requires_approval = policy_service.requires_hitl_approval(
-    organization_id="org-acme-corp",
-    operation="vulnerability_remediation",
+    policy_id=policy.policy_id,
     severity="HIGH",
-    repository="main-app"
+    operation="security_patch",
+    repository="main-app",
 )
-# Returns: True (HITL_CRITICAL requires approval for HIGH severity)
+# Returns: True (CRITICAL_HITL requires approval for HIGH severity)
 ```
+
+The service stores policies in memory unless DynamoDB mode is configured.
 
 ### Via Dashboard
 
-The Aura Dashboard provides a visual interface for configuring HITL policies:
+The Aura Dashboard includes an **Autonomy Policies** tab in Settings. Because the autonomy API is not mounted yet, the tab cannot load or save policies and falls back to a default policy; the steps below describe the intended flow:
 
 1. Navigate to **Settings** > **Autonomy Policies**
 2. Select your organization
@@ -743,13 +727,13 @@ The Aura Dashboard provides a visual interface for configuring HITL policies:
 
 ## Key Takeaways
 
-> **HITL is configurable, not fixed.** Organizations choose their autonomy level based on compliance requirements and risk tolerance.
+> **HITL is designed to be configurable.** Policies and presets exist in the policy service; applying them to the remediation pipeline is planned. Today every patch goes to a human.
 
-> **Guardrails are absolute.** Production deployments, credential changes, and infrastructure modifications always require human approval, regardless of policy settings.
+> **Guardrails are absolute in policy evaluation.** Production deployments and credential changes are hard-coded to require approval; three more operations are in every default policy.
 
 > **Presets simplify compliance.** Seven industry-specific presets cover common compliance frameworks (CMMC, SOX, HIPAA, etc.) out of the box.
 
-> **Every decision is audited.** Complete audit trails support SOX, CMMC, HIPAA, and other compliance frameworks with 7-year retention.
+> **Every decision is audited.** Approval decisions are written to the audit log (90-day retention today; 7-year retention planned).
 
 > **Escalation prevents bottlenecks.** Timeout and escalation mechanisms ensure critical vulnerabilities are not blocked by unavailable reviewers.
 

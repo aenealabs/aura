@@ -1,7 +1,7 @@
 # Security Issues
 
 **Version:** 1.0
-**Last Updated:** January 2026
+**Last Updated:** October 2026
 **Product:** Project Aura by Aenea Labs
 
 ---
@@ -9,6 +9,8 @@
 ## Overview
 
 This document covers security-related issues including authentication failures, authorization problems, certificate errors, secrets management issues, and IAM permission errors. Use this guide for access control problems and security-related troubleshooting.
+
+> **Current status (October 2026):** Platform login uses Amazon Cognito, and the API validates Cognito RS256 tokens in `src/api/auth.py` (JWKS signature, issuer, expiry, and audience or `client_id`). The enterprise SSO handlers for SAML, OIDC, LDAP, and token refresh exist in `src/api/identity_endpoints.py` (under `/auth/...`), but that router and the identity-provider admin router are not yet mounted in `src/api/main.py`, so AURA-SEC-001 applies only once they are. The `/v1/settings/sso`, `/v1/users/me/sessions`, `/v1/settings/security/trusted-ips`, `/v1/users/me/security`, and `/v1/audit` calls shown below are planned endpoints that do not exist yet.
 
 ---
 

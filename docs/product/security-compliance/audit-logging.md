@@ -1,7 +1,7 @@
 # Audit Logging
 
 **Version:** 1.0
-**Last Updated:** January 2026
+**Last Updated:** October 2026
 **Product:** Project Aura by Aenea Labs
 
 ---
@@ -436,9 +436,9 @@ Pre-built dashboards for compliance frameworks:
 
 ## Evidence Collection
 
-### Automated Evidence Generation
+### Automated Evidence Generation (Planned)
 
-Project Aura automatically generates audit evidence for common compliance controls.
+> **Status (October 2026):** The `/api/v1/compliance` endpoints provide a SOC 2 control catalog, evidence records, assessments, and gap analysis. Their evidence collectors currently return fixed sample values instead of querying IAM, CloudTrail, Inspector, or CloudWatch, and results are held in process memory, so assessments always score automated controls as implemented. The AWS-backed generation described in this table is planned.
 
 | Control Area | Evidence Type | Generation |
 |--------------|---------------|------------|
@@ -449,9 +449,9 @@ Project Aura automatically generates audit evidence for common compliance contro
 | Vulnerability Management | Scan results, remediation timelines | Daily |
 | Incident Response | Security event logs, response actions | Continuous |
 
-### Evidence Export
+### Evidence Export (Planned)
 
-Export evidence packages for external auditors:
+Export evidence packages for external auditors (the UI flow below is planned; no evidence-export backend exists yet):
 
 1. Navigate to Settings > Compliance > Evidence Export
 2. Select compliance framework
@@ -467,9 +467,9 @@ Export evidence packages for external auditors:
 - Policy documents
 - Test results
 
-### Auditor Access
+### Auditor Access (Planned)
 
-Provide read-only access for external auditors:
+Provide read-only access for external auditors (a dedicated Auditor role is planned; it is not yet defined in the API role model):
 
 1. Navigate to Settings > Users > Invite User
 2. Select "Auditor" role
@@ -493,15 +493,15 @@ Audit logs are protected against tampering:
 
 | Control | Implementation |
 |---------|----------------|
-| Immutable storage | S3 Object Lock (compliance mode) |
-| Hash chains | SHA-256 hash linking between log entries |
-| Timestamp verification | AWS timestamp with cryptographic signature |
+| Immutable storage | S3 Object Lock (compliance mode) on audit buckets defined in CloudFormation |
+| Hash chains | Planned: SHA-256 hash linking between log entries is not yet implemented |
+| Timestamp verification | Planned |
 | Access logging | CloudTrail logging of log access |
 | Deletion protection | Require MFA for log deletion |
 
-### Verification
+### Verification (Planned)
 
-Verify log integrity using the provided verification tool:
+A log-integrity verification command is planned; the current `aura-cli logs` command only views service logs. Planned usage:
 
 ```bash
 # Verify log chain integrity
@@ -515,9 +515,9 @@ aura-cli logs verify --start 2026-01-01 --end 2026-01-31
 # Integrity: CONFIRMED
 ```
 
-### Legal Hold
+### Legal Hold (Planned)
 
-Apply legal hold to preserve logs for litigation or investigation:
+Apply legal hold to preserve logs for litigation or investigation (planned UI flow; S3 Object Lock legal holds can be applied directly in AWS today):
 
 1. Navigate to Settings > Security > Legal Hold
 2. Select date range

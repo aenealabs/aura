@@ -16,6 +16,10 @@ After completing this guide, your repositories will be:
 - Indexed in Aura's Hybrid GraphRAG system
 - Ready for vulnerability detection and remediation
 
+> **Implementation status: Partial.** Steps 1-4 are implemented: OAuth connections for GitHub and GitLab (`/api/v1/oauth/*`), repository listing and selection, configuration, and repository records (`/api/v1/repositories`) persisted in DynamoDB. **Step 5 is not yet connected to a worker:** the wizard calls `POST /api/v1/repositories/ingest`, which records ingestion jobs in `pending` status, but no component currently picks those jobs up, so they do not progress through the phases shown below and the progress display stays at pending. Clone, parse, graph indexing, and vector indexing run today through the separate ingestion path (`POST /api/v1/ingest` and the GitHub push webhook at `POST /webhook/github`), which uses the Git ingestion service. Connecting the wizard's jobs to that pipeline is planned.
+>
+> When the API cannot reach AWS and `AURA_DEV_MOCK_ON_AWS_ERROR` is not set to `false`, the repository and OAuth connection lists return seeded demo entries instead of an error.
+
 ---
 
 ## Prerequisites
@@ -40,7 +44,7 @@ Aura supports the following source control providers:
 | **GitLab** | OAuth 2.0 | Repository access, webhooks, MR integration |
 | **Manual URL** | Personal Access Token | Basic clone access, manual sync |
 
-For enterprise deployments, GitHub Enterprise Server and GitLab Self-Managed are also supported with additional configuration.
+GitHub Enterprise Server, GitLab Self-Managed, and Bitbucket are planned; the OAuth provider service currently supports `github` and `gitlab` only, and manual clone URLs are restricted to `github.com` and `gitlab.com` hosts.
 
 ---
 
@@ -240,7 +244,7 @@ Webhooks will be created in your repositories.
 
 ### Step 5: Ingestion and Completion
 
-Aura clones, parses, and indexes your repositories.
+Aura clones, parses, and indexes your repositories. (See the implementation status note above: jobs started from the wizard currently remain pending; the phases below describe the target behavior and the behavior of the `/api/v1/ingest` path.)
 
 > **Screenshot:** Onboarding wizard step 5 — Completion — confirming the repositories are queued for initial scan and showing what to expect next.
 

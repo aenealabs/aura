@@ -10,6 +10,13 @@
 
 This guide covers user and access management in Project Aura, including creating users, configuring role-based access control (RBAC), managing teams and organizations, and handling API keys and service accounts for CI/CD integration.
 
+> **Implementation status:** Much of this guide describes the target design. What exists today:
+>
+> - **Users and sign-in:** users live in the Amazon Cognito user pool (`deploy/cloudformation/cognito.yaml`; 12-character minimum password with upper, lower, number, and symbol; MFA is `OPTIONAL` in production and `OFF` in DEV/QA). Users are created by an administrator in Cognito; there is no `/v1/users` API, no **Settings > Users** page, and no `aura-cli user` command.
+> - **Roles:** the Cognito groups `admin`, `security-engineer`, `developer`, and `viewer` are defined in CloudFormation and are carried in the JWT. Routes that declare role checks use these names (for example, approving or rejecting a patch requires `security-engineer` or `admin`). The `security_analyst`, `team_admin`, and `owner` roles, the permission matrix, and custom roles below are **Planned**.
+> - **Team invitations:** a backend invitation service exists (`/api/v1/team/invitations`, stored in DynamoDB, emailed via SNS), but its routes do not yet enforce authentication and attribute every request to a placeholder organization. The console's **Invite Team** wizard does not call this API yet. `GET /api/v1/team/members` returns fixed sample members.
+> - **Planned:** user CRUD and bulk import APIs, teams and team-scoped repository access, API keys and scopes (the API does not accept API-key authentication), service accounts and the `/v1/oauth/token` client-credentials flow, the `/v1/scans` CI endpoint, the audit-log query and export API, MFA policy APIs, and account unlock/reset APIs.
+
 ---
 
 ## User Management Architecture
@@ -56,7 +63,7 @@ This guide covers user and access management in Project Aura, including creating
 
 ## Creating and Managing Users
 
-### Creating Users via Dashboard
+### Creating Users via Dashboard (Planned)
 
 1. Navigate to **Settings > Users**
 2. Click **Add User**
@@ -72,7 +79,7 @@ This guide covers user and access management in Project Aura, including creating
 
 4. Click **Create User**
 
-### Creating Users via API
+### Creating Users via API (Planned)
 
 ```bash
 # Create a new user
@@ -103,7 +110,7 @@ Response:
 }
 ```
 
-### Creating Users via CLI (Self-Hosted)
+### Creating Users via CLI (Self-Hosted) (Planned)
 
 ```bash
 # Kubernetes deployment
@@ -122,7 +129,7 @@ podman exec aura-api aura-cli user create \
   --teams engineering,security
 ```
 
-### Bulk User Import
+### Bulk User Import (Planned)
 
 Import multiple users from CSV:
 
@@ -177,7 +184,7 @@ curl -X DELETE https://api.aenealabs.com/v1/users/user-abc123 \
 
 ### Built-in Roles
 
-Project Aura includes pre-defined roles with progressively expanding permissions:
+**Current roles (Cognito groups):** `admin`, `security-engineer`, `developer`, `viewer`. The six-role model below is the **Planned** design:
 
 | Role | Description | Key Permissions |
 |------|-------------|-----------------|
@@ -208,7 +215,7 @@ Project Aura includes pre-defined roles with progressively expanding permissions
 | Manage billing | - | - | - | - | - | Yes |
 | Delete organization | - | - | - | - | - | Yes |
 
-### Custom Roles (Enterprise Edition)
+### Custom Roles (Enterprise Edition) (Planned)
 
 Enterprise Edition supports custom roles with granular permissions:
 
@@ -301,7 +308,7 @@ Organization (yourcompany)
 |   +-- User: frank@yourcompany.com (developer)
 ```
 
-### Creating Teams
+### Creating Teams (Planned)
 
 ```bash
 # Create a team
@@ -384,7 +391,7 @@ curl -X POST https://api.aenealabs.com/v1/repositories/repo-123/teams \
 
 ---
 
-## API Key Management
+## API Key Management (Planned)
 
 API keys enable programmatic access to the Aura API for automation and integrations.
 
@@ -482,7 +489,7 @@ curl -X POST https://api.aenealabs.com/v1/api-keys \
 
 ---
 
-## Service Accounts for CI/CD
+## Service Accounts for CI/CD (Planned)
 
 Service accounts are machine identities designed for CI/CD pipelines and automated systems.
 
@@ -667,7 +674,7 @@ All user and access management activities are logged for compliance and security
 | Service Accounts | Account created, credentials rotated |
 | Policy Changes | RBAC policy modified, HITL policy changed |
 
-### Viewing Audit Logs
+### Viewing Audit Logs (Planned API)
 
 ```bash
 # Query audit logs
@@ -713,7 +720,7 @@ Response:
 | Staging | 90 days |
 | Production | 7 years (compliance requirement) |
 
-### Exporting Audit Logs
+### Exporting Audit Logs (Planned)
 
 ```bash
 # Export to CSV

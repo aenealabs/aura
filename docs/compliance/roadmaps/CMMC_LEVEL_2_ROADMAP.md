@@ -6,6 +6,7 @@
 **Last Updated:** December 22, 2025
 **Classification:** Public
 **Target Certification:** CMMC Level 2 (Advanced)
+**Status:** Planned. No certification filing has been submitted (as of October 2026).
 
 ---
 
@@ -17,7 +18,7 @@ This roadmap outlines the path to CMMC Level 2 certification for Project Aura. C
 
 **Total Investment:** $200,000-350,000 (first year)
 
-**Current State:** Project Aura is approximately 50-60% compliant with CMMC Level 2 requirements. Strong technical infrastructure (encryption, logging, access control) provides a solid foundation, but organizational controls (training, incident response, personnel security, risk assessment, security assessment) require significant development.
+**Current State:** Project Aura is not CMMC certified and no assessment has been scheduled. An internal, unaudited review indicates strong technical infrastructure (encryption, logging, access control) provides a solid foundation, but organizational controls (training, incident response, personnel security, risk assessment, security assessment) require significant development.
 
 **Market Opportunity:** CMMC Level 2 certification unlocks:
 - DoD contracts involving CUI
@@ -28,7 +29,7 @@ This roadmap outlines the path to CMMC Level 2 certification for Project Aura. C
 **Key Advantages:**
 - Infrastructure already GovCloud-ready (19/19 services)
 - 110 NIST 800-171 controls map directly to existing security architecture
-- Automated evidence generation through SOC 2 Compliance Service
+- SOC 2-aligned evidence service (control catalog and assessment logic built; its collectors still return fixed sample values, so real AWS evidence collection is planned)
 - No legacy technical debt requiring remediation
 
 ---
@@ -37,24 +38,24 @@ This roadmap outlines the path to CMMC Level 2 certification for Project Aura. C
 
 ### Control Domain Status Overview
 
-| Domain | Code | Controls | Current Status | Gap Assessment |
+| Domain | Code | Controls | Current Status (internal, unaudited) | Gap Assessment |
 |--------|------|----------|----------------|----------------|
-| Access Control | AC | 22 | 75% Complete | Need access review procedures |
-| Awareness & Training | AT | 3 | 0% Complete | No training program exists |
-| Audit & Accountability | AU | 9 | 85% Complete | Need audit review procedures |
-| Configuration Management | CM | 9 | 90% Complete | Minor documentation gaps |
-| Identification & Authentication | IA | 11 | 80% Complete | MFA deployment incomplete |
-| Incident Response | IR | 3 | 30% Complete | Need IR plan and procedures |
-| Maintenance | MA | 6 | 95% Complete | AWS inherited controls |
-| Media Protection | MP | 9 | 85% Complete | Need handling procedures |
-| Personnel Security | PS | 2 | 20% Complete | Need background check process |
-| Physical Protection | PE | 6 | 100% Complete | AWS inherited controls |
-| Risk Assessment | RA | 3 | 25% Complete | Need formal RA program |
-| Security Assessment | CA | 4 | 35% Complete | Need assessment procedures |
-| System & Communications | SC | 16 | 85% Complete | Need boundary documentation |
-| System & Information Integrity | SI | 7 | 70% Complete | Need integrity monitoring |
+| Access Control | AC | 22 | Partial | Need access review procedures |
+| Awareness & Training | AT | 3 | Not started | No training program exists |
+| Audit & Accountability | AU | 9 | Mostly implemented | Need audit review procedures |
+| Configuration Management | CM | 9 | Mostly implemented | Minor documentation gaps |
+| Identification & Authentication | IA | 11 | Mostly implemented | MFA deployment incomplete |
+| Incident Response | IR | 3 | Partial | Need IR plan and procedures |
+| Maintenance | MA | 6 | Mostly implemented | AWS inherited controls |
+| Media Protection | MP | 9 | Mostly implemented | Need handling procedures |
+| Personnel Security | PS | 2 | Minimal | Need background check process |
+| Physical Protection | PE | 6 | Inherited (AWS) | AWS inherited controls |
+| Risk Assessment | RA | 3 | Partial | Need formal RA program |
+| Security Assessment | CA | 4 | Partial | Need assessment procedures |
+| System & Communications | SC | 16 | Mostly implemented | Need boundary documentation |
+| System & Information Integrity | SI | 7 | Partial | Need integrity monitoring |
 
-### Overall Compliance Estimate
+### Overall Control Inventory
 
 ```
 CMMC Level 2 Total Controls: 110 (NIST 800-171 Rev 2)
@@ -62,16 +63,14 @@ AWS/Infrastructure Inherited: ~25 controls (23%)
 Customer Responsibility: ~85 controls (77%)
 
 Current Implementation Status:
-- Fully Implemented: ~55 controls (50%)
-- Partially Implemented: ~25 controls (23%)
-- Not Implemented: ~30 controls (27%)
-
-Overall Estimate: 50-60% Complete
+- Not yet formally assessed. No self-assessment score or
+  third-party assessment exists; a scored NIST 800-171
+  self-assessment is the first step in Phase 1.
 ```
 
 ### Detailed Control Status by Domain
 
-#### Access Control (AC) - 75% Complete
+#### Access Control (AC)
 
 | Control ID | Requirement | Status | Notes |
 |------------|-------------|--------|-------|
@@ -98,7 +97,7 @@ Overall Estimate: 50-60% Complete
 | AC.L2-3.1.21 | Portable storage use | Partial | Need policy |
 | AC.L2-3.1.22 | CUI on public systems | Implemented | No public CUI exposure |
 
-#### Awareness & Training (AT) - 0% Complete (CRITICAL GAP)
+#### Awareness & Training (AT) (CRITICAL GAP)
 
 | Control ID | Requirement | Status | Notes |
 |------------|-------------|--------|-------|
@@ -106,7 +105,7 @@ Overall Estimate: 50-60% Complete
 | AT.L2-3.2.2 | Role-based training | Not Implemented | Need role-specific training |
 | AT.L2-3.2.3 | Insider threat awareness | Not Implemented | Need insider threat training |
 
-#### Audit & Accountability (AU) - 85% Complete
+#### Audit & Accountability (AU)
 
 | Control ID | Requirement | Status | Notes |
 |------------|-------------|--------|-------|
@@ -120,7 +119,7 @@ Overall Estimate: 50-60% Complete
 | AU.L2-3.3.8 | Audit protection | Implemented | S3 versioning, IAM |
 | AU.L2-3.3.9 | Audit management | Implemented | IAM controls |
 
-#### Incident Response (IR) - 30% Complete (CRITICAL GAP)
+#### Incident Response (IR) (CRITICAL GAP)
 
 | Control ID | Requirement | Status | Notes |
 |------------|-------------|--------|-------|
@@ -128,7 +127,7 @@ Overall Estimate: 50-60% Complete
 | IR.L2-3.6.2 | Track/document/report | Not Implemented | Need tracking system |
 | IR.L2-3.6.3 | Test incident response | Not Implemented | Need tabletop exercises |
 
-#### Risk Assessment (RA) - 25% Complete (CRITICAL GAP)
+#### Risk Assessment (RA) (CRITICAL GAP)
 
 | Control ID | Requirement | Status | Notes |
 |------------|-------------|--------|-------|
@@ -136,7 +135,7 @@ Overall Estimate: 50-60% Complete
 | RA.L2-3.11.2 | Vulnerability scanning | Implemented | AWS Inspector |
 | RA.L2-3.11.3 | Vulnerability remediation | Partial | No formal process |
 
-#### Security Assessment (CA) - 35% Complete (CRITICAL GAP)
+#### Security Assessment (CA) (CRITICAL GAP)
 
 | Control ID | Requirement | Status | Notes |
 |------------|-------------|--------|-------|
@@ -621,7 +620,7 @@ Tasks:
 | Training | KnowBe4 | $2,000-3,000 | CDSE (free) |
 | MDR | MDR Provider | $20,000-30,000 | Alternative ($25K-40K) |
 | GRC/Documentation | Compliance.ai | $5,000-10,000 | Spreadsheets (free) |
-| Penetration testing | Bishop Fox | $25,000-40,000 | Coalfire ($30K-50K) |
+| Penetration testing | Vendor not yet selected | $25,000-40,000 | Alternate vendor ($30K-50K) |
 
 ### Minimum Viable Tool Investment
 
@@ -699,7 +698,7 @@ CMMC Level 2 expects role separation but acknowledges small organizations. For a
 | IAM least-privilege policies | Access control foundation | AC |
 | AWS Config rules | Configuration monitoring | CM, CA |
 | GovCloud-ready architecture | Federal deployment ready | All |
-| SOC 2 Evidence Service | Automated evidence generation | All |
+| SOC 2 Evidence Service | Evidence framework (collectors return sample values; AWS-backed collection planned) | All |
 | Zero hardcoded credentials | Secret management compliance | IA |
 
 ### Evidence Automation Opportunities
@@ -862,7 +861,7 @@ For organizations needing certification faster (8-9 months):
 | Milestone | Target Date | Success Metric |
 |-----------|-------------|----------------|
 | Gap analysis complete | Month 2 | All 110 controls assessed |
-| Technical controls implemented | Month 8 | 95%+ controls MET |
+| Technical controls implemented | Month 8 | Target: 95%+ controls MET |
 | SSP complete | Month 11 | C3PAO-ready documentation |
 | Pre-assessment passed | Month 11 | <10 findings |
 | C3PAO assessment complete | Month 12 | Certification granted |

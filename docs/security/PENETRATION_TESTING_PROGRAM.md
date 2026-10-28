@@ -202,12 +202,14 @@ curl http://169.254.169.254/latest/meta-data/
 
 ### 5.1 Approved Vendors
 
-| Vendor | Specialization | Certification | Status |
-|--------|---------------|---------------|--------|
-| Bishop Fox | Full-scope red team | CREST, CHECK | Preferred |
-| NCC Group | Application security | CREST, CHECK | Approved |
-| Coalfire | Cloud security, compliance | FedRAMP 3PAO | Approved |
-| Trail of Bits | AI/ML security, smart contracts | - | Approved (AI-specific) |
+No vendor has been engaged yet, and no third-party penetration test report exists for Aura. The table lists the vendor profiles the program will select from.
+
+| Vendor Profile | Specialization | Certification | Status |
+|----------------|---------------|---------------|--------|
+| Full-scope red team firm | Full-scope red team | CREST, CHECK | Candidate (not engaged) |
+| Application security firm | Application security | CREST, CHECK | Candidate (not engaged) |
+| Cloud security assessor | Cloud security, compliance | FedRAMP 3PAO | Candidate (not engaged) |
+| AI/ML security firm | AI/ML security | - | Candidate (not engaged) |
 
 ### 5.2 Vendor Selection Criteria
 

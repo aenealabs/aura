@@ -38,6 +38,7 @@ Resources:
   ScanWorkerTaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-vuln-scan-task-exec-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -80,6 +81,7 @@ Resources:
   ScanWorkerTaskRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-vuln-scan-task-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -178,6 +180,7 @@ Resources:
   ScanStepFunctionsRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-vuln-scan-sfn-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

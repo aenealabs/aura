@@ -16,7 +16,7 @@ aiohttp>=3.14.5
 
 # AWS integration
 boto3>=1.43.103
-botocore>=1.43.103
+botocore>=1.43.123
 
 # Configuration and utilities
 pyyaml>=6.0

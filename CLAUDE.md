@@ -157,7 +157,7 @@ See `docs/deployment/DEPLOYMENT_GUIDE.md` for full container build workflow.
 
 ### Current Status
 
-- **Company:** Aenea Labs | **Domain:** aenealabs.com (Route 53)
+- **Company:** Aenea Labs
 - **Implementation reality:** many capabilities are built and tested as libraries but not invoked by any entry point, and dev-mock fallbacks default to on. Check `docs/PROJECT_STATUS.md` (2026-10-26 audit) before describing a capability as working.
 - **Single source of truth:** `docs/PROJECT_STATUS.md` -- verified per-capability status, deferred-work registry pointer, LoC + test-suite counts (with reproduction commands), ADR statuses, infrastructure phase deployments, and dated audit notes. Read it on demand rather than mirroring its contents here; this CLAUDE.md held a duplicate ADR-by-ADR list that drifted out of sync between updates.
 - **Compliance posture:** NIST 800-53 aligned technical controls. FedRAMP / CMMC certifications not yet pursued.

@@ -2,6 +2,8 @@
 
 This guide documents the QA cost optimization scheduler that automatically scales EKS compute resources outside business hours.
 
+> **Status (2026-11-25):** the QA account has been closed, so these schedules no longer exist. The rest of this guide describes how the scheduler works when a QA environment is deployed.
+
 > **Note:** The QA environment may be **fully shut down** via the kill-switch script for significant cost savings by deleting all always-on services (not just scaling nodes to zero). The EventBridge schedules documented below are disabled while QA is shut down. See the [QA Kill-Switch Runbook](../runbooks/QA_KILLSWITCH_RUNBOOK.md) for details on the full shutdown/restore procedure. When QA is restored, these schedules will be re-enabled automatically.
 
 ## Overview

@@ -16,7 +16,7 @@ Aura exposes a RESTful API for programmatic access to platform features. The aut
 |-------------|-----|
 | Any environment | `https://{your-aura-api-host}/api/v1` |
 
-Hostnames are deployment-specific (DEV and QA run in AWS Commercial Cloud). Health probes are served at the host root (`/health`).
+Hostnames are deployment-specific (no hosted DEV or QA environment is currently deployed). Health probes are served at the host root (`/health`).
 
 ### Authentication
 

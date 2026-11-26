@@ -13,7 +13,7 @@ The QA kill-switch is a Python script that safely shuts down and restores the QA
 
 The kill-switch deletes the CloudFormation stacks for these always-on services and can redeploy them when QA is needed again. Foundation stacks (networking, security, IAM, S3, DynamoDB) remain running at minimal cost so that restore only needs to recreate compute and data services.
 
-**Current State:** QA environment is **shut down**. Neptune snapshot is preserved for data recovery if needed.
+**Current State:** The QA account was **closed on 2026-11-25** (see the 2026-11-25 section of `docs/PROJECT_STATUS.md`). The Neptune snapshot and foundation stacks no longer exist, so the restore procedure below cannot run. A future QA environment starts from the clean-account flow in `docs/deployment/DEPLOYMENT_GUIDE.md`; this runbook applies again only after that.
 
 ---
 

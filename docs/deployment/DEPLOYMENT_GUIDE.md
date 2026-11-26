@@ -11,6 +11,11 @@ CodeConnection ARN in SSM
 > production checklist, GitHub Actions, etc.) and link back here for
 > the streamlined flow.
 
+> **Current state (2026-11-25):** no environment is deployed. The DEV and QA
+> environments were torn down, so every deployment, including DEV, is a
+> clean-account deploy using the flow below. See the 2026-11-25 section of
+> `docs/PROJECT_STATUS.md`.
+
 ---
 
 ## Quick Start (TL;DR)

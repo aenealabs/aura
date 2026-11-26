@@ -2,7 +2,7 @@
 
 **Version:** 2.7
 **Last Updated:** October 26, 2026
-**Status:** All 9 infrastructure phases templated and deployed to DEV; DEV and QA are currently spun down for cost. Many application capabilities below are implemented as libraries but not yet invoked by the running service; see `docs/PROJECT_STATUS.md` (2026-10-26 audit) for verified per-capability status. Phases: (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**.
+**Status:** All 9 infrastructure phases templated and previously deployed to DEV; DEV and QA were torn down on 2026-11-25, and no environment is currently deployed. Many application capabilities below are implemented as libraries but not yet invoked by the running service; see `docs/PROJECT_STATUS.md` (2026-10-26 audit) for verified per-capability status. Phases: (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**.
 **ADRs:** 95 Architecture Decision Records plus 1 reserved number [082]; verified statuses in `docs/architecture-decisions/README.md`
 
 ---
@@ -1004,7 +1004,7 @@ Platform Default: on_demand
 - 1 SNS topic with email subscriptions
 - CMMC, SOC2, NIST 800-53 compliance mapping
 
-**Deployed** to AWS Commercial Cloud (DEV and QA; currently spun down for cost) with a planned path to GovCloud migration.
+**Previously deployed** to AWS Commercial Cloud (DEV and QA, both torn down on 2026-11-25) with a planned path to GovCloud migration.
 
 ---
 

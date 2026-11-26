@@ -310,7 +310,7 @@ A configured model with no known pricing is refused at startup, and that tier ke
 
 | Option | Status | Best For |
 |--------|--------|----------|
-| **AWS (CloudFormation)** | Deployed to DEV and QA in AWS Commercial; currently spun down for cost | Aura-managed environments |
+| **AWS (CloudFormation)** | Previously deployed to DEV and QA in AWS Commercial; both environments were torn down on 2026-11-25 and nothing is currently deployed | Aura-managed environments |
 | **Self-Hosted (Kubernetes)** | Partial: Helm charts and installers in `deploy/`; not validated with a customer | Organizations with data residency requirements or existing EKS clusters |
 | **Self-Hosted (Podman)** | Partial: Podman Compose file not yet in the repository | Air-gapped deployments, small teams, proof-of-concept |
 
@@ -405,7 +405,7 @@ The project maintains [Architecture Decision Records](docs/architecture-decision
 | Test Suite | 27,161 tests collected on 2026-10-26. Reproduce: `pytest --collect-only -q tests/` |
 | Architecture Decision Records | 95 ADRs (plus 1 reserved number) |
 | CloudFormation Templates | 181 templates (excluding 13 archived) |
-| Infrastructure Phases | 9 of 9 layers templated and deployed to DEV (environments currently spun down) |
+| Infrastructure Phases | 9 of 9 layers templated and previously deployed to DEV (no environment currently deployed) |
 
 ---
 

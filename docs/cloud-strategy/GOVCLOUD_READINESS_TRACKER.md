@@ -63,7 +63,7 @@
 
 | Service | Commercial (us-east-1) | GovCloud Status | Notes | Migration Impact |
 |---------|------------------------|-----------------|-------|------------------|
-| **Neptune (Provisioned)** | ✅ Deployed | ✅ Available | db.t3.medium currently deployed | None |
+| **Neptune (Provisioned)** | ✅ Deployed | ✅ Available | db.t3.medium was deployed; removed with the 2026-11-25 environment teardown | None |
 | **Neptune Serverless** | ✅ Available | ❌ Not Available | Not currently used; future cost optimization option | N/A |
 | **DynamoDB** | ✅ Available | ✅ Available | PAY_PER_REQUEST mode supported | None |
 | **RDS PostgreSQL** | ✅ Available | ✅ Available | For future metadata storage | None |

@@ -17,6 +17,8 @@ Foundation stacks (VPC, networking, security groups, IAM, KMS, S3, DynamoDB, ECR
 
 **DEV environment was shut down on March 4, 2026.** All 80 stacks were successfully deleted. QA was previously shut down on February 15, 2026.
 
+**Update, 2026-11-25:** the remaining foundation stacks and retained resources in DEV were also deleted, and the QA account was closed (see the 2026-11-25 section of `docs/PROJECT_STATUS.md`). The restore procedure below depends on those foundation stacks, so it cannot run. Rebuild DEV with the clean-account flow in `docs/deployment/DEPLOYMENT_GUIDE.md`.
+
 ---
 
 ## Cost Breakdown

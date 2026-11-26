@@ -244,7 +244,7 @@ live path implements: `NONE` and `CONTAINER`.
 > **Status: Implemented (as of 2026-08-29).** This control is in force on the code path from the
 > moment the application starts; it configures no infrastructure and has no deployment dependency,
 > which is why it is `Implemented` rather than `Implemented, not deployed`. **This is a statement
-> about the code path, not about a running estate** -- dev and qa are spun down, so the control has
+> about the code path, not about a running estate** -- no environment is deployed (dev and qa were torn down on 2026-11-25), so the control has
 > not been observed operating against live traffic. Verification to date is the unit suite in
 > `tests/test_security_middleware.py`, plus the fault injection recorded in `fc9ab72` (restoring
 > `"message": str(e)` fails `test_debug_never_returns_exception_message`; reverting it passes, while

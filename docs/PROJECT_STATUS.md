@@ -1,6 +1,6 @@
 # Project Aura: Development Status
 
-**Last Assessment:** October 26, 2026 (repository-wide capability-vs-documentation audit; see the 2026-10-26 section). Previous: October 15, 2026 (claim-vs-code audit; see the 2026-10-14 section -- merged in #526, not deployed)
+**Last Assessment:** October 26, 2026 (repository-wide capability-vs-documentation audit; see the 2026-10-26 section). Previous: October 15, 2026 (claim-vs-code audit; see the 2026-10-14 section -- merged in #526, not deployed). Infrastructure update: November 25, 2026 -- all AWS environments torn down; see the 2026-11-25 section.
 **Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**. Buildspec line-cap remediation (#131) **complete -- all 4 sub-issues + 5 follow-ups closed via Tara's runtime-budget approach** (cold-start `TimeoutInMinutes` raised to 480 on the four parent CodeBuild projects, 11 dead scaffold buildspecs deleted, parent → sub-layer CodeBuild nesting forbidden going forward, orphan stacks wired). May 9, 2026 documentation + security pass closed an additional 4 doc-refresh follow-ups (#158, #159, #160, #161) and 2 CodeQL alerts (#271 critical code injection, #272 medium unpinned action). Issue #142 (eslint-plugin-react swap) reviewed and deferred per its own trigger conditions. **GTM-readiness audit (#163) CLOSED on May 12, 2026 after 14 waves of remediation (Waves 1-14).** Waves 6-14 followed Wave 5a and shipped: defense-in-depth guardrails (IMMUTABLE_GUARDRAILS, prod-tier signer assertion, log retention 7d→30d, workflow pinning), doc accuracy corrections (React 19 / JavaScript / Vite stack restatement, broken-link fixes), top-level dashboard widget live-wiring (5 metrics endpoints + system-health endpoint backing MTTR/AssetCriticality/ComplianceDrift/InsiderRisk widgets + HealthCheckModal -- closes the audit's "DO-NOT-SHIP" frontend-mock finding; the endpoints are contract-first stubs that return zero/empty/unknown until real probes are wired (`src/api/dashboard_metrics_endpoints.py:64-166`, `src/api/system_health_endpoints.py:75-92`), and AgentRegistry, CKGEConsole, RedTeamDashboard and AgentManagerView still render module-level mock arrays), customer-visible TODO/toast remediation (8 CommandPalette/CKGEConsole/KnowledgeGraph silent click-handlers replaced with toast feedback), buildspec inline create/update refactor (29 sites → canonical `aws cloudformation deploy --no-fail-on-empty-changeset`, -640 LOC across 3 buildspecs), frontend lint sweep (281→93 problems, 20→0 errors), and ADR-092 (CFN deploy-role wildcard scoping, **Accepted v2 with deploy phases Deferred (Cost Gate)** -- Phase 2 code complete + offline static action scanner substitute). **DEV/QA Deployment Capability Audit (May 14, 2026) CLOSED: 16 findings → 10 GitHub issues filed (#184-#193); all 10 now closed (9 fixed in-tree + 1 won't-fix).** Same-day fixes shipped Wave-10 idempotency completion (14 buildspec blocks converted across 5 files), environment-conditional DeletionPolicy pattern applied to 54 templates (`!If [IsProduction, Retain, Delete]`), CodeBuild project count drift reconciled (19 → 25), customer parameter overlay parity (EKSNode prefix unified across templates + new dev.json/qa.json overlays), three CI hygiene fixes (`code-quality.yml` `|| true` removed, `aura-security-review.yml` Dependabot skip removed, `nightly-iam-validation.yml` workflow-level failure alarm wired), kill-switch hardening (fcntl-backed concurrent-run lock + EKS scaling-completion polling on both cost schedulers + `wait_for_stack_complete` defense-in-depth + restore success message reworded to "Script Phase Complete" with explicit post-restore verification block), and the final two #185 sub-tracks (`nightly-live-llm.yml` schedule trigger commented out -- workflow had `startup_failure` on every run since inception May 9 because `id-token: write` forces OIDC handshake at workflow-start and the required secret + var were never configured; `benchmarks.yml` runner swapped from unavailable `ubuntu-24.04-large` to `ubuntu-latest` with documented variance trade-off). Remaining tracked work: #180 (out-of-band SNS/PagerDuty/Slack subscribers + GitHub secrets + 68 deaf alarms, OPEN, external-endpoint dependency), #181 (vulnerability_scanner/parsing real tree-sitter implementation, OPEN, multi-week pure-code effort), #182 (tech-debt tracker, substantially closed -- buildspec/lint/IAM code-merge complete; ADR-092 deploy phases Deferred (Cost Gate); "Coming Soon" panels won't-fix).
 
 ---
@@ -18,7 +18,7 @@
 | **CloudFormation Templates** | 181 templates (2026-10-26: 182, minus the 3 marketing/docs-portal templates retired and moved out of the repository, plus `iam-permission-boundaries.yaml` for AURA-CTL-004 and `identity-center-permission-sets.yaml` for AURA-CTL-005) (`deploy/cloudformation/` + `deploy/cloudformation/service-catalog-products/`, excluding archive). Reproduce: `find deploy/cloudformation -path "*/archive" -prune -o -name "*.yaml" -type f -print | grep -v "/archive/" | wc -l`. The 13 templates under `deploy/cloudformation/archive/` are excluded. (Prior "175" corrected to 176 on May 14 per audit finding M3. Recounted Aug 28, 2026: the command returned **181** before this session's work, meaning 5 templates were added between May 22 and Aug 28 without the count being updated -- the same drift class as audit finding M3. `bedrock-invocation-logging.yaml` is the 182nd.) |
 | **Buildspecs** | 27 buildspec files in deploy/buildspecs/ (`buildspec-marketing.yml` retired 2026-10-26; down from 38 after #131 cleanup -- 11 dead scaffolds deleted, -1,467 LOC) |
 | **CodeBuild Projects** | 24 `AWS::CodeBuild::Project` resources (`codebuild-marketing.yaml` retired 2026-10-26) across the `codebuild-*.yaml` templates. Reproduce: `grep -rh "AWS::CodeBuild::Project" deploy/cloudformation/*.yaml | wc -l`. (Prior "19 projects" claim reflected only the originally documented 9 parent + 10 sub-layers; subsequent layers were added without updating the count. Corrected May 14 per audit finding C6.) |
-| **Deployment Phases** | 9 of 9 infrastructure layers have templates and were deployed to DEV; DEV and QA are currently spun down for cost (live-AWS validation paused, see `DEFERRED_WORK_REGISTRY.md`) |
+| **Deployment Phases** | 9 of 9 infrastructure layers have templates and were previously deployed to DEV and QA. **No environment is deployed as of 2026-11-25:** the QA account was closed and every Aura resource in the DEV account was deleted (see the 2026-11-25 section). Live-AWS validation is paused; see `DEFERRED_WORK_REGISTRY.md`. |
 | **GovCloud Readiness** | Service compatibility: 19/19. **ARN partition compliance: complete (Wave 3, commit 3929913)** -- 204 hardcoded `arn:aws:` strings swept to `arn:${AWS::Partition}:` across 19 templates; the 4 remaining instances are inside YAML `#` comments (CLI examples for human readers). All 21 originally-affected templates pass `./scripts/cfn-lint-wrapper.sh`. Bedrock IAM model authorization on current-gen Sonnet 4.5 / Haiku 4.5 (commit a025ac5). |
 
 ---
@@ -338,7 +338,7 @@ Registered as **`AURA-CTL-002`** (Sandbox Network Boundary Truthfulness) in `doc
 documentation before this note. Registered as **`AURA-CTL-003`** (Error Response Detail Suppression)
 in `docs/security/CONTROL_REGISTRY.md`, status `Implemented` -- the control configures no
 infrastructure and is in force from application start, which is a different claim from "deployed".
-Dev and qa are spun down; it has not been observed against live traffic.
+No environment is deployed (DEV and QA were torn down on 2026-11-25); it has not been observed against live traffic.
 
 | Change | Before | After |
 |---|---|---|
@@ -538,6 +538,21 @@ Rows can overlap between tracks; the totals describe documented claims, not dist
 
 ---
 
+### AWS Environment Teardown (2026-11-25) -- DEV and QA removed
+
+Both AWS environments were removed to stop recurring cost. Nothing is deployed anywhere.
+
+| Environment | Action | What remains |
+|---|---|---|
+| QA | AWS account closed through AWS Organizations (all resources, data and snapshots go with it) | Nothing usable; the account can be reopened through AWS Support only during the post-closure period |
+| DEV | All 64 Aura CloudFormation stacks deleted, followed by a sweep of retained and out-of-stack resources (DynamoDB tables, S3 buckets, ECR repositories, parameters, KMS keys, log groups, and the organization CloudTrail trail) | The account itself, AWS Organizations and the `aura-organizations` stack, IAM Identity Center sign-in, billing, and an existing Compute Savings Plan |
+
+Consequences for the rest of this document and the repository:
+
+- **No data was kept.** DynamoDB tables, the Neptune snapshot and audit logs were deleted without copies. A future deployment starts from an empty account.
+- **The kill-switch restore paths no longer apply.** `scripts/dev_killswitch.py restore` and `scripts/qa_killswitch.py restore` assume foundation stacks and snapshots that no longer exist. Use the clean-account flow in `docs/deployment/DEPLOYMENT_GUIDE.md` instead, and record the new account IDs in SSM (`/aura/<env>/account-id`) before deploying.
+- **"Deployed" in ADR and capability statuses is historical.** It means the template was deployed at some point, not that it is running today.
+
 ### Integrations & Deployment
 
 | Component | Status | Details |
@@ -582,8 +597,8 @@ Rows can overlap between tracks; the totals describe documented claims, not dist
 
 | Phase | Timeline | Milestone |
 |-------|----------|-----------|
-| DEV Environment | Complete | All 9 layers deployed to AWS Commercial Cloud |
-| QA Environment | Complete | Mirror dev configuration (currently spun down for cost) |
+| DEV Environment | Torn down (2026-11-25) | All 9 layers were deployed to AWS Commercial Cloud; every Aura resource has since been deleted |
+| QA Environment | Torn down (2026-11-25) | Mirrored the dev configuration; the QA account has been closed |
 | Deployable prototype | In progress (current goal) | Wire built capabilities into running paths so documented claims hold; runnable end to end locally, with mock data behind real interfaces where external specs or credentials are needed. Live deployment to DEV, QA or PROD is not planned. |
 | PROD Environment | Not planned | GovCloud deployment with STIG/FIPS hardening; the original Q2-Q3 2026 target has passed |
 | Public Launch | Not planned | GA release; the original Q3-Q4 2026 target has passed |

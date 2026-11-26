@@ -71,7 +71,7 @@ The "Re-engage when" column is always prefixed with the trigger type (e.g., **Co
 
 ## Cost-gate context (inherited from ADR-092 §"Cost gate context")
 
-The platform is self-funded; live-AWS validation is paused indefinitely. Code-complete work continues to ship offline -- every deferred item above has its code-side companion already merged or has an offline static-analysis substitute (`scripts/adr_092_static_action_scan.py`, `scripts/adr_093_taint_schema_static_scan.py`, `scripts/adr_093_taint_query_static_scan.py`). The deferred phases are the live-AWS-dependent gates only.
+The platform is self-funded; live-AWS validation is paused indefinitely. As of 2026-11-25 there is no live environment at all (DEV and QA were torn down), so every cost-gated item first needs a clean-account deployment. Code-complete work continues to ship offline -- every deferred item above has its code-side companion already merged or has an offline static-analysis substitute (`scripts/adr_092_static_action_scan.py`, `scripts/adr_093_taint_schema_static_scan.py`, `scripts/adr_093_taint_query_static_scan.py`). The deferred phases are the live-AWS-dependent gates only.
 
 When the cost gate opens:
 

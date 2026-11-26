@@ -54,7 +54,7 @@ Aura is an enterprise-grade platform that combines multiple AI agents to automat
 
 Navigate to your Aura deployment URL:
 
-- **Console**: the console URL for your environment (DEV and QA run in AWS Commercial Cloud; ask your administrator)
+- **Console**: the console URL for your environment (no hosted DEV or QA environment is currently deployed; ask your administrator)
 - **API Endpoint**: the API host for your environment (all routes under `/api/v1`)
 
 ### Step 2: Sign In
